@@ -17,13 +17,13 @@ use windows::core::{Owned, PCWSTR, w};
 
 use crate::error::{AppError, Result};
 
-const POLICY: &str = "RoALT-Roblox";
+const POLICY: &str = "LRAM-Roblox";
 pub const MIN_KBPS: u32 = 64;
 pub const MAX_KBPS: u32 = 10_000_000;
 /// How long the elevated script may take once the prompt is answered.
 const TIMEOUT: Duration = Duration::from_secs(60);
 
-/// The script `apply` runs elevated (pure): removes RoALT's policy, then for a rate (kbps,
+/// The script `apply` runs elevated (pure): removes LRAM's policy, then for a rate (kbps,
 /// `MIN_KBPS..=MAX_KBPS`) adds it again; 0 only removes it. Nothing but the checked integer is
 /// put into it.
 pub fn script(kbps: u32) -> Result<String> {
@@ -110,7 +110,7 @@ mod tests {
     fn the_script_has_only_a_checked_rate_in_it() {
         let s = script(1_000).unwrap();
         assert!(s.contains("-ThrottleRateActionBitsPerSecond 1000000 -PolicyStore ActiveStore"), "{s}");
-        assert!(s.starts_with("$ErrorActionPreference = 'Stop'; Remove-NetQosPolicy -Name 'RoALT-Roblox'"), "{s}");
+        assert!(s.starts_with("$ErrorActionPreference = 'Stop'; Remove-NetQosPolicy -Name 'LRAM-Roblox'"), "{s}");
         assert!(!s.contains('"'), "it goes inside -Command \"...\"");
         let off = script(0).unwrap();
         assert!(off.starts_with("Remove-NetQosPolicy") && !off.contains("New-NetQosPolicy"), "{off}");

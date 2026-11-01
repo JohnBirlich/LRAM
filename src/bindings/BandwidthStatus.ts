@@ -9,6 +9,6 @@ export type BandwidthStatus = {
  */
 kbps: number, 
 /**
- * The policy RoALT set is in force: applied since Windows last started.
+ * The policy LRAM set is in force: applied since Windows last started.
  */
 active: boolean, };

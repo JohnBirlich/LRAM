@@ -66,7 +66,7 @@ function Tile({ label, value, children }: { label: string; value: string; childr
   );
 }
 
-/** Live CPU, memory and IO of every client RoALT runs, polled every 2 s. */
+/** Live CPU, memory and IO of every client LRAM runs, polled every 2 s. */
 export function MonitorView({ accounts }: { accounts: AccountSummary[] }) {
   const running = (useInstances().data ?? []).filter(isRunning);
   const metrics = useMetrics();

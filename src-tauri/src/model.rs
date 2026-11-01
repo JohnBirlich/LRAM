@@ -208,12 +208,12 @@ pub struct Settings {
     /// Relaunch a client Roblox disconnects (kicked, server shut down, connection lost; not the
     /// player's own Leave or a sign-in elsewhere) into the same target, within the breaker.
     pub auto_rejoin: bool,
-    /// Relaunch a client that ended without RoALT closing it or stopped responding (a window
+    /// Relaunch a client that ended without LRAM closing it or stopped responding (a window
     /// closed by hand looks the same, so it is opt-in), within the breaker.
     pub auto_restart_on_crash: bool,
     /// Crash breaker: at most this many rejoins and restarts of one account (1..=20) ...
     pub breaker_max: u32,
-    /// ... within this many minutes (1..=240); then RoALT gives up on it.
+    /// ... within this many minutes (1..=240); then LRAM gives up on it.
     pub breaker_window_min: u32,
     /// How long a closed client gets to exit before it is terminated, 1..=60 s.
     pub close_grace_s: u32,
@@ -245,10 +245,10 @@ pub struct Settings {
     /// Install a new Roblox version on its own once no client runs and no launch or batch does
     /// (never over a bootstrapper; the installer is signature-checked as always).
     pub auto_update: bool,
-    /// Ask GitHub for a newer RoALT at start and every 6 hours (`self_update`); it is offered,
+    /// Ask GitHub for a newer LRAM at start and every 6 hours (`self_update`); it is offered,
     /// never installed without a click.
     pub self_update: bool,
-    /// Discord rich presence through the Discord app on this PC (`rpc`): "Playing RoALT" with
+    /// Discord rich presence through the Discord app on this PC (`rpc`): "Playing LRAM" with
     /// the game and how many alts run.
     pub discord_presence: bool,
     /// Hide each client (without taking the focus) once, when it first reaches a game, unless its
@@ -281,7 +281,7 @@ pub struct Settings {
     pub language: String,
 }
 
-/// The network RoALT runs on (`network`). Never its name: streamers show RoALT on screen.
+/// The network LRAM runs on (`network`). Never its name: streamers show LRAM on screen.
 #[derive(Serialize, TS, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
@@ -482,11 +482,14 @@ impl Default for Settings {
             anti_afk: AntiAfk::default(),
             discord: DiscordEvents::default(),
             auto_update: false,
-            self_update: true,
-            discord_presence: true,
+            // Off in this build: it carries no release key, so nothing could be verified and run.
+            self_update: false,
+            // Off: this fork is published under someone else's Discord application id, so presence
+            // would show the original app's name. On only if the id in `rpc.rs` is replaced.
+            discord_presence: false,
             minimize_on_launch: false,
             live_hidden_previews: true,
-panic_hotkey: String::new(),
+            panic_hotkey: String::new(),
             clean_logs: false,
             fps_cap: 0,
             low_graphics: true,
@@ -809,7 +812,7 @@ pub struct UserRef {
     pub display_name: String,
 }
 
-/// A client RoALT started.
+/// A client LRAM started.
 #[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
@@ -849,7 +852,7 @@ pub enum InstanceState {
     Exited,
 }
 
-/// A Roblox client RoALT started and is following.
+/// A Roblox client LRAM started and is following.
 #[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
@@ -877,12 +880,12 @@ pub struct Instance {
     pub afk_at: Option<i64>,
     /// Held to `Settings.mem_throttle`'s CPU cap: its memory is over that limit.
     pub throttled: bool,
-    /// Its window was made small by RoALT (`instance_micro`, `instances_tile`); "Normal size"
+    /// Its window was made small by LRAM (`instance_micro`, `instances_tile`); "Normal size"
     /// puts it back.
     pub micro: bool,
     /// The FPS cap its launch asked for (`LaunchInfo::fps_cap`); a rejoin uses it again.
     pub fps_cap: Option<u32>,
-    /// RoALT is working on relaunching it (`instances::rejoin`). Not kept over a restart of RoALT.
+    /// LRAM is working on relaunching it (`instances::rejoin`). Not kept over a restart of LRAM.
     #[serde(default, skip_deserializing)]
     pub relaunching: bool,
     /// Why that relaunch has to wait, while it does.
@@ -954,7 +957,7 @@ pub struct ClientMetrics {
 pub struct BandwidthStatus {
     /// The setting: what was last applied (0: none).
     pub kbps: u32,
-    /// The policy RoALT set is in force: applied since Windows last started.
+    /// The policy LRAM set is in force: applied since Windows last started.
     pub active: bool,
 }
 
@@ -1150,7 +1153,7 @@ pub struct PrivateServerPage {
 
 // ---------- M7 ----------
 
-/// The Roblox client RoALT would start.
+/// The Roblox client LRAM would start.
 #[derive(Serialize, TS, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
@@ -1158,7 +1161,7 @@ pub struct RobloxClient {
     /// None when Roblox isn't installed.
     pub path: Option<String>,
     /// A bootstrapper (e.g. Bloxstrap) handles launches; it keeps Roblox up to date itself, so
-    /// RoALT never updates or installs over it.
+    /// LRAM never updates or installs over it.
     pub bootstrapper: bool,
     /// The installed version: the `Versions\version-…` folder the client is in. None when not
     /// installed, for a bootstrapper, or a client outside such a folder.
@@ -1169,7 +1172,7 @@ pub struct RobloxClient {
     pub outdated: bool,
 }
 
-/// RoALT's own version and a newer published release, once found (`self_update`).
+/// LRAM's own version and a newer published release, once found (`self_update`).
 #[derive(Serialize, TS, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
@@ -1193,15 +1196,15 @@ pub enum InstallProgress {
     Error { message: String },
 }
 
-/// Where RoALT keeps its data.
+/// Where LRAM keeps its data.
 #[derive(Serialize, TS, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct DataDir {
     pub path: String,
-    /// `%LOCALAPPDATA%\RoALT` (not moved).
+    /// `%LOCALAPPDATA%\LRAM` (not moved).
     pub default: bool,
-    /// Set for test runs (`ROALT_DATA_DIR`): moving is not offered.
+    /// Set for test runs (`LRAM_DATA_DIR`): moving is not offered.
     pub overridden: bool,
 }
 
@@ -1210,13 +1213,13 @@ pub struct DataDir {
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub enum CrashKind {
-    /// Ended without RoALT closing it and without a disconnect in its log.
+    /// Ended without LRAM closing it and without a disconnect in its log.
     Crash,
     /// Roblox disconnected it (kick, shutdown, connection lost).
     Disconnect,
     /// Its window stopped responding.
     Hang,
-    /// RoALT restarted it: its memory stayed over `Settings.mem_restart_mb`.
+    /// LRAM restarted it: its memory stayed over `Settings.mem_restart_mb`.
     Mem,
 }
 

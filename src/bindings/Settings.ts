@@ -48,7 +48,7 @@ launchDelayMs: number,
  */
 autoRejoin: boolean, 
 /**
- * Relaunch a client that ended without RoALT closing it or stopped responding (a window
+ * Relaunch a client that ended without LRAM closing it or stopped responding (a window
  * closed by hand looks the same, so it is opt-in), within the breaker.
  */
 autoRestartOnCrash: boolean, 
@@ -57,7 +57,7 @@ autoRestartOnCrash: boolean,
  */
 breakerMax: number, 
 /**
- * ... within this many minutes (1..=240); then RoALT gives up on it.
+ * ... within this many minutes (1..=240); then LRAM gives up on it.
  */
 breakerWindowMin: number, 
 /**
@@ -113,12 +113,12 @@ discord: DiscordEvents,
  */
 autoUpdate: boolean, 
 /**
- * Ask GitHub for a newer RoALT at start and every 6 hours (`self_update`); it is offered,
+ * Ask GitHub for a newer LRAM at start and every 6 hours (`self_update`); it is offered,
  * never installed without a click.
  */
 selfUpdate: boolean, 
 /**
- * Discord rich presence through the Discord app on this PC (`rpc`): "Playing RoALT" with
+ * Discord rich presence through the Discord app on this PC (`rpc`): "Playing LRAM" with
  * the game and how many alts run.
  */
 discordPresence: boolean, 

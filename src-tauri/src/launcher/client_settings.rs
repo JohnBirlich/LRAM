@@ -1,4 +1,4 @@
-//! The FPS cap and graphics of the clients RoALT starts, through Roblox's own settings file
+//! The FPS cap and graphics of the clients LRAM starts, through Roblox's own settings file
 //! `%LOCALAPPDATA%\Roblox\GlobalBasicSettings_13.xml`: `FramerateCap` (the in-game Maximum Frame
 //! Rate; the client takes any value, not only the menu's) and `GraphicsQualityLevel` /
 //! `SavedQualityLevel` (Graphics Quality, 1 the lowest). Roblox's flag allowlist refuses every
@@ -348,7 +348,7 @@ fn apply_at(db: &Db, file: PathBuf, fps: u32, low: bool) -> Option<Undo> {
         };
         let now = read(&text);
         let mut kept = load(db);
-        // A launch's values still there were saved by a client RoALT started that closed.
+        // A launch's values still there were saved by a client LRAM started that closed.
         settle_values(&mut kept, now);
         let user = kept.user.unwrap_or(now);
         let want = for_launch(user, fps, low);
@@ -456,9 +456,9 @@ pub async fn wait_until_read(browser_tracker_id: i64, since: SystemTime, client:
     }
 }
 
-/// RoALT is closing: the user's own values go back now (a launch may still be waiting for its
-/// client, and nothing watches the file while RoALT is closed). A client RoALT started that
-/// closes later saves its own again; the watcher puts the user's back when RoALT next starts.
+/// LRAM is closing: the user's own values go back now (a launch may still be waiting for its
+/// client, and nothing watches the file while LRAM is closed). A client LRAM started that
+/// closes later saves its own again; the watcher puts the user's back when LRAM next starts.
 pub fn restore(db: &Db) {
     if let Some(file) = file() {
         restore_at(db, &file);
@@ -678,7 +678,7 @@ mod tests {
         assert_eq!(read(&f.text()), [Some(60), Some(19), Some(9)]);
         undo.put_back();
 
-        // RoALT closes while a launch's values are in the file: the user's own go back.
+        // LRAM closes while a launch's values are in the file: the user's own go back.
         f.put(&write(XML, LOW));
         restore_at(&db, &f.0);
         assert_eq!(read(&f.text()), [Some(60), Some(19), Some(9)]);

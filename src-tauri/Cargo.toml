@@ -1,8 +1,8 @@
 [package]
 name = "roalt"
-version = "0.9.0"
+version = "0.10.0"
 description = "Local-only Roblox account manager"
-authors = ["inspectsoftware"]
+authors = ["JohnBirlich"]
 edition = "2024"
 rust-version = "1.95"
 

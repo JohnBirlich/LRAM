@@ -5,17 +5,17 @@
 
 import { useState } from "react";
 
-export const DIRECTION_KEY = "roalt.direction";
+export const DIRECTION_KEY = "lram.direction";
 
 /** id, label shown on the button, what it is. */
 export const DIRECTIONS = [
-  { id: "soft", label: "Soft Deck", hint: "как сейчас" },
-  { id: "slate", label: "Slate", hint: "плоский инструментальный" },
-  { id: "studio", label: "Studio", hint: "мягкий bento, крупные радиусы" },
-  { id: "grid", label: "Grid", hint: "тактический HUD, моно" },
+  { id: "lram", label: "LRAM", hint: "новый вид по референсу" },
+  { id: "soft", label: "Soft Deck", hint: "как было до переделки" },
 ] as const;
 
 export type DirectionId = (typeof DIRECTIONS)[number]["id"];
+
+export const DEFAULT_DIRECTION = "lram";
 
 export function applyDirection(id: string) {
   if (id && id !== "soft") document.documentElement.dataset.direction = id;
@@ -23,7 +23,7 @@ export function applyDirection(id: string) {
 }
 
 export function DirectionSwitcher() {
-  const [current, setCurrent] = useState<string>(() => document.documentElement.dataset.direction ?? "soft");
+  const [current, setCurrent] = useState<string>(() => document.documentElement.dataset.direction ?? DEFAULT_DIRECTION);
   const pick = (id: string) => {
     setCurrent(id);
     applyDirection(id);

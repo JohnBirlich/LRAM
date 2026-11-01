@@ -104,7 +104,7 @@ pub fn blocked(s: &App) -> Option<String> {
         return None;
     }
     Some(tr!(
-        "You're on a public network. RoALT doesn't launch there; join a private network, or allow public \
+        "You're on a public network. LRAM doesn't launch there; join a private network, or allow public \
          networks in Settings, Security."
     ))
 }

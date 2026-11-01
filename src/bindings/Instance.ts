@@ -4,7 +4,7 @@ import type { LaunchTarget } from "./LaunchTarget";
 import type { Limits } from "./Limits";
 
 /**
- * A Roblox client RoALT started and is following.
+ * A Roblox client LRAM started and is following.
  */
 export type Instance = { id: string, accountId: number, pid: number, state: InstanceState, target: LaunchTarget, placeId: number | null, jobId: string | null, 
 /**
@@ -33,7 +33,7 @@ afkAt: number | null,
  */
 throttled: boolean, 
 /**
- * Its window was made small by RoALT (`instance_micro`, `instances_tile`); "Normal size"
+ * Its window was made small by LRAM (`instance_micro`, `instances_tile`); "Normal size"
  * puts it back.
  */
 micro: boolean, 
@@ -42,7 +42,7 @@ micro: boolean,
  */
 fpsCap: number | null, 
 /**
- * RoALT is working on relaunching it (`instances::rejoin`). Not kept over a restart of RoALT.
+ * LRAM is working on relaunching it (`instances::rejoin`). Not kept over a restart of LRAM.
  */
 relaunching: boolean, 
 /**

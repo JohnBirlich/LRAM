@@ -1,4 +1,4 @@
-//! The one typed client for every Roblox web API RoALT uses.
+//! The one typed client for every Roblox web API LRAM uses.
 //!
 //! - One `reqwest::Client`, no cookie jar: `.ROBLOSECURITY` is set per request.
 //! - CSRF: the real request is sent with the cached token for that account; a 403 carrying

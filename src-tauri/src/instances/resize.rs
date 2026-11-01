@@ -1,7 +1,7 @@
 //! Resizing a client freely, past Roblox's minimum size. The client holds its window to a minimum
 //! (`WM_GETMINMAXINFO`), and Windows' own sizing loop keeps to it whatever the window's style (see
-//! the ignored tests in `window`), so that loop must not start: a low-level mouse hook, in RoALT's
-//! process, takes a press on a client's edge (`on_mouse`) and RoALT sizes the window from there
+//! the ignored tests in `window`), so that loop must not start: a low-level mouse hook, in LRAM's
+//! process, takes a press on a client's edge (`on_mouse`) and LRAM sizes the window from there
 //! (`run_drag`). Nothing goes into the client, and no other window is touched. A small window's
 //! title bar goes the same way, since Windows' move loop would throw it up to the minimum too.
 //!
@@ -31,7 +31,7 @@ use windows::core::w;
 
 use super::{afk, window};
 
-/// The pids of RoALT's clients: no other window is touched.
+/// The pids of LRAM's clients: no other window is touched.
 static CLIENTS: Mutex<Vec<u32>> = Mutex::new(Vec::new());
 /// A drag: its window, where it was, where the pointer took hold, and its style if that was changed
 /// for the drag.
@@ -60,7 +60,7 @@ fn moved(from: RECT, grab: POINT, to: POINT) -> RECT {
     RECT { left: from.left + dx, top: from.top + dy, right: from.right + dx, bottom: from.bottom + dy }
 }
 
-/// An edge drag RoALT is running.
+/// An edge drag LRAM is running.
 struct EdgeDrag {
     hwnd: isize,
     from: RECT,
@@ -377,7 +377,7 @@ unsafe extern "system" fn on_event(_: HWINEVENTHOOK, event: u32, hwnd: HWND, obj
     }
 }
 
-/// The pid of the window, if it is one of RoALT's clients'.
+/// The pid of the window, if it is one of LRAM's clients'.
 fn client_of(hwnd: HWND) -> Option<u32> {
     let mut pid = 0;
     // SAFETY: reads which process owns a window into a local.
@@ -451,7 +451,7 @@ unsafe extern "system" fn on_show_event(_: HWINEVENTHOOK, event: u32, hwnd: HWND
     }
 }
 
-/// RoALT is ending (or panicking, so no lock is waited for): its clients must not stay invisible. A
+/// LRAM is ending (or panicking, so no lock is waited for): its clients must not stay invisible. A
 /// hard kill can't get here; the next start does this (`window::recover`). `limit`: how long a client
 /// that is slow to answer is waited for.
 pub fn unhide_all(limit: Duration) {
@@ -498,7 +498,7 @@ pub fn start() {
         pump();
     });
     std::thread::spawn(|| {
-        // SAFETY: as for the drags above. SWITCHEND and MINIMIZESTART are neighbours. RoALT's own
+        // SAFETY: as for the drags above. SWITCHEND and MINIMIZESTART are neighbours. LRAM's own
         // window counts too: minimizing it from the taskbar uses up that press (`client_of` keeps
         // it from anything else).
         let (switch, front) = unsafe {

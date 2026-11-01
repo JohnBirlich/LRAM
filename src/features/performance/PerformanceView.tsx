@@ -16,7 +16,7 @@ import { PREVIEW_FPS, setPreviewFps, storedFps, usePreviewFps, type PreviewFps }
 
 const profileFilter = () => [{ name: t("performance.profileFilter"), extensions: ["json"] }];
 /** A share code: this prefix, then the profile's JSON as base64url. */
-const CODE = "RoALT-PERF:";
+const CODE = "LRAM-PERF:";
 
 function toCode(json: string) {
   const bytes = new TextEncoder().encode(json);
@@ -142,7 +142,7 @@ function RenderFlagRows({ settings }: { settings: Settings }) {
   );
 }
 
-/** Everything that changes how much the clients and RoALT itself use, and profiles to share it. */
+/** Everything that changes how much the clients and LRAM itself use, and profiles to share it. */
 export function PerformanceView({ settings }: { settings: Settings }) {
   const set = useSetSettings();
   const [previewFps, setFps] = usePreviewFps();
@@ -336,7 +336,7 @@ function ShareRow({ onProfile }: { onProfile: (p: Profile) => void }) {
 
   async function exportFile() {
     try {
-      const path = await saveFile({ defaultPath: `RoALT-performance-${new Date().toISOString().slice(0, 10)}.json`, filters: profileFilter() });
+      const path = await saveFile({ defaultPath: `LRAM-performance-${new Date().toISOString().slice(0, 10)}.json`, filters: profileFilter() });
       if (!path) return;
       await api.performanceExport(path, storedFps());
       toast(t("performance.exported"));

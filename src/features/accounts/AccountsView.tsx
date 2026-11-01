@@ -27,6 +27,16 @@ const FILTERS: { key: Filter; label: Key }[] = [
   { key: "fav", label: "accounts.filter.fav" },
 ];
 
+/** The strip above the table: six figures, each one click away from filtering the table to it. */
+const STRIP: { filter: Filter; label: Key; tone?: "ok" | "bad" | "warn" }[] = [
+  { filter: "all", label: "accounts.filter.all" },
+  { filter: "inGame", label: "accounts.presence.inGame" },
+  { filter: "online", label: "accounts.presence.online", tone: "ok" },
+  { filter: "offline", label: "accounts.presence.offline" },
+  { filter: "invalid", label: "accounts.status.invalid", tone: "bad" },
+  { filter: "unknown", label: "accounts.status.unknown", tone: "warn" },
+];
+
 /** What the Status cell shows: presence for a valid cookie (Studio counts as online), else the cookie status. */
 const shownKey = (a: AccountSummary, p?: Presence): Filter | "valid" => {
   if (a.status !== "valid") return a.status;
@@ -373,6 +383,21 @@ export function AccountsView({ accounts, groups, density, vaultMode, clipboardSe
           </>
         ) : (
           <>
+            <div className="counters" role="group" aria-label={t("accounts.title")}>
+              {STRIP.map((c) => (
+                <button
+                  key={c.filter}
+                  className="counter"
+                  data-tone={c.tone}
+                  data-on={filter === c.filter || undefined}
+                  aria-pressed={filter === c.filter}
+                  onClick={() => setFilter(c.filter)}
+                >
+                  <span>{t(c.label)}</span>
+                  <b>{counts(c.filter)}</b>
+                </button>
+              ))}
+            </div>
             <div className="flex flex-wrap items-center gap-3">
               <label className="field flex items-center gap-2 flex-[1_1_160px] max-w-[320px] w-auto text-dim focus-within:border-[var(--focus)]">
                 <Icon name="search" size={14} />

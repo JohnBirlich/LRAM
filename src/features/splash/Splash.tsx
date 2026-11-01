@@ -5,9 +5,9 @@ import "./splash.css";
 /** When the window grows: the animation settles at 3 s (79% of 3.8 s), then holds 2 s. */
 const GROW_MS = 3000 + 2000;
 /** Set once the splash has run: a webview reload doesn't play it again. */
-const KEY = "roalt.splash";
+const KEY = "lram.splash";
 
-/** The RoALT tile (`Logo` in ui/Icon), with its hole as an evenodd cut-out. */
+/** The LRAM tile (`Logo` in ui/Icon), with its hole as an evenodd cut-out. */
 const TILE =
   "M8.5 7.5h6a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-6a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z M10.7 10.3h1.6a.4.4 0 0 1 .4.4v1.6a.4.4 0 0 1-.4.4h-1.6a.4.4 0 0 1-.4-.4v-1.6a.4.4 0 0 1 .4-.4z";
 
@@ -29,7 +29,7 @@ function seen() {
   }
 }
 
-/** The start-up splash over the app: the tile glitches into the RoALT mark, then the window
+/** The start-up splash over the app: the tile glitches into the LRAM mark, then the window
  * (opened small by `splash::start`) grows into the app and this fades away. */
 export function Splash() {
   const [state, setState] = useState<"play" | "out" | "gone">(() => (seen() ? "gone" : "play"));

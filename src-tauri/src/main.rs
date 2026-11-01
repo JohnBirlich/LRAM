@@ -53,7 +53,7 @@ pub struct App {
     pub self_update: self_update::SelfUpdater,
     /// Whether a Public network is connected (`network`).
     pub network: network::Network,
-    /// When the shutdown RoALT scheduled is due (Unix ms; `commands::shutdown_schedule`).
+    /// When the shutdown LRAM scheduled is due (Unix ms; `commands::shutdown_schedule`).
     pub shutdown: Mutex<Option<i64>>,
     /// Rotated cookies that arrived while the vault was locked, stored at the next unlock.
     pub rotated_later: Mutex<Vec<(i64, vault::Secret)>>,
@@ -78,13 +78,16 @@ impl App {
     }
 }
 
+/// The database file. Frozen at the original product name on purpose: a folder moved, backed up or
+/// adopted from a build before the rename keeps opening without a migration, and the name is only
+/// ever seen by someone who opens the data folder.
 pub const DB_FILE: &str = "roalt.db";
 /// The database, its journal and its key (`storage::key_path`): all a data folder move ever
 /// deletes, from the old folder.
 pub const DB_FILES: [&str; 4] = [DB_FILE, "roalt.db-wal", "roalt.db-shm", "roalt.db.key"];
 const LOCATION: &str = "location.json";
 
-/// `%LOCALAPPDATA%\RoALT\location.json`: where the data folder was moved to (and from, until
+/// `%LOCALAPPDATA%\LRAM\location.json`: where the data folder was moved to (and from, until
 /// the next start has deleted the old database).
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -94,22 +97,33 @@ pub struct Location {
     pub moved_from: Option<PathBuf>,
 }
 
-/// `%LOCALAPPDATA%\RoALT`: the data folder unless moved, and where location.json lives.
+/// `%LOCALAPPDATA%\LRAM`: the data folder unless moved, and where location.json lives. A folder
+/// from before the rename (`%LOCALAPPDATA%\RoALT`) that holds a database is taken over instead of
+/// ignored, so no account is lost to a rename. `Settings → Change data folder` moves it anywhere,
+/// which is the way to get `LRAM` with its data.
 pub fn default_dir() -> PathBuf {
-    std::env::var_os("LOCALAPPDATA").map(PathBuf::from).unwrap_or_else(std::env::temp_dir).join("RoALT")
+    let local = std::env::var_os("LOCALAPPDATA").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
+    let current = local.join("LRAM");
+    let legacy = local.join("RoALT");
+    if !current.exists() && legacy.join(DB_FILE).is_file() { legacy } else { current }
 }
 
-/// A test run (`ROALT_DATA_DIR`): its data folder can't be moved.
+/// A test run's data folder variable, `LRAM_DATA_DIR` (or the name it had before the rename).
+fn data_dir_var() -> Option<std::ffi::OsString> {
+    std::env::var_os("LRAM_DATA_DIR").or_else(|| std::env::var_os("ROALT_DATA_DIR"))
+}
+
+/// A test run (`LRAM_DATA_DIR`): its data folder can't be moved.
 pub fn data_dir_overridden() -> bool {
-    std::env::var_os("ROALT_DATA_DIR").is_some()
+    data_dir_var().is_some()
 }
 
-/// `ROALT_DATA_DIR` (test runs), else the folder `%LOCALAPPDATA%\RoALT\location.json` names
-/// (`dataDir`), else `%LOCALAPPDATA%\RoALT`. After a move, also the folder it left
+/// `LRAM_DATA_DIR` (test runs), else the folder `%LOCALAPPDATA%\LRAM\location.json` names
+/// (`dataDir`), else `%LOCALAPPDATA%\LRAM`. After a move, also the folder it left
 /// (`movedFrom`): `init` deletes its database files once the new database has opened, then
 /// drops `movedFrom`. Err: the moved folder isn't available (a message for `fatal`).
 fn data_dir() -> std::result::Result<(PathBuf, Option<PathBuf>), String> {
-    if let Some(d) = std::env::var_os("ROALT_DATA_DIR") {
+    if let Some(d) = data_dir_var() {
         return Ok((d.into(), None));
     }
     let default = default_dir();
@@ -129,7 +143,7 @@ fn chosen_dir(default: PathBuf, json: Option<&str>) -> std::result::Result<(Path
                 Ok((default, None))
             } else {
                 Err(tr!(
-                    "RoALT's data folder {folder} isn't available (no {db}). Connect that drive and start RoALT again, \
+                    "LRAM's data folder {folder} isn't available (no {db}). Connect that drive and start LRAM again, \
                      or delete {location} to start fresh in the default folder.",
                     folder = l.data_dir.display(),
                     db = DB_FILE,
@@ -165,22 +179,22 @@ pub fn same_dir(a: &Path, b: &Path) -> bool {
 }
 
 /// Where a data folder move to `path` goes: a full path that isn't the current folder or
-/// inside it, and holds no RoALT database yet.
+/// inside it, and holds no LRAM database yet.
 pub fn move_target(current: &Path, path: &str) -> Result<PathBuf> {
     let refuse = |why: String| Err(AppError::Invalid(why));
     let path = Path::new(path.trim());
     if !path.is_absolute() {
-        return refuse(tr!("Pick a full folder path, like D:\\RoALT."));
+        return refuse(tr!("Pick a full folder path, like D:\\LRAM."));
     }
     let target = std::path::absolute(path)?;
     if same_dir(&target, current) {
-        return refuse(tr!("RoALT already keeps its data there."));
+        return refuse(tr!("LRAM already keeps its data there."));
     }
     if path_key(&target).starts_with(&path_key(current)) {
         return refuse(tr!("Pick a folder outside the current data folder."));
     }
     if DB_FILES.iter().any(|f| target.join(f).exists()) {
-        return refuse(tr!("That folder already has a RoALT database. Pick another one."));
+        return refuse(tr!("That folder already has a LRAM database. Pick another one."));
     }
     Ok(target)
 }
@@ -222,7 +236,7 @@ fn main_window(app: &TauriApp, data_dir: &Path, skip_splash: bool) -> tauri::Res
     let bg = Color(5, 5, 6, 255);
 
     let mut builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
-        .title("RoALT")
+        .title("LRAM")
         .inner_size(splash::DEFAULT.0, splash::DEFAULT.1)
         // The minimum size is set once the splash has grown (`splash`); shown by it too.
         .visible(false)
@@ -247,7 +261,7 @@ fn main_window(app: &TauriApp, data_dir: &Path, skip_splash: bool) -> tauri::Res
     splash::start(app.handle(), &w, skip_splash)
 }
 
-/// Only the RoALT window: pages in Roblox windows are never to reach a command, whatever origin
+/// Only the LRAM window: pages in Roblox windows are never to reach a command, whatever origin
 /// they manage to appear as.
 fn main_only(handler: impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static) -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
     move |invoke| {
@@ -260,7 +274,7 @@ fn main_only(handler: impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'stati
     }
 }
 
-/// The RoALT window stays on the app's own pages.
+/// The LRAM window stays on the app's own pages.
 fn in_app(url: &url::Url) -> bool {
     let host = url.host_str();
     (host == Some("tauri.localhost") && url.port().is_none() && url.username().is_empty() && url.password().is_none())
@@ -269,7 +283,7 @@ fn in_app(url: &url::Url) -> bool {
         || (cfg!(debug_assertions) && host == Some("localhost"))
 }
 
-/// Keeps a folder RoALT creates from being writable by other users of the PC: what lands in it
+/// Keeps a folder LRAM creates from being writable by other users of the PC: what lands in it
 /// includes the UI's WebView2 profile. A drive without permissions (exFAT) can't, and is left so.
 pub fn restrict_to_user(dir: &Path) {
     use std::os::windows::process::CommandExt;
@@ -330,12 +344,12 @@ fn fatal(message: &str) -> ! {
     log::error!("{message}");
     // Before the log plugin exists `log::error!` goes nowhere, so append the line directly.
     if let Some(dir) = LOG_DIR.get()
-        && let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(dir.join("roalt.log"))
+        && let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(dir.join("lram.log"))
     {
         let _ = writeln!(f, "[fatal] {message}");
     }
     // SAFETY: a plain modal message box with no owner window.
-    unsafe { MessageBoxW(None, &windows::core::HSTRING::from(message), windows::core::w!("RoALT"), MB_ICONERROR | MB_OK) };
+    unsafe { MessageBoxW(None, &windows::core::HSTRING::from(message), windows::core::w!("LRAM"), MB_ICONERROR | MB_OK) };
     std::process::exit(1)
 }
 
@@ -361,14 +375,14 @@ fn panic_hook() {
 fn init(app: &TauriApp, data_dir: &Path, moved_from: Option<&Path>) -> std::result::Result<(), String> {
     webview::sweep_temp_profiles(data_dir);
     let db_path = data_dir.join(DB_FILE);
-    let db = storage::Db::open(&db_path).map_err(|e| tr!("RoALT can't open its database {path}: {why}", path = db_path.display(), why = e.message()))?;
+    let db = storage::Db::open(&db_path).map_err(|e| tr!("LRAM can't open its database {path}: {why}", path = db_path.display(), why = e.message()))?;
     let record = db.vault_record().map_err(|e| e.message())?;
     // Only a database with a vault is the copy that replaces the old one.
     let moved_from = moved_from.filter(|_| record.is_some());
     let vault = match record {
         Some(rec) => vault::Vault::open(&rec).map_err(|e| {
             tr!(
-                "RoALT can't open its vault on this Windows account ({why}).\n\nIf this data folder came from another PC or \
+                "LRAM can't open its vault on this Windows account ({why}).\n\nIf this data folder came from another PC or \
                  Windows account, rename {path} and import a .roalt backup.",
                 why = e.message(),
                 path = db_path.display()
@@ -429,12 +443,12 @@ fn init(app: &TauriApp, data_dir: &Path, moved_from: Option<&Path>) -> std::resu
     if let Err(e) = tray::setup(app.handle()) {
         log::warn!("no tray icon: {e}");
     }
-    // Before anything else is started, so a newer RoALT is offered as soon as possible.
+    // Before anything else is started, so a newer LRAM is offered as soon as possible.
     self_update::spawn(app.handle().clone());
     app.manage(splash::Pending::default());
     main_window(app, data_dir, settings.skip_splash).map_err(|e| {
         tr!(
-            "RoALT can't open its window ({why}).\n\nIf this PC was very busy, start RoALT again. Otherwise it needs the Microsoft Edge WebView2 Runtime: \
+            "LRAM can't open its window ({why}).\n\nIf this PC was very busy, start LRAM again. Otherwise it needs the Microsoft Edge WebView2 Runtime: \
              https://go.microsoft.com/fwlink/p/?LinkId=2124703",
             why = e
         )
@@ -452,7 +466,7 @@ fn init(app: &TauriApp, data_dir: &Path, moved_from: Option<&Path>) -> std::resu
     Ok(())
 }
 
-/// Windows drops the bandwidth policy when it restarts; RoALT never sets it again on its own
+/// Windows drops the bandwidth policy when it restarts; LRAM never sets it again on its own
 /// (that needs admin rights), so it says so once the window is up.
 fn remind_bandwidth(handle: AppHandle) {
     tauri::async_runtime::spawn(async move {
@@ -491,7 +505,7 @@ fn main() {
     i18n::set("");
     let (data_dir, moved_from) = data_dir().unwrap_or_else(|e| fatal(&e));
     if let Err(e) = std::fs::create_dir_all(&data_dir) {
-        fatal(&tr!("RoALT can't create its data folder {path}: {why}", path = data_dir.display(), why = e));
+        fatal(&tr!("LRAM can't create its data folder {path}: {why}", path = data_dir.display(), why = e));
     }
     let log_dir = data_dir.join("logs");
     let _ = std::fs::create_dir_all(&log_dir);
@@ -508,7 +522,7 @@ fn main() {
                 .target(Target::new(TargetKind::Webview))
                 .level(log::LevelFilter::Info)
                 .level_for("roalt", log::LevelFilter::Debug)
-                // roalt.log plus the 4 before it, 5 MB each.
+                // lram.log plus the 4 before it, 5 MB each.
                 .max_file_size(5 << 20)
                 .rotation_strategy(RotationStrategy::KeepSome(5))
                 .build(),
@@ -640,7 +654,7 @@ fn main() {
             commands::network_status,
         ]))
         .build(tauri::generate_context!())
-        .unwrap_or_else(|e| fatal(&tr!("RoALT failed to start: {why}", why = e)))
+        .unwrap_or_else(|e| fatal(&tr!("LRAM failed to start: {why}", why = e)))
         .run(|app, event| {
             // Before the Exit event: the clipboard plugin has cleaned up by then.
             if let tauri::RunEvent::ExitRequested { .. } = event {
@@ -742,7 +756,7 @@ mod tests {
     fn a_finished_move_deletes_only_the_old_database() {
         let tmp = temp_dir();
         let (old, new) = (tmp.join("old"), tmp.join("new"));
-        for f in DB_FILES.iter().chain(&["notes.txt", r"logs\roalt.log", r"webview\x"]) {
+        for f in DB_FILES.iter().chain(&["notes.txt", r"logs\lram.log", r"webview\x"]) {
             touch(&old.join(f));
             touch(&new.join(f));
         }
@@ -762,7 +776,7 @@ mod tests {
         assert!(remove_old_db(&new, &old));
         assert_eq!(left(&old), 0);
         assert_eq!(left(&new), DB_FILES.len());
-        assert!(old.join("notes.txt").exists() && old.join(r"logs\roalt.log").exists() && old.join(r"webview\x").exists());
+        assert!(old.join("notes.txt").exists() && old.join(r"logs\lram.log").exists() && old.join(r"webview\x").exists());
         // Already gone: nothing to do.
         assert!(remove_old_db(&new, &old));
         std::fs::remove_dir_all(&tmp).unwrap();

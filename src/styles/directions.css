@@ -1,600 +1,570 @@
-/* Design directions — three proposals on top of the current "Soft Deck" look.
+/* Design layer — the LRAM look, built from the two reference screenshots:
+ * dark navy surfaces, 1 px structural borders, square corners, blue-violet accent, uppercase
+ * micro-labels, dense tables, a log well.
  *
- * Everything here is opt-in: <html data-direction="slate|studio|grid">. With no attribute (or
- * "soft") every rule in this file is inert, so the shipped design is untouched.
+ * <html data-direction="lram"> is the default (src/main.tsx). Without the attribute — or with
+ * "soft" — every rule here is inert and the original LRAM design shows through, which is what the
+ * dev switcher uses for an A/B.
  *
- * Each direction overrides three things:
- *   1. tokens (colour, elevation, radius, type),
- *   2. the skin of the shared components (.panel, .btn, .field, .nav-item, ...),
- *   3. the shell (sidebar, sheet, title bar).
- *
- * Dark palettes only: they sit under :not([data-theme="light"]) so the light theme keeps its own
- * contrast-checked colours while still getting the new shapes and layout.
- *
- * A user-picked accent (Settings → Accent, <html data-accent>) always wins over a direction's
- * proposed default: that is the one thing the user already chose.
+ * Dark palette only: it sits under :not([data-theme="light"]) so the light theme keeps its own
+ * contrast-checked colours while still getting the shapes.
  */
 
 @layer components {
-  /* ─────────────────────────────────────────────────────────────── A. SLATE ────────────────
-     Flat, quiet, instrument-panel. No neumorphism: 1 px lines do the work instead of shadows.
-     Radii 8–12, denser rows, accent as a thin marker, monospace numbers. */
+  /* ─────────────────────────────────────────────────────────────── Tokens ────────────────── */
 
-  :root[data-direction="slate"]:not([data-theme="light"]) {
-    --frame: #08090b;
-    --bg: #0f1115;
-    --panel: #14171c;
-    --raised: #171b21;
-    --hover: #1c2028;
-    --sel: #20252e;
-    --line: #262b34;
-    --line-strong: #4a5160;
-    --hair: rgb(255 255 255 / 0.06);
-    --text: #f1f3f7;
-    --dim: #98a1af;
-    --grey: #78818f;
-    --grid: rgb(255 255 255 / 0.03);
+  :root[data-direction="lram"]:not([data-theme="light"]) {
+    /* Surfaces, sampled from the reference: #171e2a surfaces, #111720 content, #0f131b fields. */
+    --frame: #0c1017;
+    --bg: #111720;
+    --panel: #171e2a;
+    --raised: #1b2331;
+    --hover: #232e3f;
+    --sel: #1e2a3d;
+    --line: #2a3446;
+    --line-strong: #3a4761;
+    --hair: rgb(120 150 200 / 0.12);
+    --text: #f0f2f6;
+    --dim: #b1bccf;
+    --grey: #7d8798;
+    --accent: #437beb;
+    --accent-text: #70a4ff;
+    --blue: #70a4ff;
+    --orange: #e8894a;
+    --err: #ff6b6b;
+    --warn: #ffd166;
+    --grid: rgb(120 160 220 / 0.05);
+    --on: var(--accent);
+    --on-ink: #ffffff;
+    --focus: #70a4ff;
+    --backdrop: rgb(4 7 12 / 0.78);
   }
-  :root[data-direction="slate"]:not([data-theme="light"]):not([data-accent]) {
-    --accent: #c6f432;
-  }
-  :root[data-direction="slate"] {
-    --face: var(--panel);
-    --sh: rgb(0 0 0 / 0.55);
-    --hl: rgb(255 255 255 / 0.03);
-    --raise: 0 1px 2px var(--sh);
-    --raise-sm: none;
-    --press: inset 0 0 0 1px var(--line);
-    --well: none;
-    --shadow: 0 18px 44px var(--sh);
-    --primary: var(--accent);
-  }
-  :root[data-direction="slate"] .sheet {
-    margin-block: 0 8px;
-    margin-inline: 0 8px;
-    border-radius: 12px;
-    border-color: var(--line);
-  }
-  :root[data-direction="slate"] .panel {
-    border-radius: 12px;
-    border-color: var(--line);
-    background: var(--panel);
-    box-shadow: var(--raise);
-  }
-  :root[data-direction="slate"] .well,
-  :root[data-direction="slate"] .bezel {
-    border-radius: 10px;
-    box-shadow: none;
-    border: 1px solid var(--line);
-    background: var(--bg);
-  }
-  :root[data-direction="slate"] .btn,
-  :root[data-direction="slate"] .chip,
-  :root[data-direction="slate"] .field,
-  :root[data-direction="slate"] .nav-item {
-    border-radius: 8px;
-  }
-  :root[data-direction="slate"] .btn,
-  :root[data-direction="slate"] .chip {
-    min-height: 40px;
-    border-color: var(--line);
-    background: var(--raised);
-    box-shadow: none;
-  }
-  :root[data-direction="slate"] .btn:hover:not(:disabled),
-  :root[data-direction="slate"] .chip:hover {
-    border-color: var(--line-strong);
-    background: var(--hover);
-    box-shadow: none;
-  }
-  :root[data-direction="slate"] .btn-primary {
-    background: var(--accent);
-    border-color: var(--primary-edge);
-  }
-  :root[data-direction="slate"] .btn-sm,
-  :root[data-direction="slate"] .seg,
-  :root[data-direction="slate"] .wc,
-  :root[data-direction="slate"] .menu-item,
-  :root[data-direction="slate"] .badge,
-  :root[data-direction="slate"] .kbd {
-    border-radius: 6px;
-    box-shadow: none;
-    background: var(--raised);
-    border-color: var(--line);
-  }
-  :root[data-direction="slate"] .seg[aria-pressed="true"],
-  :root[data-direction="slate"] .chip[aria-pressed="true"],
-  :root[data-direction="slate"] .chip[data-on] {
-    background: var(--sel);
-    border-color: var(--accent-text);
-    box-shadow: none;
-  }
-  :root[data-direction="slate"] .field {
-    min-height: 40px;
-    border-color: var(--line);
-    background: var(--bg);
-  }
-  :root[data-direction="slate"] .field:focus {
-    border-color: var(--accent-text);
-  }
-  :root[data-direction="slate"] .nav-item {
-    min-height: 38px;
-    padding-inline: 10px;
-    border-radius: 6px;
-    position: relative;
-  }
-  :root[data-direction="slate"] .nav-item:hover {
-    background: var(--hover);
-    box-shadow: none;
-  }
-  :root[data-direction="slate"] .nav-item[aria-current="page"],
-  :root[data-direction="slate"] .nav-item[aria-pressed="true"] {
-    background: var(--sel);
-    box-shadow: none;
-  }
-  :root[data-direction="slate"] .nav-item[aria-current="page"]::before {
-    content: "";
-    position: absolute;
-    inset-block: 8px;
-    inset-inline-start: 0;
-    width: 3px;
-    border-radius: 0 3px 3px 0;
-    background: var(--accent-text);
-  }
-  :root[data-direction="slate"] .nav-count,
-  :root[data-direction="slate"] .tag {
-    box-shadow: none;
-    background: var(--raised);
-    border: 1px solid var(--line);
-  }
-  :root[data-direction="slate"] .dlg,
-  :root[data-direction="slate"] .menu,
-  :root[data-direction="slate"] .toast {
-    border-radius: 12px;
-    border-color: var(--line);
-  }
-  :root[data-direction="slate"] .row {
-    height: 52px;
-  }
-  :root[data-direction="slate"] .row[data-selected] > td {
-    background: var(--sel);
-    box-shadow: none;
-  }
-  :root[data-direction="slate"] .row > td:first-child {
-    border-start-start-radius: 8px;
-    border-end-start-radius: 8px;
-  }
-  :root[data-direction="slate"] .row > td:last-child {
-    border-start-end-radius: 8px;
-    border-end-end-radius: 8px;
-  }
-  :root[data-direction="slate"] .page-title {
-    font-size: 24px;
-    letter-spacing: -0.015em;
-  }
-  :root[data-direction="slate"] .tick,
-  :root[data-direction="slate"] .cb {
-    box-shadow: none;
-    background: var(--bg);
-    border-radius: 6px;
-  }
-  :root[data-direction="slate"] .switch,
-  :root[data-direction="slate"] .meter,
-  :root[data-direction="slate"] .range {
-    box-shadow: none;
-    background: var(--bg);
-  }
-
-  /* ────────────────────────────────────────────────────────────── B. STUDIO ────────────────
-     Friendly bento: soft elevation, big radii, a cool violet default accent, cards that float
-     over a slightly tinted page, larger hit areas. */
-
-  :root[data-direction="studio"]:not([data-theme="light"]) {
-    --frame: #0d0f14;
-    --bg: #12151c;
-    --panel: #191d26;
-    --raised: #1e232e;
-    --hover: #232936;
-    --sel: #28303f;
-    --line: #2a3140;
-    --line-strong: #4d5668;
-    --hair: rgb(255 255 255 / 0.07);
-    --text: #f0f3f9;
-    --dim: #a3adc0;
-    --grey: #7f8a9d;
-    --grid: rgb(255 255 255 / 0.03);
-  }
-  :root[data-direction="studio"]:not([data-theme="light"]):not([data-accent]) {
-    --accent: #8f7cff;
-    --on-accent: #0c0a1a;
-  }
-  :root[data-direction="studio"] {
-    --face: var(--raised);
-    --sh: rgb(6 8 14 / 0.55);
-    --hl: rgb(255 255 255 / 0.04);
-    --raise: 0 8px 24px var(--sh), 0 1px 0 var(--hl) inset;
-    --raise-sm: 0 2px 8px var(--sh);
-    --press: inset 0 0 0 1px color-mix(in oklab, var(--accent) 55%, transparent);
-    --well: inset 0 1px 2px var(--sh);
-    --shadow: 0 30px 70px rgb(4 6 10 / 0.6);
-    --primary: linear-gradient(160deg, color-mix(in oklab, var(--accent) 92%, #fff), var(--accent));
-  }
-  :root[data-direction="studio"] .sheet {
-    margin-block: 0 12px;
-    margin-inline: 0 12px;
-    border-radius: 24px;
-    border-color: var(--line);
-    background:
-      radial-gradient(900px 320px at 12% -8%, color-mix(in oklab, var(--accent) 12%, transparent), transparent 70%),
-      var(--bg);
-  }
-  :root[data-direction="studio"] .panel {
-    border-radius: 22px;
-    border-color: var(--line);
-    background: var(--panel);
-    box-shadow: var(--raise);
-  }
-  :root[data-direction="studio"] .well,
-  :root[data-direction="studio"] .bezel {
-    border-radius: 16px;
-    background: var(--bg);
-    box-shadow: var(--well);
-    border-color: var(--line);
-  }
-  :root[data-direction="studio"] .btn,
-  :root[data-direction="studio"] .chip,
-  :root[data-direction="studio"] .field,
-  :root[data-direction="studio"] .nav-item {
-    border-radius: 14px;
-    border-color: var(--line);
-  }
-  :root[data-direction="studio"] .btn,
-  :root[data-direction="studio"] .chip {
-    background: var(--raised);
-    box-shadow: var(--raise-sm);
-  }
-  :root[data-direction="studio"] .btn:hover:not(:disabled),
-  :root[data-direction="studio"] .chip:hover {
-    background: var(--hover);
-    box-shadow: var(--raise);
-  }
-  :root[data-direction="studio"] .btn-primary {
-    background: var(--primary);
-    border-color: transparent;
-    box-shadow: 0 6px 18px color-mix(in oklab, var(--accent) 35%, transparent);
-  }
-  :root[data-direction="studio"] .btn-sm,
-  :root[data-direction="studio"] .seg,
-  :root[data-direction="studio"] .wc,
-  :root[data-direction="studio"] .menu-item {
-    border-radius: 10px;
-  }
-  :root[data-direction="studio"] .seg,
-  :root[data-direction="studio"] .wc {
-    background: var(--raised);
-    border-color: var(--line);
-    box-shadow: none;
-  }
-  :root[data-direction="studio"] .seg[aria-pressed="true"],
-  :root[data-direction="studio"] .chip[aria-pressed="true"],
-  :root[data-direction="studio"] .chip[data-on] {
-    background: color-mix(in oklab, var(--accent) 18%, var(--panel));
-    border-color: var(--accent-text);
-    box-shadow: none;
-  }
-  :root[data-direction="studio"] .field {
-    min-height: 44px;
-    background: var(--bg);
-    border-color: var(--line);
-  }
-  :root[data-direction="studio"] .field:focus {
-    border-color: var(--accent-text);
-    box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 22%, transparent);
-  }
-  :root[data-direction="studio"] .nav-item {
-    min-height: 44px;
-    padding-inline: 12px;
-    color: var(--dim);
-  }
-  :root[data-direction="studio"] .nav-item:hover {
-    background: var(--hover);
-    box-shadow: none;
-  }
-  :root[data-direction="studio"] .nav-item[aria-current="page"],
-  :root[data-direction="studio"] .nav-item[aria-pressed="true"] {
-    background: var(--raised);
+  /* Delegated by the reference: headings and key labels are the lighter blue. */
+  :root[data-direction="lram"]:not([data-theme="light"]) :is(.brand-name, .page-title) {
     color: var(--text);
-    box-shadow: var(--raise-sm);
   }
-  :root[data-direction="studio"] .nav-count {
-    background: var(--raised);
-    box-shadow: none;
-    border-radius: 999px;
+  :root[data-direction="lram"]:not([data-theme="light"]) :is(.section-title, .nav-heading, .group-title) {
+    color: var(--accent-text);
   }
-  :root[data-direction="studio"] .dlg,
-  :root[data-direction="studio"] .menu,
-  :root[data-direction="studio"] .toast {
-    border-radius: 22px;
-    border-color: var(--line);
-  }
-  :root[data-direction="studio"] .row > td:first-child {
-    border-start-start-radius: 12px;
-    border-end-start-radius: 12px;
-  }
-  :root[data-direction="studio"] .row > td:last-child {
-    border-start-end-radius: 12px;
-    border-end-end-radius: 12px;
-  }
-  :root[data-direction="studio"] .row[data-selected] > td {
-    background: color-mix(in oklab, var(--accent) 14%, var(--bg));
-    box-shadow: none;
-  }
-  :root[data-direction="studio"] .tag {
-    border-radius: 999px;
-    box-shadow: none;
-    background: var(--raised);
-  }
-  :root[data-direction="studio"] .page-title {
-    font-size: 28px;
-    letter-spacing: -0.02em;
-  }
-
-  /* ───────────────────────────────────────────────────────────────── C. GRID ───────────────
-     Tactical HUD: sharp corners, hairline grid, cyan default accent, monospace headings and
-     numerals, glow instead of shadow. Dense. */
-
-  :root[data-direction="grid"]:not([data-theme="light"]) {
-    --frame: #05070a;
-    --bg: #0a0d11;
-    --panel: #0c1015;
-    --raised: #0f141a;
-    --hover: #121820;
-    --sel: #14202a;
-    --line: #1c2733;
-    --line-strong: #3b4d5e;
-    --hair: rgb(120 200 220 / 0.14);
-    --text: #e7f0f5;
-    --dim: #90a2b1;
-    --grey: #6d7f8e;
-    --grid: rgb(120 190 210 / 0.06);
-  }
-  :root[data-direction="grid"]:not([data-theme="light"]):not([data-accent]) {
-    --accent: #35e0ff;
-    --on-accent: #04161b;
-  }
-  :root[data-direction="grid"] {
-    --face: var(--raised);
-    --sh: rgb(0 0 0 / 0.65);
-    --hl: rgb(80 200 230 / 0.05);
+  :root[data-direction="lram"] {
+    --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+    --face: #1b2331;
+    --sh: rgb(0 0 0 / 0.5);
+    --hl: rgb(255 255 255 / 0.04);
     --raise: none;
     --raise-sm: none;
     --press: inset 0 0 0 1px var(--accent);
-    --well: inset 0 0 0 1px var(--line);
-    --shadow: 0 0 0 1px var(--line), 0 24px 60px rgb(0 0 0 / 0.7);
-    --primary: var(--accent);
+    --well: none;
+    --shadow: 0 24px 60px rgb(2 4 8 / 0.7);
+    --primary: linear-gradient(180deg, #4d86f2, #3a6fdd);
+    --primary-edge: #2f62cc;
   }
-  :root[data-direction="grid"] .sheet {
-    margin-block: 0 6px;
-    margin-inline: 0 6px;
-    border-radius: 2px;
-    border-color: var(--line);
-    background-image:
-      linear-gradient(var(--grid) 1px, transparent 1px),
-      linear-gradient(90deg, var(--grid) 1px, transparent 1px);
-    background-size: 40px 40px;
-    box-shadow: inset 0 0 60px rgb(0 0 0 / 0.5);
+
+  /* ─────────────────────────────────────────────────────────────── Shell ─────────────────── */
+
+  :root[data-direction="lram"] body {
+    background: var(--frame);
   }
-  :root[data-direction="grid"] .panel {
+  :root[data-direction="lram"] header[data-tauri-drag-region] {
+    height: 58px;
+    padding-inline: 14px 8px;
+    border-bottom: 1px solid var(--line);
+    background: var(--panel);
+  }
+  :root[data-direction="lram"] nav[aria-label] {
+    border-inline-end: 1px solid var(--line);
+    background: var(--panel);
+    padding: 8px 8px 10px;
+  }
+  :root[data-direction="lram"] .nav-heading {
+    padding: 4px 8px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent-text);
+  }
+  :root[data-direction="lram"] .sheet {
+    margin: 6px;
     border-radius: 2px;
     border: 1px solid var(--line);
-    background: color-mix(in oklab, var(--panel) 92%, transparent);
+    background: var(--bg);
+  }
+  :root[data-direction="lram"][data-bg] .sheet {
+    background: color-mix(in oklab, var(--bg) 88%, transparent);
+  }
+
+  /* ────────────────────────────────────────────────────────── Surfaces and cards ─────────── */
+
+  :root[data-direction="lram"] .panel {
+    border-radius: 2px;
+    border: 1px solid var(--line);
+    background: var(--panel);
     box-shadow: none;
   }
-  :root[data-direction="grid"] .well,
-  :root[data-direction="grid"] .bezel {
+  :root[data-direction="lram"] .well,
+  :root[data-direction="lram"] .bezel {
     border-radius: 2px;
     border: 1px solid var(--line);
     background: var(--bg);
     box-shadow: none;
   }
-  :root[data-direction="grid"] .btn,
-  :root[data-direction="grid"] .chip,
-  :root[data-direction="grid"] .field,
-  :root[data-direction="grid"] .nav-item,
-  :root[data-direction="grid"] .btn-sm,
-  :root[data-direction="grid"] .seg,
-  :root[data-direction="grid"] .wc,
-  :root[data-direction="grid"] .menu,
-  :root[data-direction="grid"] .menu-item,
-  :root[data-direction="grid"] .dlg,
-  :root[data-direction="grid"] .toast,
-  :root[data-direction="grid"] .badge,
-  :root[data-direction="grid"] .tag,
-  :root[data-direction="grid"] .kbd,
-  :root[data-direction="grid"] .tick,
-  :root[data-direction="grid"] .cb {
+  :root[data-direction="lram"] .bezel canvas {
+    border-radius: 0;
+  }
+
+  /* ────────────────────────────────────────────────────────────────── Controls ──────────── */
+
+  :root[data-direction="lram"] .btn,
+  :root[data-direction="lram"] .chip,
+  :root[data-direction="lram"] .field,
+  :root[data-direction="lram"] .seg,
+  :root[data-direction="lram"] .nav-item,
+  :root[data-direction="lram"] .btn-sm,
+  :root[data-direction="lram"] .wc,
+  :root[data-direction="lram"] .menu,
+  :root[data-direction="lram"] .menu-item,
+  :root[data-direction="lram"] .dlg,
+  :root[data-direction="lram"] .toast,
+  :root[data-direction="lram"] .badge,
+  :root[data-direction="lram"] .tag,
+  :root[data-direction="lram"] .kbd,
+  :root[data-direction="lram"] .tick,
+  :root[data-direction="lram"] .cb,
+  :root[data-direction="lram"] .num,
+  :root[data-direction="lram"] .sub,
+  :root[data-direction="lram"] .preset,
+  :root[data-direction="lram"] .pick,
+  :root[data-direction="lram"] .btn-play {
     border-radius: 2px;
   }
-  :root[data-direction="grid"] .btn,
-  :root[data-direction="grid"] .chip,
-  :root[data-direction="grid"] .seg {
-    border-color: var(--line-strong);
+  :root[data-direction="lram"] .btn,
+  :root[data-direction="lram"] .chip {
+    min-height: 36px;
+    padding-inline: 12px;
+    font-size: 13px;
+    font-weight: 500;
     background: var(--raised);
+    border: 1px solid var(--line-strong);
     box-shadow: none;
   }
-  :root[data-direction="grid"] .btn:hover:not(:disabled),
-  :root[data-direction="grid"] .chip:hover {
-    border-color: var(--accent-text);
-    box-shadow: 0 0 12px color-mix(in oklab, var(--accent) 25%, transparent);
-  }
-  :root[data-direction="grid"] .btn-primary {
-    background: var(--accent);
+  :root[data-direction="lram"] .btn:hover:not(:disabled),
+  :root[data-direction="lram"] .chip:hover {
+    background: var(--hover);
     border-color: var(--accent);
-    color: var(--on-accent);
-    box-shadow: 0 0 18px color-mix(in oklab, var(--accent) 45%, transparent);
+    box-shadow: none;
   }
-  :root[data-direction="grid"] .btn-play {
-    border-radius: 2px;
-    box-shadow: 0 0 26px color-mix(in oklab, var(--accent) 35%, transparent);
+  :root[data-direction="lram"] .btn:active:not(:disabled),
+  :root[data-direction="lram"] .btn[aria-pressed="true"],
+  :root[data-direction="lram"] .btn[aria-expanded="true"] {
+    background: var(--sel);
+    border-color: var(--accent);
+    box-shadow: none;
+    transform: none;
   }
-  :root[data-direction="grid"] .field {
-    min-height: 38px;
-    background: #060a0d;
-    border-color: var(--line-strong);
+  :root[data-direction="lram"] .btn-primary {
+    background: var(--primary);
+    border-color: var(--primary-edge);
+    color: #ffffff;
+    font-weight: 600;
   }
-  :root[data-direction="grid"] .field:focus {
-    border-color: var(--accent-text);
-    box-shadow: 0 0 0 1px var(--accent-text);
+  :root[data-direction="lram"] .btn-primary:hover:not(:disabled) {
+    background: linear-gradient(180deg, #5b91f5, #4076e4);
+    border-color: #5b91f5;
   }
-  :root[data-direction="grid"] .nav-item {
-    min-height: 34px;
+  :root[data-direction="lram"] .btn-sm {
+    min-height: 30px;
     padding-inline: 10px;
-    font-size: 13px;
-    letter-spacing: 0.02em;
-    color: var(--dim);
   }
-  :root[data-direction="grid"] .nav-item:hover {
+  :root[data-direction="lram"] .btn-ghost {
+    background: none;
+    border-color: transparent;
+  }
+  :root[data-direction="lram"] .btn-ghost:hover:not(:disabled) {
     background: var(--hover);
     box-shadow: none;
   }
-  :root[data-direction="grid"] .nav-item[aria-current="page"],
-  :root[data-direction="grid"] .nav-item[aria-pressed="true"] {
-    background: color-mix(in oklab, var(--accent) 12%, transparent);
-    color: var(--text);
-    box-shadow: inset 2px 0 0 var(--accent);
+  :root[data-direction="lram"] .btn-play {
+    min-height: 52px;
+    font-size: 16px;
+    letter-spacing: 0.02em;
   }
-  :root[data-direction="grid"] .nav-item[aria-current="page"] > svg {
-    filter: drop-shadow(0 0 6px color-mix(in oklab, var(--accent) 70%, transparent));
+  :root[data-direction="lram"] .wc {
+    width: 40px;
+    height: 34px;
+    border-radius: 2px;
+    border: 1px solid transparent;
   }
-  :root[data-direction="grid"] .nav-count {
+  :root[data-direction="lram"] .wc:hover {
+    background: var(--hover);
+    border-color: var(--line-strong);
     box-shadow: none;
+  }
+  :root[data-direction="lram"] .wc-close:hover {
+    background: #c42b1c;
+    border-color: #c42b1c;
+  }
+  :root[data-direction="lram"] .field {
+    min-height: 34px;
+    padding-inline: 10px;
+    font-size: 13px;
+    background: #0f131b;
+    border: 1px solid var(--line-strong);
+    box-shadow: none;
+  }
+  :root[data-direction="lram"] .field:focus {
+    border-color: var(--accent-text);
+    box-shadow: 0 0 0 1px color-mix(in oklab, var(--accent) 45%, transparent);
+  }
+  :root[data-direction="lram"] .seg {
+    min-height: 30px;
+    padding-inline: 10px;
+    background: var(--raised);
+    border-color: var(--line-strong);
+    box-shadow: none;
+  }
+  :root[data-direction="lram"] .seg:hover:not(:disabled) {
+    box-shadow: none;
+    border-color: var(--accent);
+  }
+  :root[data-direction="lram"] .seg[aria-pressed="true"],
+  :root[data-direction="lram"] .seg[aria-checked="true"] {
+    background: color-mix(in oklab, var(--accent) 22%, #0f131b);
+    border-color: var(--accent);
+    color: #ffffff;
+    box-shadow: none;
+  }
+  :root[data-direction="lram"] .chip[aria-pressed="true"],
+  :root[data-direction="lram"] .chip[data-on] {
+    background: color-mix(in oklab, var(--accent) 22%, #0f131b);
+    border-color: var(--accent);
+    color: #ffffff;
+    box-shadow: none;
+  }
+  :root[data-direction="lram"] .tag {
+    min-height: 20px;
+    padding-inline: 7px;
+    border: 1px solid var(--line);
+    background: var(--raised);
+    color: var(--dim);
+    box-shadow: none;
+    font-size: 11.5px;
+    letter-spacing: 0.02em;
+  }
+  :root[data-direction="lram"] .nav-count {
+    border-radius: 2px;
     border: 1px solid var(--line);
     background: var(--bg);
-  }
-  :root[data-direction="grid"] .row {
-    height: 46px;
-  }
-  :root[data-direction="grid"] .row > td:first-child,
-  :root[data-direction="grid"] .row > td:last-child {
-    border-radius: 0;
-  }
-  :root[data-direction="grid"] thead th {
-    font-family: var(--font-mono);
+    box-shadow: none;
     font-size: 11px;
-    letter-spacing: 0.09em;
-    text-transform: uppercase;
-    background: var(--bg);
-    border-bottom-color: var(--line-strong);
+    min-width: 22px;
   }
-  :root[data-direction="grid"] .page-title,
-  :root[data-direction="grid"] .section-title {
-    font-family: var(--font-mono);
-    font-weight: 600;
-    letter-spacing: -0.03em;
-  }
-  :root[data-direction="grid"] .page-title {
-    font-size: 23px;
-  }
-  :root[data-direction="grid"] :is(.nav-item, .sub, .page-title, .section-title) {
-    text-wrap: balance;
-  }
-  :root[data-direction="grid"] .switch,
-  :root[data-direction="grid"] .meter,
-  :root[data-direction="grid"] .range,
-  :root[data-direction="grid"] .step {
-    border-radius: 2px;
+  :root[data-direction="lram"] .tick,
+  :root[data-direction="lram"] .cb {
+    background: #0f131b;
+    border-color: var(--line-strong);
     box-shadow: none;
   }
-  :root[data-direction="grid"] .switch::after {
+  :root[data-direction="lram"] .switch {
+    width: 44px;
+    height: 24px;
+    border-radius: 2px;
+    background: #0f131b;
+    border-color: var(--line-strong);
+    box-shadow: none;
+  }
+  :root[data-direction="lram"] .switch::after {
+    top: 2px;
+    inset-inline-start: 2px;
+    width: 18px;
+    height: 18px;
+    border-radius: 1px;
+    background: var(--line-strong);
+    border-color: transparent;
+    box-shadow: none;
+  }
+  :root[data-direction="lram"] .switch[aria-checked="true"] {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+  :root[data-direction="lram"] .switch[aria-checked="true"]::after {
+    transform: translateX(19px);
+    background: #ffffff;
+  }
+  :root[data-direction="lram"] .range {
+    border-radius: 2px;
+    background: #0f131b;
+    box-shadow: none;
+  }
+  :root[data-direction="lram"] .range::-webkit-slider-thumb {
+    border-radius: 1px;
+    background: var(--accent);
+    border-color: var(--accent);
+    box-shadow: none;
+  }
+  :root[data-direction="lram"] .meter,
+  :root[data-direction="lram"] .step {
     border-radius: 1px;
     box-shadow: none;
   }
-  :root[data-direction="grid"] .row[data-selected] > td {
-    background: color-mix(in oklab, var(--accent) 10%, var(--bg));
-    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 30%, transparent);
+  :root[data-direction="lram"] .meter {
+    background: #0f131b;
   }
 
-  /* ─────────────────────────────────────────────────────────── Switcher (dev only) ───────── */
+  /* ─────────────────────────────────────────────────────────────── Navigation ───────────── */
 
-  .dir-switch {
-    position: fixed;
-    inset-block-end: 16px;
-    inset-inline-end: 16px;
-    z-index: 50;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    padding: 8px;
-    border: 1px solid var(--line-strong);
-    border-radius: 12px;
-    background: color-mix(in oklab, var(--panel) 88%, transparent);
-    backdrop-filter: blur(12px);
-    box-shadow: 0 18px 50px rgb(0 0 0 / 0.5);
-    font-size: 12px;
-  }
-  .dir-switch > span {
-    padding-inline: 4px;
+  :root[data-direction="lram"] .nav-item {
+    min-height: 34px;
+    padding-inline: 9px;
+    font-size: 13px;
+    font-weight: 500;
     color: var(--dim);
+    border: 1px solid transparent;
+  }
+  :root[data-direction="lram"] .nav-item:hover {
+    background: var(--hover);
+    color: var(--text);
+    box-shadow: none;
+  }
+  :root[data-direction="lram"] .nav-item[aria-current="page"],
+  :root[data-direction="lram"] .nav-item[aria-pressed="true"] {
+    background: color-mix(in oklab, var(--accent) 20%, #0f131b);
+    border-color: var(--accent);
+    color: #ffffff;
+    box-shadow: none;
+  }
+  :root[data-direction="lram"] .nav-item[aria-current="page"] > svg {
+    color: var(--accent-text);
+  }
+  :root[data-direction="lram"] .sub {
+    padding: 5px 10px;
+    color: var(--dim);
+  }
+  :root[data-direction="lram"] .sub:hover {
+    background: var(--hover);
+    color: var(--text);
+  }
+
+  /* ─────────────────────────────────────────────────────── Typography and headings ─────── */
+
+  :root[data-direction="lram"] .page-title {
+    font-size: 21px;
+    font-weight: 700;
     letter-spacing: 0.06em;
     text-transform: uppercase;
   }
-  .dir-switch button {
-    min-height: 30px;
-    padding-inline: 10px;
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    color: var(--text);
-    text-align: start;
+  :root[data-direction="lram"] .page-sub {
+    color: var(--dim);
   }
-  .dir-switch button[aria-pressed="true"] {
-    border-color: var(--accent-text);
+  :root[data-direction="lram"] .section-title {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  :root[data-direction="lram"] .label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--dim);
+  }
+  :root[data-direction="lram"] .mono {
+    letter-spacing: 0;
+  }
+
+  /* ─────────────────────────────────────────────────────────────── Tables ──────────────── */
+
+  :root[data-direction="lram"] .row {
+    height: 46px;
+  }
+  :root[data-direction="lram"] .row > td {
+    border-top: 1px solid var(--line);
+  }
+  :root[data-direction="lram"] .row:hover > td {
+    background: var(--hover);
+  }
+  :root[data-direction="lram"] .row[data-selected] > td {
+    background: color-mix(in oklab, var(--accent) 16%, var(--bg));
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 40%, transparent);
+  }
+  :root[data-direction="lram"] .row > td:first-child,
+  :root[data-direction="lram"] .row > td:last-child {
+    border-radius: 0;
+  }
+  :root[data-direction="lram"] thead th {
+    height: 32px;
+    background: var(--raised);
+    border-bottom: 1px solid var(--line);
+    color: var(--dim);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+  }
+  :root[data-direction="lram"] thead th + th {
+    box-shadow: inset 1px 0 0 var(--line);
+  }
+  :root[data-direction="lram"] .compact .row {
+    height: 38px;
+  }
+
+  /* ────────────────────────────────────────────────────────────── Dialogs ──────────────── */
+
+  :root[data-direction="lram"] .dlg {
+    border-radius: 2px;
+    border: 1px solid var(--line-strong);
+    background: var(--panel);
+    box-shadow: var(--shadow);
+  }
+  :root[data-direction="lram"] .dlg::backdrop {
+    background: transparent;
+  }
+  :root[data-direction="lram"] .dlg[open]::backdrop {
+    background: var(--backdrop);
+  }
+  :root[data-direction="lram"] .menu {
+    padding: 6px;
+    border-radius: 2px;
+    border: 1px solid var(--line-strong);
+    background: var(--panel);
+    box-shadow: var(--shadow);
+  }
+  :root[data-direction="lram"] .menu-item {
+    min-height: 32px;
+    font-size: 13px;
+  }
+  :root[data-direction="lram"] .toast {
+    border-radius: 2px;
+    border: 1px solid var(--line-strong);
+    background: var(--panel);
+    box-shadow: var(--shadow);
+  }
+  :root[data-direction="lram"] .toast::before {
+    border-radius: 1px;
+  }
+
+  /* ─────────────────────────────────────────────────────── Status and small marks ──────── */
+
+  :root[data-direction="lram"] .led {
+    box-shadow: none;
+    width: 8px;
+    height: 8px;
+  }
+  :root[data-direction="lram"] .alert::before {
+    transform: none;
+  }
+  :root[data-direction="lram"] .badge {
+    background: color-mix(in oklab, var(--accent) 85%, #000);
+    color: #fff;
+    box-shadow: none;
+    font-size: 11px;
+  }
+  :root[data-direction="lram"] .grip,
+  :root[data-direction="lram"] .size-handle {
+    border-radius: 1px;
+  }
+  :root[data-direction="lram"] .size-handle {
+    border-end-end-radius: 2px;
+  }
+
+  /* The title bar's brand block: name, version chip, one-line tagline (reference layout). */
+  :root[data-direction="lram"] .brand-name {
+    gap: 8px;
+    font-size: 14.5px;
+    letter-spacing: 0.09em;
+    color: #fdfdfd;
+  }
+  :root[data-direction="lram"] .brand-version {
+    padding: 1px 6px;
+    border: 1px solid color-mix(in oklab, var(--accent) 48%, transparent);
+    border-radius: 2px;
+    background: color-mix(in oklab, var(--accent) 16%, transparent);
+    color: #93bdff;
+    font-size: 10.5px;
+    line-height: 1.5;
+    letter-spacing: 0.04em;
+  }
+  :root[data-direction="lram"] .brand-sub {
+    font-size: 11px;
+    color: #b1bccf;
+  }
+
+  /* ───────────────────────────────────────────────── Counters and the log dock ──────────── */
+
+  :root[data-direction="lram"] .counters {
+    border-radius: 2px;
+    gap: 1px;
+    background: var(--line);
+  }
+  :root[data-direction="lram"] .counter {
+    padding: 6px 10px;
+    font-size: 11.5px;
+    background: var(--panel);
+  }
+  :root[data-direction="lram"] .counter:hover {
+    background: var(--hover);
+  }
+  :root[data-direction="lram"] .counter b {
+    font-size: 12.5px;
+  }
+  /* In the reference the strip's figure colours carry the meaning: green free, red taken. */
+  :root[data-direction="lram"] .counter[data-tone="ok"] b {
+    color: #9ad5b0;
+  }
+  :root[data-direction="lram"] .counter[data-tone="bad"] b {
+    color: #ff8074;
+  }
+  :root[data-direction="lram"] .counter[data-tone="warn"] b {
+    color: #ffc670;
+  }
+  :root[data-direction="lram"] .counter[data-on] {
+    background: #232e3f;
+    box-shadow: inset 0 -2px 0 var(--accent);
+  }
+
+  :root[data-direction="lram"] .logdock {
+    margin: 0 6px 6px;
+    border-radius: 2px;
+    background: var(--panel);
+  }
+  :root[data-direction="lram"] .logdock-head {
+    padding: 5px 10px;
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
     color: var(--accent-text);
   }
-}
-
-@layer components {
-  /* ─────────────────────────────────────────────────────────────── Shell ────────────────────
-     The same markup, three different frames: a flat workspace, a floating sidebar, a HUD strip. */
-
-  :root[data-direction="slate"] header[data-tauri-drag-region] {
-    padding-inline-start: 16px;
-    border-bottom: 1px solid var(--line);
+  :root[data-direction="lram"] .logdock-body {
+    height: 148px;
+    border-top: 1px solid var(--line);
+    background: #0f131b;
+    font-size: 11.5px;
   }
-  :root[data-direction="slate"] nav[aria-label] {
-    padding-inline: 6px;
+  :root[data-direction="lram"] .logdock-foot {
+    padding: 5px 10px;
+  }
+  /* The reference's log colours: timestamps and targets amber, messages plain. */
+  :root[data-direction="lram"] .log-line[data-level="info"] {
+    color: #e6e6e6;
+  }
+  :root[data-direction="lram"] .log-line[data-level="warn"] {
+    color: #ffc670;
+  }
+  :root[data-direction="lram"] .log-line[data-level="error"] {
+    color: #ff8074;
   }
 
-  /* Studio: the sidebar sits in the page like a card, next to a card of content. */
-  :root[data-direction="studio"] header[data-tauri-drag-region] {
-    height: 52px;
-    padding-inline-start: 20px;
-  }
-  :root[data-direction="studio"] nav[aria-label] {
-    margin: 6px 0 12px 12px;
-    padding-block: 8px;
-    border: 1px solid var(--line);
-    border-radius: 22px;
+  /* The dev switcher, in this language too. */
+  :root[data-direction="lram"] .dir-switch {
+    border-radius: 2px;
+    border-color: var(--line-strong);
     background: var(--panel);
-    box-shadow: var(--raise-sm);
   }
-  :root[data-direction="studio"] nav[aria-label] > div:last-child {
-    padding-inline: 10px;
-  }
-
-  /* Grid: full-bleed, hairline rules instead of gaps. */
-  :root[data-direction="grid"] header[data-tauri-drag-region] {
-    height: 40px;
-    border-bottom: 1px solid var(--line);
-  }
-  :root[data-direction="grid"] nav[aria-label] {
-    border-inline-end: 1px solid var(--line);
-    background: var(--frame);
-    padding-inline: 6px;
-  }
-  :root[data-direction="grid"] .dir-switch {
+  :root[data-direction="lram"] .dir-switch button {
     border-radius: 2px;
   }
-  :root[data-direction="grid"] .dir-switch button {
-    border-radius: 2px;
+  :root[data-direction="lram"] .dir-switch button[aria-pressed="true"] {
+    background: color-mix(in oklab, var(--accent) 22%, #0f131b);
+    border-color: var(--accent);
+    color: #ffffff;
   }
 }

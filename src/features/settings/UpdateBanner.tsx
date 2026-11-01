@@ -8,7 +8,7 @@ import { toastError } from "../../ui/Toast";
 import { isRunning } from "../launch/Running";
 import { t, tx } from "../../i18n";
 
-/** The version Later hid: not offered again until RoALT restarts, or Check now finds it. */
+/** The version Later hid: not offered again until LRAM restarts, or Check now finds it. */
 let hidden: string | null = null;
 const subs = new Set<() => void>();
 const hide = (version: string | null) => {
@@ -21,7 +21,7 @@ const subscribe = (f: () => void) => {
 };
 export const unhideUpdate = () => hide(null);
 
-/** "RoALT x.y.z is ready" under the title bar while a newer release is known (self_update). */
+/** "LRAM x.y.z is ready" under the title bar while a newer release is known (self_update). */
 export function UpdateBanner() {
   // The start-up check can finish before the app://update listener exists: ask the cached
   // result again (no network) until an update is known.
@@ -32,7 +32,7 @@ export function UpdateBanner() {
   const [busy, setBusy] = useState(false);
   if (!version || version === later) return null;
 
-  // Resolves just before RoALT quits for the installer, which starts it again.
+  // Resolves just before LRAM quits for the installer, which starts it again.
   async function update() {
     setConfirm(false);
     setBusy(true);

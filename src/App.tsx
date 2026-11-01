@@ -12,7 +12,6 @@ import { DiscordView } from "./features/discord/DiscordView";
 import { PerformanceView } from "./features/performance/PerformanceView";
 import { DebugView } from "./features/debug/DebugView";
 import { lastLaunchAccount, LaunchView } from "./features/launch/LaunchView";
-import { DonateDialog } from "./features/donate/DonateDialog";
 import { isLive, isRunning, KillAllButton } from "./features/launch/Running";
 import { draftFor, EMPTY_DRAFT, type Draft } from "./features/launch/target";
 import { MonitorView } from "./features/monitor/MonitorView";
@@ -20,6 +19,7 @@ import { ServersView } from "./features/servers/ServersView";
 import { SettingsView, SETTINGS_SECTIONS } from "./features/settings/SettingsView";
 import { Splash } from "./features/splash/Splash";
 import { UpdateBanner } from "./features/settings/UpdateBanner";
+import { LogDock } from "./ui/LogDock";
 import { PublicNetworkBanner } from "./features/settings/PublicNetworkBanner";
 import { RecoveryCodeDialog } from "./features/vault/RecoveryCodeDialog";
 import { UnlockScreen, type LockReason } from "./features/vault/UnlockScreen";
@@ -31,7 +31,7 @@ import { TitleBar } from "./ui/TitleBar";
 import { friendly, toast, toastError, Toaster } from "./ui/Toast";
 
 /** Last applied theme, read before first paint so a light-theme start does not flash dark. */
-export const THEME_KEY = "roalt.theme";
+export const THEME_KEY = "lram.theme";
 
 export default function App() {
   return (
@@ -195,7 +195,6 @@ function Shell({ vault, settings, onRecoveryCode }: { vault: VaultStatus; settin
   const instances = useInstances().data ?? [];
   const running = instances.filter(isRunning).length;
   const [view, setView] = useState<"dashboard" | "accounts" | "launch" | "performance" | "servers" | "monitor" | "discord" | "debug" | "settings">("dashboard");
-  const [donating, setDonating] = useState(false);
   const [group, setGroup] = useState<number | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
   // The Launch view's accounts; the last one launched until something else is picked.
@@ -223,7 +222,7 @@ function Shell({ vault, settings, onRecoveryCode }: { vault: VaultStatus; settin
   const known = useRef<Set<number> | null>(null);
   const viewName = t(({ dashboard: "app.nav.dashboard", accounts: "app.nav.accounts", launch: "app.nav.launch", performance: "app.nav.performance", servers: "app.nav.servers", monitor: "app.nav.monitor", discord: "app.nav.discord", debug: "app.nav.debug", settings: "app.nav.settings" } as const)[view]);
   useEffect(() => {
-    document.title = `${viewName} · RoALT`;
+    document.title = `${viewName} · LRAM`;
   }, [viewName]);
 
   // A new account needs its headshot; the backend only asks Roblox for the missing ones.
@@ -337,11 +336,6 @@ function Shell({ vault, settings, onRecoveryCode }: { vault: VaultStatus; settin
   );
   const footer = (
     <div className="flex-none flex flex-col gap-3.5 px-3 pt-3 pb-4">
-      <button className="btn w-full" onClick={() => setDonating(true)}>
-        <Icon name="heart" size={14} />
-        {t("donate.button")}
-      </button>
-      <DonateDialog open={donating} onClose={() => setDonating(false)} />
       <KillAllButton />
       <p className="flex items-center gap-2 text-[13px] text-dim" title={vault.mode === "master" ? t("app.vaultUnlockedMaster") : t("app.vaultUnlockedDpapi")}>
         <Icon name="lock" size={14} />
@@ -378,6 +372,7 @@ function Shell({ vault, settings, onRecoveryCode }: { vault: VaultStatus; settin
       ) : (
       <nav aria-label={t("app.sections")} style={{ width: nav.width }} className="flex-none flex flex-col min-h-0">
         <div className="scroll flex-1 min-h-0 flex flex-col gap-1.5 px-3 pt-2.5 pb-3" style={{ scrollbarWidth: "none" }}>
+          <div className="nav-heading">{t("app.sections")}</div>
           {/* Sorted within each group; More tools and Settings stay where they are. */}
           {sections(MAIN_SECTIONS, true, "flex flex-col gap-1.5")}
           <button className="nav-item" aria-expanded={showTools} onClick={() => setToolsOpen(!showTools)}>
@@ -454,6 +449,8 @@ function Shell({ vault, settings, onRecoveryCode }: { vault: VaultStatus; settin
         <SettingsView vault={vault} settings={settings} onPerformance={() => setView("performance")} onRecoveryCode={onRecoveryCode} />
       )}
       </div>
+      {/* The Debug page is the log; everywhere else it waits collapsed at the bottom. */}
+      {view !== "debug" && <LogDock />}
       </div>
 
       <AddAccountDialog

@@ -4,6 +4,10 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Icon, Logo } from "./Icon";
 import { t } from "../i18n";
 
+/** The product name and its one-line description, as the window shows them. */
+export const PRODUCT = "LRAM";
+export const TAGLINE = "Local Roblox Account Manager";
+
 /** Custom title bar (window decorations are off). Empty space drags; double-click maximizes. */
 export function TitleBar({ dark, onToggleTheme, onLock, onRefresh, sideTabs, onToggleTabs }: {
   dark: boolean;
@@ -27,9 +31,16 @@ export function TitleBar({ dark, onToggleTheme, onLock, onRefresh, sideTabs, onT
 
   return (
     // Left to right in every language: the window's keys stay where Windows has them.
-    <header dir="ltr" data-tauri-drag-region="deep" className="h-11 flex-none flex items-center gap-2.5 ps-[18px]">
+    <header dir="ltr" data-tauri-drag-region="deep" className="titlebar flex-none flex items-center gap-3 ps-3.5">
       <Logo />
-      <span className="font-bold tracking-[0.02em]">RoALT</span>
+      <div className="brand">
+        <div className="brand-name">
+          <span>{PRODUCT}</span>
+          <span className="brand-version">v{import.meta.env.APP_VERSION}</span>
+        </div>
+        {/* The product's own words, not UI copy: like the name, they are not translated. */}
+        <div className="brand-sub">{TAGLINE}</div>
+      </div>
       <div className="ms-auto flex items-center">
         {onRefresh && (
           <button className="wc" aria-label={t("ui.refresh")} title={t("ui.refreshKey", { key: "F5" })} onClick={onRefresh}>

@@ -1,4 +1,4 @@
-//! What a client that ended badly leaves behind, written into RoALT's log (so into the diagnostics
+//! What a client that ended badly leaves behind, written into LRAM's log (so into the diagnostics
 //! report too): how long it really lived, the PC's state, the end of its logs cleaned line by line
 //! (`diagnostics::redact`), a crash dump if Roblox's crash handler wrote one, Windows' own record of
 //! the fault, and what all that points to. The process's exit code isn't here: reading it would mean
@@ -62,7 +62,7 @@ fn verdict(c: &Ended, has_log: bool, dump: bool, fault: bool) -> String {
         _ if dump || fault => "the client itself crashed: see the crash dump and Windows' record below".to_owned(),
         _ if !has_log => "it ended before writing a log, with no crash recorded: it didn't get to start properly (look at antivirus, a damaged Roblox install or the client's version)".to_owned(),
         _ if early => "it ended early by itself with no crash recorded: something closed it or it closed itself (look at the end of its log, an update or the anti-cheat)".to_owned(),
-        _ => "it ended with no crash recorded: closed by hand, by another program or by itself (Roblox can't tell RoALT which)".to_owned(),
+        _ => "it ended with no crash recorded: closed by hand, by another program or by itself (Roblox can't tell LRAM which)".to_owned(),
     }
 }
 

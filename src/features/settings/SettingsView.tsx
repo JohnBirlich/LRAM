@@ -11,7 +11,6 @@ import { Icon } from "../../ui/Icon";
 import { friendly, toast, toastError } from "../../ui/Toast";
 import { MultiNotice, useMultiToggle } from "../launch/Running";
 import { PasswordDialog } from "../vault/PasswordDialog";
-import { unhideUpdate } from "./UpdateBanner";
 
 /** Accent presets: value ("" is the theme's own lime) and name. Any other colour comes from the picker. */
 const ACCENTS: [string, Key][] = [
@@ -38,7 +37,7 @@ export const SETTINGS_SECTIONS: readonly (readonly [string, Key])[] = [
 ];
 
 const CLOSED_KEY = "roalt.settingsClosed";
-/** The sections folded on this PC; all open on first run. When this PC keeps no storage, they last until RoALT closes. */
+/** The sections folded on this PC; all open on first run. When this PC keeps no storage, they last until LRAM closes. */
 const closed = (() => {
   try {
     return new Set<string>(JSON.parse(localStorage.getItem(CLOSED_KEY) ?? "[]"));
@@ -69,7 +68,7 @@ const SHORTCUTS: [Key, string][] = [
 ];
 
 const backupFilter = () => [{ name: t("settings.backupFilter"), extensions: ["roalt"] }];
-const RELEASES = "https://github.com/inspectsoftware/RoALT/releases";
+const RELEASES = "https://github.com/JohnBirlich/RAM/releases";
 const cancelled = () => ({ kind: "cancelled", message: "" });
 
 type VaultDialog = "set" | "change" | "remove" | "export";
@@ -139,7 +138,7 @@ export function SettingsView({ vault, settings, onPerformance, onRecoveryCode }:
         <header className="flex flex-wrap items-start justify-between gap-3 mb-2">
           <h1 className="page-title">{t("settings.title")}</h1>
           <dl aria-label={t("settings.section.about")} className="panel grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 px-3.5 py-2 text-[13px] max-w-[280px]">
-            <dt className="text-dim">RoALT</dt>
+            <dt className="text-dim">LRAM</dt>
             <dd className="mono truncate">{import.meta.env.APP_VERSION}</dd>
             <dt className="text-dim">Roblox</dt>
             <dd className="mono truncate" title={client?.version ?? undefined}>{client?.version ?? t("settings.versionUnknown")}</dd>
@@ -315,8 +314,7 @@ export function SettingsView({ vault, settings, onPerformance, onRecoveryCode }:
         </Section>
 
         <Section id="about" title={t("settings.section.about")}>
-        <SelfUpdateRow on={settings.selfUpdate} onChange={(selfUpdate) => set.mutate({ selfUpdate })} />
-        <Row title={<>RoALT <span className="mono">{import.meta.env.APP_VERSION}</span></>} hint={t("settings.aboutHint")} last>
+        <Row title={<>LRAM <span className="mono">{import.meta.env.APP_VERSION}</span></>} hint={t("settings.aboutHint")} last>
           <button className="btn" onClick={() => openUrl(RELEASES).catch(toastError)}>
             {t("settings.openReleases")}
             <Icon name="external" size={12} />
@@ -526,7 +524,7 @@ export function SettingsView({ vault, settings, onPerformance, onRecoveryCode }:
         nextLabel={t("settings.backupPassword")}
         onSubmit={async ({ current, next }) => {
           const date = new Date().toISOString().slice(0, 10);
-          const path = await saveFile({ defaultPath: `RoALT-backup-${date}.roalt`, filters: backupFilter() });
+          const path = await saveFile({ defaultPath: `LRAM-backup-${date}.roalt`, filters: backupFilter() });
           if (!path) throw cancelled();
           const n = await api.backupExport(path, next, master ? current : undefined);
           toast(t("settings.exported", { count: n }));
@@ -884,44 +882,7 @@ function installStep(p: InstallProgress | null) {
   }
 }
 
-/** The self-updater's switch and Check now, with what the check found. */
-function SelfUpdateRow({ on, onChange }: { on: boolean; onChange: (on: boolean) => void }) {
-  const qc = useQueryClient();
-  const [result, setResult] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  async function check() {
-    setBusy(true);
-    setResult(null);
-    try {
-      const u = await api.selfUpdateCheck();
-      unhideUpdate();
-      qc.setQueryData(qk.appUpdate, u);
-      setResult(u.available ? t("settings.updateAvailable", { version: u.available }) : t("settings.upToDate"));
-    } catch (e) {
-      setResult(friendly(asError(e)));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <Row
-      title={t("settings.selfUpdate")}
-      hint={t("settings.selfUpdateHint")}
-    >
-      <span className="flex flex-wrap items-center gap-3">
-        {result && <span className="text-xs text-dim" role="status">{result}</span>}
-        <button className="btn btn-sm" disabled={busy} onClick={() => void check()}>
-          {busy ? t("settings.checking") : t("settings.checkNow")}
-        </button>
-        <Switch label={t("settings.selfUpdate")} checked={on} onChange={onChange} />
-      </span>
-    </Row>
-  );
-}
-
-/** The client RoALT starts, its version, and Install / Update Roblox (Roblox's own client only). */
+/** The client LRAM starts, its version, and Install / Update Roblox (Roblox's own client only). */
 function ClientRow({ client }: { client: RobloxClient | undefined }) {
   const qc = useQueryClient();
   const [progress, setProgress] = useState<InstallProgress | null>(null);

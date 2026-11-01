@@ -84,7 +84,7 @@ export function asError(e: unknown): ErrorPayload {
   return { kind: "internal", message: String(e) };
 }
 
-/** A line into roalt.log (the Debug tab), target "ui". Never throws. */
+/** A line into lram.log (the Debug tab), target "ui". Never throws. */
 export function debugLog(level: "error" | "warn" | "info" | "debug", message: string) {
   rawInvoke("debug_log", { level, message }).catch(() => {});
 }
@@ -177,7 +177,7 @@ export const api = {
   instancesShowAll: (what: Exclude<WindowShow, "focus">) => invoke<void>("instances_show_all", { what }),
   /** Makes the client's window 320×240 (or puts it back); resolves to the client area it got, [w, h]. */
   instanceMicro: (id: string, on: boolean, size?: [number, number]) => invoke<[number, number]>("instance_micro", { id, on, size }),
-  /** Lays every running client that isn't hidden or minimized out in a grid on RoALT's monitor; how many it laid out. */
+  /** Lays every running client that isn't hidden or minimized out in a grid on LRAM's monitor; how many it laid out. */
   instancesTile: (micro: boolean) => invoke<number>("instances_tile", { micro }),
   /** CPU, memory and IO of each running client (sampled at most every 2 s). */
   instancesMetrics:() => invoke<ClientMetrics[]>("instances_metrics"),
@@ -246,19 +246,19 @@ export const api = {
   robloxClient: () => invoke<RobloxClient>("roblox_client"),
   /** Downloads Roblox's installer, checks it is signed by Roblox Corporation, runs it; progress on onRobloxInstall. */
   robloxInstall: () => invoke<RobloxClient>("roblox_install"),
-  /** RoALT's version and the newer release the last check found (no network). */
+  /** LRAM's version and the newer release the last check found (no network). */
   selfUpdateStatus: () => invoke<AppUpdate>("self_update_status"),
-  /** Asks GitHub for a newer RoALT now. */
+  /** Asks GitHub for a newer LRAM now. */
   selfUpdateCheck: () => invoke<AppUpdate>("self_update_check"),
-  /** Downloads the newer RoALT, checks its signature, runs its installer and quits (the installer starts RoALT again). */
+  /** Downloads the newer LRAM, checks its signature, runs its installer and quits (the installer starts LRAM again). */
   selfUpdateInstall: () => invoke<void>("self_update_install"),
   dataDirInfo: () => invoke<DataDir>("data_dir_info"),
   dataDirOpen: () => invoke<void>("data_dir_open"),
-  /** Copies the database to `path` and restarts RoALT to use it (resolves only on failure). */
+  /** Copies the database to `path` and restarts LRAM to use it (resolves only on failure). */
   dataDirMove: (path: string) => invoke<void>("data_dir_move", { path }),
-  /** RoALT's own log folder (data folder\logs) in Explorer. */
+  /** LRAM's own log folder (data folder\logs) in Explorer. */
   logsOpen: () => invoke<void>("logs_open"),
-  /** The last lines of roalt.log, oldest first. */
+  /** The last lines of lram.log, oldest first. */
   debugTail: (lines: number) => invoke<string[]>("debug_tail", { lines }),
   backgroundSet: (path: string) => invoke<void>("background_set", { path }),
   backgroundClear: () => invoke<void>("background_clear"),
@@ -269,7 +269,7 @@ export const api = {
   shutdownSchedule: (when: { atMs?: number; inSecs?: number }, closeClients: boolean) =>
     invoke<number | null>("shutdown_schedule", { atMs: when.atMs ?? null, inSecs: when.inSecs ?? null, closeClients }),
   shutdownCancel: () => invoke<number | null>("shutdown_cancel"),
-  /** The deadline of the shutdown RoALT scheduled, or null. */
+  /** The deadline of the shutdown LRAM scheduled, or null. */
   shutdownStatus: () => invoke<number | null>("shutdown_status"),
 
   /** Whether a Public network is connected; app://network sends changes. */
@@ -288,7 +288,7 @@ export const events = {
   onBulkProgress: (f: (p: BulkProgress) => void): Promise<UnlistenFn> => listen<BulkProgress>("bulk://progress", (e) => f(e.payload)),
   /** The client or its versions changed (version check at start and every 30 min, an install). */
   onRobloxClient: (f: (c: RobloxClient) => void): Promise<UnlistenFn> => listen<RobloxClient>("roblox://client", (e) => f(e.payload)),
-  /** A newer RoALT is out (checked 10 s after start and every 6 h). */
+  /** A newer LRAM is out (checked 10 s after start and every 6 h). */
   onAppUpdate: (f: (u: AppUpdate) => void): Promise<UnlistenFn> => listen<AppUpdate>("app://update", (e) => f(e.payload)),
   onRobloxInstall: (f: (p: InstallProgress) => void): Promise<UnlistenFn> => listen<InstallProgress>("roblox://install", (e) => f(e.payload)),
   /** Joined or left a Public network (checked every 10 s). */

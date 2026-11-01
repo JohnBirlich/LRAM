@@ -35,7 +35,7 @@ pub const INSTALL_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 /// Win32 `FILE_SHARE_READ`: others may read (and run) the file, never write or delete it.
 pub(crate) const FILE_SHARE_READ: u32 = 0x1;
 fn bootstrapper() -> String {
-    tr!("A bootstrapper (e.g. Bloxstrap) manages this Roblox install and keeps it up to date; RoALT leaves it alone.")
+    tr!("A bootstrapper (e.g. Bloxstrap) manages this Roblox install and keeps it up to date; LRAM leaves it alone.")
 }
 
 #[derive(Default)]

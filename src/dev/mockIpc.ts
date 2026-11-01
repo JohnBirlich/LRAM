@@ -12,7 +12,7 @@
 // Each kick is recorded as a disconnect, shown under the ended row in Running clients. "Kill all" ends everything.
 // Monitor: each running client's CPU, memory and IO drift over time; "Alt 01"'s memory keeps growing (a leak).
 // The bandwidth limit "applies" after a pretend admin prompt; 1234 kbit/s fails as a declined prompt.
-// Moving the data folder to a path containing "bad" fails as a folder that already has a RoALT database.
+// Moving the data folder to a path containing "bad" fails as a folder that already has a LRAM database.
 // Anti-AFK (when on) "presses a key" in each opted-in client in a game every 20 s, so the time moves.
 // Discord: any discord.com webhook URL is accepted; one whose token contains "deleted" fails the test.
 import { emit } from "@tauri-apps/api/event";
@@ -88,7 +88,7 @@ let robloxClient: RobloxClient = {
   latest: "version-9ac8595712b447a7",
   outdated: true,
 };
-/** RoALT's self-update: the background check "finds" the next minor version 10 s after start. */
+/** LRAM's self-update: the background check "finds" the next minor version 10 s after start. */
 const APP_VERSION: string = import.meta.env.APP_VERSION;
 const NEXT_VERSION = APP_VERSION.replace(/^(\d+)\.(\d+)\..*$/, (_, a, b) => `${a}.${Number(b) + 1}.0`);
 let appUpdate: string | null = null;
@@ -211,7 +211,7 @@ function perfProfile(previewFps: number) {
 
 /** The profile in `text` as performance_parse returns it, or the error message. */
 function perfParse(text: string): Record<string, unknown> | string {
-  const refused = "This isn't a RoALT performance profile.";
+  const refused = "This isn't a LRAM performance profile.";
   let file: { format?: unknown; version?: number; settings?: Record<string, unknown> };
   try {
     file = JSON.parse(text);
@@ -219,7 +219,7 @@ function perfParse(text: string): Record<string, unknown> | string {
     return refused;
   }
   if (file?.format !== "roalt-performance") return refused;
-  if ((file.version ?? 0) > 1) return "This profile was made by a newer RoALT; update RoALT first.";
+  if ((file.version ?? 0) > 1) return "This profile was made by a newer LRAM; update LRAM first.";
   const p = file.settings ?? {};
   const fps = p.fpsCap as number | undefined;
   if (fps && (fps < 5 || fps > 360)) return "The FPS cap must be 0 (off) or 5 to 360.";
@@ -270,7 +270,7 @@ function kick(i: Instance) {
     track(a.id, 14000 + Math.floor(Math.random() * 9000), i.target, i.placeId, i.viaBootstrapper, i.rejoins + 1, i.fpsCap);
   }, settings.launchDelayMs);
 }
-// Debug tab: roalt.log as tauri-plugin-log writes it, and a new line every few seconds.
+// Debug tab: lram.log as tauri-plugin-log writes it, and a new line every few seconds.
 const LEVEL_NAMES = ["", "TRACE", "DEBUG", "INFO", "WARN", "ERROR"];
 const fakeLog: string[] = [];
 function logLine(level: number, target: string, message: string, live = true) {
@@ -534,7 +534,7 @@ const GAMES: Record<number, [name: string, creator: string, universeId: number]>
   7719004215: ["Mega Obby", "ObbyWorks", 2650339475],
 };
 function fakeGame(placeId: number): GameInfo {
-  const [name, creator, universeId] = GAMES[placeId] ?? [`Test Place ${placeId}`, "RoALT Dev", 1_000_000 + (placeId % 9_000_000)];
+  const [name, creator, universeId] = GAMES[placeId] ?? [`Test Place ${placeId}`, "LRAM Dev", 1_000_000 + (placeId % 9_000_000)];
   return {
     placeId, universeId, rootPlaceId: placeId, name, creator, maxPlayers: 12,
     playing: fakeServers(placeId).reduce((n, s) => n + s.playing, 0), visits: (placeId % 997) * 1_000_003,
@@ -1065,7 +1065,7 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
           ]
         : [];
     case "diagnostics_text":
-      return "RoALT (preview) diagnostics";
+      return "LRAM (preview) diagnostics";
     case "diagnostics_save":
       return null;
     case "crashes_list":
@@ -1099,8 +1099,8 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       appUpdate = NEXT_VERSION;
       return { current: APP_VERSION, available: appUpdate };
     case "self_update_install":
-      if (!appUpdate) return fail("invalid", "RoALT is up to date.");
-      if (batch && !batch.done) return fail("invalid", "Wait for the running launch, batch or auto-rejoin to finish, then update RoALT.");
+      if (!appUpdate) return fail("invalid", "LRAM is up to date.");
+      if (batch && !batch.done) return fail("invalid", "Wait for the running launch, batch or auto-rejoin to finish, then update LRAM.");
       // Downloading, checking, then the installer restarts the app.
       await sleep(2500);
       location.reload();
@@ -1130,7 +1130,7 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       }
     }
     case "data_dir_info":
-      return { path: "C:\\Users\\you\\AppData\\Local\\RoALT", default: true, overridden: false };
+      return { path: "C:\\Users\\you\\AppData\\Local\\LRAM", default: true, overridden: false };
     case "data_dir_open":
     case "logs_open":
       return null;
@@ -1180,7 +1180,7 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
     case "data_dir_move":
       await sleep(1200);
       if (batch && !batch.done) return fail("invalid", MOVE_BUSY);
-      if (/bad/i.test(args.path)) return fail("invalid", "That folder already has a RoALT database. Pick another one.");
+      if (/bad/i.test(args.path)) return fail("invalid", "That folder already has a LRAM database. Pick another one.");
       location.reload();
       return new Promise(() => {});
 
@@ -1218,7 +1218,7 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
     case "plugin:dialog|save":
       return `C:\\Users\\you\\Documents\\${args.options?.defaultPath ?? "backup.roalt"}`;
     case "plugin:dialog|open":
-      return args.options?.directory ? "D:\\RoALT data" : "C:\\Users\\you\\Documents\\RoALT-backup-2026-10-01.roalt";
+      return args.options?.directory ? "D:\\LRAM data" : "C:\\Users\\you\\Documents\\LRAM-backup-2026-10-01.roalt";
     case "plugin:window|is_maximized":
       return false;
     default:

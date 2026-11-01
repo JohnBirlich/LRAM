@@ -2,7 +2,7 @@ name: Winget
 
 # When a release is published, proposes it to the Windows Package Manager. Does nothing until the
 # WINGET_TOKEN secret is set (a GitHub token with public_repo, on an account with a fork of
-# microsoft/winget-pkgs); the first version of inspectsoftware.RoALT must be submitted by hand.
+# microsoft/winget-pkgs); the first version of JohnBirlich.LRAM must be submitted by hand.
 on:
   release:
     types: [released]
@@ -19,6 +19,6 @@ jobs:
       - uses: vedantmgoyal9/winget-releaser@main
         if: env.HAS_TOKEN == 'true'
         with:
-          identifier: inspectsoftware.RoALT
-          installers-regex: 'RoALT-Setup-.*\.exe$'
+          identifier: JohnBirlich.LRAM
+          installers-regex: 'LRAM-Setup-.*\.exe$'
           token: ${{ secrets.WINGET_TOKEN }}

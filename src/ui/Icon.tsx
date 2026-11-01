@@ -64,7 +64,7 @@ export function Icon({ name, size = 16, fill = false, className }: { name: IconN
   );
 }
 
-/** The RoALT mark: a lime square under an outlined one. */
+/** The LRAM mark: a lime square under an outlined one. */
 export function Logo() {
   return (
     <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">

@@ -302,8 +302,8 @@ mod tests {
 
     #[test]
     fn missing_registry_values_are_none() {
-        assert_eq!(reg_string(HKEY_CURRENT_USER, r"Software\RoALT-test-no-such-key", None), None);
-        assert_eq!(reg_string(HKEY_CURRENT_USER, r"Software\Classes", Some("RoALT-test-no-such-value")), None);
+        assert_eq!(reg_string(HKEY_CURRENT_USER, r"Software\LRAM-test-no-such-key", None), None);
+        assert_eq!(reg_string(HKEY_CURRENT_USER, r"Software\Classes", Some("LRAM-test-no-such-value")), None);
     }
 
     /// `start` on a harmless system program (never the Roblox client): the raw argument

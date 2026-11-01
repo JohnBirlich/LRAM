@@ -68,6 +68,8 @@ const SHORTCUTS: [Key, string][] = [
 ];
 
 const backupFilter = () => [{ name: t("settings.backupFilter"), extensions: ["lram"] }];
+// Backups written by builds that still said roalt keep their old extension and still open.
+const openBackupFilter = () => [{ name: t("settings.backupFilter"), extensions: ["lram", "roalt"] }];
 const RELEASES = "https://github.com/JohnBirlich/RAM/releases";
 const cancelled = () => ({ kind: "cancelled", message: "" });
 
@@ -99,7 +101,7 @@ export function SettingsView({ vault, settings, onPerformance, onRecoveryCode }:
 
   async function pickImport() {
     try {
-      const path = await openFile({ multiple: false, directory: false, filters: backupFilter() });
+      const path = await openFile({ multiple: false, directory: false, filters: openBackupFilter() });
       if (path) {
         setImportPath(path);
         setImportOpen(true);

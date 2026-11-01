@@ -338,6 +338,47 @@
     background: transparent;
   }
 
+  /* The dev-only direction switcher: a small tab on the right edge, out of the way of the page
+     and of the log dock. Built out of release builds (src/App.tsx gates it on DEV). */
+  .dir-switch {
+    position: fixed;
+    inset-block-start: 50%;
+    inset-inline-end: 6px;
+    translate: 0 -50%;
+    z-index: 60;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 3px;
+    border: 1px solid var(--line-strong);
+    border-radius: 10px;
+    background: color-mix(in oklab, var(--panel) 92%, transparent);
+    box-shadow: var(--shadow);
+    font-size: 10.5px;
+    color: var(--dim);
+  }
+  .dir-switch > span {
+    padding: 2px 4px 4px;
+    text-align: center;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .dir-switch button {
+    padding: 3px 7px;
+    border: 1px solid transparent;
+    border-radius: 7px;
+    color: var(--text);
+    text-align: center;
+    cursor: pointer;
+  }
+  .dir-switch button:hover {
+    background: var(--hover);
+  }
+  .dir-switch button[aria-pressed="true"] {
+    border-color: var(--line-strong);
+    background: var(--sel);
+  }
+
   /* The figures above a table: one strip, a cell per number, clickable as a filter. */
   .counters {
     display: grid;
@@ -381,6 +422,13 @@
   .counter[data-on] {
     background: var(--sel);
     box-shadow: inset 0 -2px 0 var(--accent);
+  }
+  /* A narrow page (the accounts view is a container): three cells to a row instead of six. */
+  @container (max-width: 780px) {
+    .counters {
+      grid-auto-flow: row;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
   }
 
   /* The log dock under the page: a head that toggles it, the lines, and its buttons. */

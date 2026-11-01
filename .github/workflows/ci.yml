@@ -6,7 +6,6 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
 
 env:
   CARGO_TERM_COLOR: always
@@ -29,23 +28,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-      - name: cargo test
-        shell: pwsh
+      - run: cargo test --locked
         working-directory: src-tauri
-        run: |
-          cargo test --locked 2>&1 | Tee-Object -FilePath test.log -Append:$false
-          if ($LASTEXITCODE -ne 0) { exit 1 }
-      # The PR comments the tail of a failed run: the raw log lives on a host some setups can't reach.
-      - name: Report failing tests
-        if: failure() && github.event_name == 'pull_request'
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          $tail = Get-Content src-tauri/test.log -Tail 120 | Out-String
-          $body = "``````" + $tail + "``````"
-          $body | Out-File -FilePath comment.md -Encoding utf8
-          gh pr comment ${{ github.event.pull_request.number }} --body-file comment.md
       - if: ${{ !cancelled() }}
         run: cargo clippy --all-targets --locked -- -D warnings
         working-directory: src-tauri

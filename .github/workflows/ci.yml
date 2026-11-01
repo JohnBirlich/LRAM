@@ -37,8 +37,8 @@ jobs:
       - if: failure()
         shell: bash
         run: |
-          { echo '```'; tail -n 60 src-tauri/ci.txt 2>/dev/null || true; echo '```'; } > note.md
-          n=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" -q '.[0].number' 2>/dev/null || true)
-          if [ -n "$n" ] && [ "$n" != "null" ]; then gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$n/comments" -F body=@note.md >/dev/null; fi
+          { echo '```'; tail -n 60 ci.txt src-tauri/ci.txt 2>/dev/null; echo '```'; } > note.md
+          n=$(gh pr list --head "$GITHUB_REF_NAME" --state open --json number -q '.[0].number')
+          if [ -n "$n" ]; then gh pr comment "$n" --body-file note.md; fi
         env:
           GH_TOKEN: ${{ github.token }}

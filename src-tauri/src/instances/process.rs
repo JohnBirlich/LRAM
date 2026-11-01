@@ -262,7 +262,7 @@ pub(super) fn open(pid: u32, rights: PROCESS_ACCESS_RIGHTS) -> Option<Owned<HAND
         Err(e) => {
             // Polled every second while the tracker waits for the client's log to settle: a process
             // that has just exited is the usual answer, and Windows calls that a bad parameter.
-            if e.code().0 as u32 == ERROR_INVALID_PARAMETER.0 {
+            if e.code() == ERROR_INVALID_PARAMETER.to_hresult() {
                 return None;
             }
             if e.code() == E_ACCESSDENIED {

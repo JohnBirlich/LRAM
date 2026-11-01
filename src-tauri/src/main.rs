@@ -348,6 +348,40 @@ fn spawn_auto_lock(handle: AppHandle) {
 /// The log folder once known: `fatal` writes there itself when the logger isn't up yet.
 static LOG_DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
 
+/// `[2026-11-01][21:08:37][lram::instances::metrics][DEBUG] text`: the Windows clock, what the
+/// user compares the timestamp against, and the module named after the app.
+fn log_line(out: tauri_plugin_log::fern::FormatCallback, message: &std::fmt::Arguments<'_>, record: &log::Record<'_>) {
+    // SAFETY: GetLocalTime takes no arguments and writes into the returned struct.
+    let time = unsafe { windows::Win32::System::SystemInformation::GetLocalTime() };
+    out.finish(format_args!(
+        "[{:04}-{:02}-{:02}][{:02}:{:02}:{:02}][{}][{}] {message}",
+        time.wYear,
+        time.wMonth,
+        time.wDay,
+        time.wHour,
+        time.wMinute,
+        time.wSecond,
+        module_name(record.target()),
+        record.level(),
+    ));
+}
+
+/// The crate is still called `roalt`, its module paths show up in every line: they read `lram`.
+fn module_name(target: &str) -> String {
+    match target.strip_prefix("roalt") {
+        Some(rest) => format!("lram{rest}"),
+        None => target.to_owned(),
+    }
+}
+
+/// Keeps the log written by builds that named it after the old crate.
+fn adopt_old_log(dir: &std::path::Path) {
+    let (old, new) = (dir.join("roalt.log"), dir.join("lram.log"));
+    if old.is_file() && !new.exists() {
+        let _ = std::fs::rename(&old, &new);
+    }
+}
+
 /// A startup failure the user must see: there is no window to show it in.
 fn fatal(message: &str) -> ! {
     use std::io::Write;
@@ -520,6 +554,7 @@ fn main() {
     }
     let log_dir = data_dir.join("logs");
     let _ = std::fs::create_dir_all(&log_dir);
+    adopt_old_log(&log_dir);
     let _ = LOG_DIR.set(log_dir.clone());
 
     tauri::Builder::default()
@@ -528,7 +563,8 @@ fn main() {
         .plugin(
             tauri_plugin_log::Builder::new()
                 .clear_targets()
-                .target(Target::new(TargetKind::Folder { path: log_dir, file_name: Some("roalt".into()) }))
+                .target(Target::new(TargetKind::Folder { path: log_dir, file_name: Some("lram".into()) }))
+                .format(log_line)
                 // The Debug tab (`log://log` events); its history comes from `commands::debug_tail`.
                 .target(Target::new(TargetKind::Webview))
                 .level(log::LevelFilter::Info)
@@ -688,6 +724,23 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn log_lines_name_the_app_not_the_crate() {
+        assert_eq!(module_name("roalt"), "lram");
+        assert_eq!(module_name("roalt::instances::metrics"), "lram::instances::metrics");
+        assert_eq!(module_name("roblox"), "roblox");
+        assert_eq!(module_name("ui"), "ui");
+    }
+
+    #[test]
+    fn the_log_file_of_the_old_build_is_taken_over() {
+        let dir = temp_dir();
+        std::fs::write(dir.join("roalt.log"), "[fatal] old\n").unwrap();
+        adopt_old_log(&dir);
+        assert!(!dir.join("roalt.log").exists() && dir.join("lram.log").is_file());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     fn temp_dir() -> PathBuf {
         let dir = std::env::temp_dir().join(format!("roalt-datadir-{}", uuid::Uuid::new_v4()));

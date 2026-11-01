@@ -53,6 +53,8 @@
   (`.brand`, `.nav-heading`, `.counters`, `.counter`, `.logdock`), чтобы разметка не
   зависела от темы.
 - `src/ui/TitleBar.tsx` — экспортирует `PRODUCT`/`TAGLINE` и рисует блок бренда.
+- Знак: `src-tauri/icons/app-icon.svg` и `scripts/make-icons.py` (из них — png и icon.ico),
+  `Logo` в `src/ui/Icon.tsx`, плитка в сплэше.
 - `src/ui/LogDock.tsx` — нижняя панель журнала (живые строки `log://log` + хвост `lram.log`).
 - `src/ui/DirectionSwitcher.tsx` — dev-переключатель `LRAM ↔ Soft Deck`; собирается только
   в dev-режиме и в прод не попадает.
@@ -60,5 +62,5 @@
 ## Проверено
 
 `npx tsc --noEmit` — без ошибок; `npx vite build` — собирается; `node scripts/check-i18n.mjs` —
-18 языков полны. Rust в этой среде не собирается (Windows-only крейты), поэтому изменения
+все ключи, которые просит код, есть в `en.json`. Rust в этой среде не собирается (Windows-only крейты), поэтому изменения
 `src-tauri` проверены чтением кода, а не компиляцией.

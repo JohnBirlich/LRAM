@@ -16,7 +16,7 @@
 | Папка данных | `%LOCALAPPDATA%\RoALT` | `%LOCALAPPDATA%\LRAM` |
 | Файл журнала | `roalt.log` | `lram.log` |
 | AppId установщика | `{F65209C5-…}` | новый `{E647C13A-…}` (ставится рядом с исходным) |
-| Текст интерфейса и журналов | «RoALT» | «LRAM» (18 языков) |
+| Текст интерфейса и журналов | «RoALT» | «LRAM» (только английский) |
 | Ссылки в интерфейсе, README, allowlist в `capabilities` | `inspectsoftware/RoALT` | `JohnBirlich/RAM` |
 
 Кнопка «Поддержать» (донат на игровые пропуска автора) удалена из сайдбара, компонент
@@ -29,13 +29,15 @@
 - **`b"RoALT/db/v1"` и `b"RoALT/vault/v1"`** — энтропия DPAPI (`storage/cipher.rs`,
   `vault/dpapi.rs`). DPAPI подмешивает её в ключ: смена строки = невозможность расшифровать
   существующие базу и хранилище.
-- **`roalt.db`, `roalt.db.key`** — имя файла базы. Переименование потребовало бы миграции на
-  старте; отложено сознательно, к нему стоит вернуться отдельным коммитом с тестом.
 - **AAD `roalt.*`** (`roalt.cookie:`, `roalt.vault.key`, `roalt.discord.webhook`,
   `roalt.favourite`) — те же причины.
 - **Имя крейта `roalt`** и бинарника `roalt.exe` — видно только разработчику; установщик
   переименовывает файл в `LRAM.exe`.
 - **Магия резервных копий `ROALTBK1`** — старые бэкапы должны открываться.
+
+Имя файла базы переименовано (`roalt.db` → `lram.db`): на старте `adopt_legacy_names`
+переносит `roalt.db`, `roalt.db-wal`, `roalt.db-shm` и `roalt.db.key` на новые имена, если
+новых файлов ещё нет. Покрыто тестом `old_database_names_are_taken_over_once`.
 
 Чтобы данные прежней сборки не потерялись, `default_dir()` берёт `%LOCALAPPDATA%\RoALT`,
 если папки `LRAM` ещё нет, а в старой лежит база. Перенести данные в путь с новым именем
@@ -61,13 +63,30 @@ GitHub Releases.
 `LATEST` в `self_update.rs` и `RELEASES`/`DOWNLOAD` в интерфейсе уже указывают на
 `JohnBirlich/RAM`.
 
-## Что осталось чужим (осознанно)
+## Что сделано и что осталось
 
-- **Discord rich presence** выключен по умолчанию: `CLIENT_ID` в `rpc.rs` принадлежит
-  приложению исходного проекта, поэтому при включении Discord покажет его имя. Своё
-  приложение регистрируется в Developer Portal, его id подставляется в `CLIENT_ID`.
-- **Иконки** (`src-tauri/icons/*`, `Logo` в `Icon.tsx`) и скриншоты в `docs/images/*` —
-  от исходного проекта и от прежнего вида. Их стоит заменить отдельным проходом.
+- **Логотип и иконки** — свои: `src-tauri/icons/app-icon.svg` (вектор) и
+  `scripts/make-icons.py` (Pillow собирает png и icon.ico из того же описания). Тот же знак в
+  `Logo` (`src/ui/Icon.tsx`), в сплэше и в `docs/images/banner*.png`.
+- **Скриншоты** — сняты со старого вида и удалены, чтобы не показывать неправду. Новые снимаются
+  с работающего приложения (`Win+Shift+S` или любой скриншотер) и кладутся в `docs/images/`.
+- **Discord rich presence** выключен: `CLIENT_ID` пуст. Своё приложение регистрируется на
+  https://discord.com/developers/applications (Rich Presence → Assets: картинка с ключом
+  `lram`), а его id передаётся при сборке:
+  `$env:LRAM_DISCORD_APP_ID="1234567890"; powershell -File scripts\build-installer.ps1`.
+- **Подпись SignPath** — не сделана: нужен аккаунт и одобрение проекта, из песочницы это
+  невозможно. Workflow уже готов: см. ниже.
+
+## SignPath: что нужно от вас
+
+1. Регистрация на https://signpath.io и заявка на бесплатную лицензию для open source
+   (проект `LRAM`, репозиторий `JohnBirlich/RAM`).
+2. В SignPath: организация → проект `LRAM` → signing policy `release-signing` →
+   artifact configuration для Inno Setup (`github-ci`).
+3. В GitHub: секрет `SIGNPATH_API_TOKEN` и переменная `SIGNPATH_ORGANIZATION_ID`
+   (Settings → Secrets and variables → Actions). Больше ничего менять не нужно:
+   `release.yml` сам загрузит неподписанный установщик артефактом, отправит его на подпись,
+   заберёт подписанный и только потом подпишет его ключом автообновления.
 
 ## Выпуск своей сборки
 

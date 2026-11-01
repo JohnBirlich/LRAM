@@ -69,8 +69,7 @@ fn known_win32(code: windows::core::HRESULT) -> Option<&'static str> {
 
 #[cfg(all(test, windows))]
 mod windows_error_tests {
-    use windows::Win32::Foundation::{ERROR_ACCESS_DENIED, ERROR_INVALID_PARAMETER, ERROR_NOT_ENOUGH_MEMORY};
-    use windows::core::E_FAIL;
+    use windows::Win32::Foundation::{E_FAIL, ERROR_ACCESS_DENIED, ERROR_INVALID_PARAMETER, ERROR_NOT_ENOUGH_MEMORY};
 
     use super::*;
 

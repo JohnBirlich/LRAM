@@ -740,7 +740,7 @@ pub fn micro(id: &str, pid: u32, on: bool, size: (u32, u32)) -> Result<(u32, u32
         if let Some(mut wp) = before {
             wp.showCmd = restore_cmd(wp.showCmd, (wp.flags & WPF_RESTORETOMAXIMIZED).0 != 0);
             // SAFETY: `wp` was filled by GetWindowPlacement for this window, its length set.
-            unsafe { SetWindowPlacement(hwnd, &wp) }.map_err(|e| AppError::Internal(tr!("Could not resize that window: {why}", why = e.message())))?;
+            unsafe { SetWindowPlacement(hwnd, &wp) }.map_err(|e| AppError::Internal(tr!("Could not resize that window: {why}", why = crate::error::windows_error(&e))))?;
             // Coming back maximized takes the focus.
             if hidden {
                 let_go_of_focus(hwnd);

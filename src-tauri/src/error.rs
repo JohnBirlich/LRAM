@@ -38,6 +38,50 @@ pub enum AppError {
     Internal(String),
 }
 
+/// A Windows error in English: the system text comes in the language of Windows, and the
+/// interface is English only. The code stays, so a report can still be looked up.
+#[cfg(windows)]
+pub fn windows_error(e: &windows::core::Error) -> String {
+    let code = e.code().0 as u32;
+    match known_win32(e.code()) {
+        Some(what) => format!("{what} (0x{code:08X})"),
+        None => format!("Windows error 0x{code:08X}"),
+    }
+}
+
+/// What the error codes this app meets mean, in words (`code` is the HRESULT of a Win32 error).
+#[cfg(windows)]
+fn known_win32(code: windows::core::HRESULT) -> Option<&'static str> {
+    use windows::Win32::Foundation::{
+        ERROR_ACCESS_DENIED, ERROR_INVALID_HANDLE, ERROR_INVALID_PARAMETER, ERROR_NOT_ENOUGH_MEMORY, ERROR_PRIVILEGE_NOT_HELD,
+        ERROR_SHARING_VIOLATION,
+    };
+    let known = [
+        (ERROR_ACCESS_DENIED, "access denied"),
+        (ERROR_INVALID_HANDLE, "invalid handle"),
+        (ERROR_NOT_ENOUGH_MEMORY, "not enough memory"),
+        (ERROR_SHARING_VIOLATION, "the file is in use"),
+        (ERROR_INVALID_PARAMETER, "the parameter is incorrect"),
+        (ERROR_PRIVILEGE_NOT_HELD, "the privilege is not held"),
+    ];
+    known.iter().find(|(c, _)| code == c.to_hresult()).map(|(_, what)| *what)
+}
+
+#[cfg(all(test, windows))]
+mod windows_error_tests {
+    use windows::Win32::Foundation::{E_FAIL, ERROR_ACCESS_DENIED, ERROR_INVALID_PARAMETER, ERROR_NOT_ENOUGH_MEMORY};
+
+    use super::*;
+
+    #[test]
+    fn windows_errors_are_english() {
+        assert_eq!(known_win32(ERROR_ACCESS_DENIED.to_hresult()), Some("access denied"));
+        assert_eq!(known_win32(ERROR_INVALID_PARAMETER.to_hresult()), Some("the parameter is incorrect"));
+        assert_eq!(known_win32(ERROR_NOT_ENOUGH_MEMORY.to_hresult()), Some("not enough memory"));
+        assert_eq!(known_win32(E_FAIL), None);
+    }
+}
+
 impl AppError {
     pub fn kind(&self) -> &'static str {
         match self {

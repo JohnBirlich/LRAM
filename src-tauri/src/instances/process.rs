@@ -7,7 +7,9 @@
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
-use windows::Win32::Foundation::{E_ACCESSDENIED, FILETIME, HANDLE, HWND, LPARAM, WAIT_OBJECT_0, WAIT_TIMEOUT, WPARAM};
+use windows::Win32::Foundation::{
+    E_ACCESSDENIED, ERROR_INVALID_PARAMETER, FILETIME, HANDLE, HWND, LPARAM, WAIT_OBJECT_0, WAIT_TIMEOUT, WPARAM,
+};
 use windows::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW, TH32CS_SNAPPROCESS,
 };
@@ -155,7 +157,7 @@ fn terminate(pid: u32, t0: u64) -> Result<()> {
             // Access is denied also for a process already on its way out.
             && WaitForSingleObject(*h, 3_000) == WAIT_TIMEOUT
         {
-            return Err(failed(e.message()));
+            return Err(failed(crate::error::windows_error(&e)));
         }
         // Termination is asynchronous: wait (≤ 3 s) until its objects are gone, so taking the
         // multi-instance lock right after doesn't find Roblox's event still there.
@@ -258,13 +260,18 @@ pub(super) fn open(pid: u32, rights: PROCESS_ACCESS_RIGHTS) -> Option<Owned<HAND
         // SAFETY: as above.
         Ok(h) => Some(unsafe { Owned::new(h) }),
         Err(e) => {
-            // Polled every second; a process that is gone is normal, access denied (an elevated
-            // client) is said once.
+            // Polled every second while the tracker waits for the client's log to settle: a process
+            // that has just exited is the usual answer, and Windows calls that a bad parameter.
+            if e.code() == ERROR_INVALID_PARAMETER.to_hresult() {
+                return None;
+            }
             if e.code() == E_ACCESSDENIED {
+                // An elevated client: said once, or every poll would flood the log.
                 static ONCE: std::sync::Once = std::sync::Once::new();
                 ONCE.call_once(|| log::warn!("process {pid}: access denied (is Roblox running as administrator?)"));
+            } else {
+                log::debug!("could not open process {pid}: {}", crate::error::windows_error(&e));
             }
-            log::debug!("could not open process {pid}: {e}");
             None
         }
     }
@@ -285,7 +292,7 @@ pub(super) fn started(h: HANDLE) -> Option<u64> {
             return None;
         }
         GetProcessTimes(h, &mut created, &mut exited, &mut kernel, &mut user)
-            .inspect_err(|e| log::debug!("process times unreadable: {e}"))
+            .inspect_err(|e| log::debug!("process times unreadable: {}", crate::error::windows_error(e)))
             .ok()?;
     }
     let ticks = (u64::from(created.dwHighDateTime) << 32) | u64::from(created.dwLowDateTime);

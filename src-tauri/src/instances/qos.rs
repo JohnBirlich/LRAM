@@ -65,7 +65,7 @@ pub fn apply(kbps: u32) -> Result<()> {
         return Err(if e.code() == ERROR_CANCELLED.to_hresult() {
             AppError::Invalid(tr!("The bandwidth limit needs admin rights; the prompt was declined."))
         } else {
-            AppError::Internal(tr!("Could not start PowerShell: {why}", why = e.message()))
+            AppError::Internal(tr!("Could not start PowerShell: {why}", why = crate::error::windows_error(&e)))
         });
     }
     if info.hProcess.is_invalid() {
@@ -81,7 +81,7 @@ pub fn apply(kbps: u32) -> Result<()> {
                 tr!("Windows didn't answer in time; the limit may or may not be set. Apply again to be sure."),
             ));
         }
-        GetExitCodeProcess(*h, &mut code).map_err(|e| AppError::Internal(e.message()))?;
+        GetExitCodeProcess(*h, &mut code).map_err(|e| AppError::Internal(crate::error::windows_error(&e)))?;
     }
     if code != 0 {
         return Err(AppError::Internal(tr!("Windows refused the bandwidth limit (PowerShell exit code {code}).", code = code)));

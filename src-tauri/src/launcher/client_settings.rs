@@ -218,7 +218,7 @@ pub(super) fn set_readonly(file: &Path, on: bool) -> std::io::Result<()> {
 /// read-only file (some tools set that to keep Roblox from overwriting it) stays read-only.
 /// Nothing is left behind when it fails.
 fn replace(file: &Path, text: &str, seen: Option<Stamp>) -> std::io::Result<()> {
-    let tmp = file.with_extension("xml.roalt");
+    let tmp = file.with_extension("xml.lram");
     let readonly = std::fs::metadata(file).is_ok_and(|m| m.permissions().readonly());
     let unchanged = || match stamp(file) == seen {
         true => Ok(()),
@@ -566,7 +566,7 @@ mod tests {
 
     impl TestFile {
         fn new(name: &str, text: Option<&str>) -> Self {
-            let f = TestFile(std::env::temp_dir().join(format!("roalt-test-{name}-{}.xml", std::process::id())));
+            let f = TestFile(std::env::temp_dir().join(format!("lram-test-{name}-{}.xml", std::process::id())));
             let _ = std::fs::remove_file(&f.0);
             if let Some(t) = text {
                 std::fs::write(&f.0, t).unwrap();
@@ -752,7 +752,7 @@ mod tests {
         undo.put_back();
         assert_eq!(f.text(), XML);
         assert!(std::fs::metadata(&f.0).unwrap().permissions().readonly());
-        assert!(!f.0.with_extension("xml.roalt").exists(), "no temporary file left");
+        assert!(!f.0.with_extension("xml.lram").exists(), "no temporary file left");
     }
 
     #[test]

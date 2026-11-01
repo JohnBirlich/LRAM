@@ -13,7 +13,7 @@
   #define AppNumVersion AppVersion
 #endif
 #ifndef AppExe
-  #define AppExe "..\src-tauri\target\release\roalt.exe"
+  #define AppExe "..\src-tauri\target\release\lram.exe"
 #endif
 
 ; A fresh AppId: a renamed product installs beside the original build, not over it, so both

@@ -10,7 +10,7 @@ use crate::instances::logwatch::SENSITIVE;
 /// For the clipboard (a chat message takes little more) and for a file.
 pub const FOR_CLIPBOARD: usize = 60 * 1024;
 pub const FOR_FILE: usize = 500 * 1024;
-const ROALT_LINES: usize = 500;
+const LRAM_LINES: usize = 500;
 const ROBLOX_LINES: usize = 300;
 /// How much of the end of a log is read.
 const TAIL_BYTES: u64 = 4 << 20;
@@ -162,14 +162,14 @@ fn compose(head: &str, sections: &[(String, Vec<String>)], max: usize) -> String
 /// Everything the report is made of: read once on a background thread.
 pub struct Sources {
     pub head: String,
-    pub roalt_log: std::path::PathBuf,
+    pub lram_log: std::path::PathBuf,
     pub roblox_logs: Vec<std::path::PathBuf>,
     /// Account and favourite names, kept out of the logs' text.
     pub names: Vec<String>,
 }
 
 pub fn report(src: &Sources, max: usize) -> String {
-    let mut sections = vec![("LRAM log".to_owned(), clean_tail(&src.roalt_log, ROALT_LINES, &src.names))];
+    let mut sections = vec![("LRAM log".to_owned(), clean_tail(&src.lram_log, LRAM_LINES, &src.names))];
     for (n, log) in src.roblox_logs.iter().enumerate() {
         sections.push((format!("Roblox log {}", n + 1), clean_tail(log, ROBLOX_LINES, &src.names)));
     }

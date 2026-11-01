@@ -87,7 +87,7 @@ fn merge(text: Option<&str>, set: &[(&str, &str)]) -> Option<String> {
 
 /// Replaces the file in one step; a read-only one stays read-only.
 fn write(file: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    let tmp = file.with_extension("json.roalt");
+    let tmp = file.with_extension("json.lram");
     let readonly = std::fs::metadata(file).is_ok_and(|m| m.permissions().readonly());
     let done = retry(|| std::fs::write(&tmp, bytes)).and_then(|()| {
         if readonly {
@@ -105,12 +105,18 @@ fn write(file: &Path, bytes: &[u8]) -> std::io::Result<()> {
 }
 
 /// The original beside the flag file: `1` then its bytes, or `0` when there was no file.
-const SAVED: &str = "ClientAppSettings.json.roalt-before";
+const SAVED: &str = "ClientAppSettings.json.lram-before";
+/// Where builds that named it after the old crate kept it.
+const SAVED_BEFORE: &str = "ClientAppSettings.json.roalt-before";
 
 /// Puts back the original kept beside `file`, if one is; it stays there until that worked. False
 /// when it is still there.
 fn put_back_at(file: &Path) -> bool {
-    let saved = file.with_file_name(SAVED);
+    let saved = [SAVED, SAVED_BEFORE]
+        .map(|name| file.with_file_name(name))
+        .into_iter()
+        .find(|p| p.is_file())
+        .unwrap_or_else(|| file.with_file_name(SAVED));
     let Ok(kept) = std::fs::read(&saved) else { return true };
     let done = match kept.split_first() {
         Some((b'1', bytes)) => write(file, bytes),
@@ -245,7 +251,7 @@ mod tests {
 
     #[test]
     fn puts_the_file_back_exactly() {
-        let dir = std::env::temp_dir().join(format!("roalt-test-flags-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("lram-test-flags-{}", std::process::id()));
         let exe = dir.join("RobloxPlayerBeta.exe");
         let file = dir.join("ClientSettings").join("ClientAppSettings.json");
         let _ = std::fs::remove_dir_all(&dir);

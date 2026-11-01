@@ -282,7 +282,7 @@ mod tests {
 
     #[test]
     fn finds_clients_in_a_versions_folder() {
-        let dir = std::env::temp_dir().join(format!("roalt-test-{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("lram-test-{}", uuid::Uuid::new_v4()));
         for v in ["version-a", "version-b", "not-a-client"] {
             std::fs::create_dir_all(dir.join(v)).unwrap();
         }
@@ -312,7 +312,7 @@ mod tests {
     fn start_passes_the_raw_argument_in_the_exe_folder() {
         let system = std::env::var_os("SystemRoot").map_or_else(|| PathBuf::from(r"C:\Windows"), PathBuf::from);
         let exe = ClientExe { path: system.join(r"System32\cmd.exe"), bootstrapper: true };
-        let out = std::env::temp_dir().join(format!("roalt-test-{}.txt", uuid::Uuid::new_v4()));
+        let out = std::env::temp_dir().join(format!("lram-test-{}.txt", uuid::Uuid::new_v4()));
         // Kept alive a second so its start time is read before it exits. The extra arguments
         // follow the first one, space-separated.
         let arg = Secret::new(format!("/c cd > \"{}\" & ping -n", out.display()));
@@ -330,7 +330,7 @@ mod tests {
         let _ = std::fs::remove_file(&out);
         assert!(written.trim().eq_ignore_ascii_case(&system.join("System32").to_string_lossy()), "{written}");
 
-        let missing = ClientExe { path: system.join(r"System32\roalt-no-such.exe"), bootstrapper: false };
+        let missing = ClientExe { path: system.join(r"System32\lram-no-such.exe"), bootstrapper: false };
         assert!(matches!(start(&missing, &arg, &[]), Err(AppError::Internal(_))));
     }
 }

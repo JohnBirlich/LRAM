@@ -1,5 +1,5 @@
 [package]
-name = "roalt"
+name = "lram"
 version = "0.10.3"
 description = "Local-only Roblox account manager"
 authors = ["JohnBirlich"]

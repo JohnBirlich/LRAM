@@ -361,17 +361,9 @@ fn log_line(out: tauri_plugin_log::fern::FormatCallback, message: &std::fmt::Arg
         time.wHour,
         time.wMinute,
         time.wSecond,
-        module_name(record.target()),
+        record.target(),
         record.level(),
     ));
-}
-
-/// The crate is still called `roalt`, its module paths show up in every line: they read `lram`.
-fn module_name(target: &str) -> String {
-    match target.strip_prefix("roalt") {
-        Some(rest) => format!("lram{rest}"),
-        None => target.to_owned(),
-    }
 }
 
 /// Keeps the log written by builds that named it after the old crate.
@@ -428,7 +420,7 @@ fn init(app: &TauriApp, data_dir: &Path, moved_from: Option<&Path>) -> std::resu
         Some(rec) => vault::Vault::open(&rec).map_err(|e| {
             tr!(
                 "LRAM can't open its vault on this Windows account ({why}).\n\nIf this data folder came from another PC or \
-                 Windows account, rename {path} and import a .roalt backup.",
+                 Windows account, rename {path} and import a .lram backup.",
                 why = e.message(),
                 path = db_path.display()
             )
@@ -445,7 +437,6 @@ fn init(app: &TauriApp, data_dir: &Path, moved_from: Option<&Path>) -> std::resu
     let handle = app.handle().clone();
     let api = roblox_api::Client::new(Arc::new(move |id, cookie| handle.state::<App>().store_rotated(id, cookie)));
     let settings = db.settings().map_err(|e| e.message())?;
-    i18n::set(&settings.language);
     let shutdown = commands::pending_shutdown(&db);
     let multi = instances::multi::Multi::new();
     if settings.multi_instance
@@ -546,8 +537,6 @@ fn on_window_event(window: &tauri::Window, event: &WindowEvent) {
 
 fn main() {
     webview::clear_webview2_env();
-    // Windows' language until the settings are read.
-    i18n::set("");
     let (data_dir, moved_from) = data_dir().unwrap_or_else(|e| fatal(&e));
     if let Err(e) = std::fs::create_dir_all(&data_dir) {
         fatal(&tr!("LRAM can't create its data folder {path}: {why}", path = data_dir.display(), why = e));
@@ -568,7 +557,7 @@ fn main() {
                 // The Debug tab (`log://log` events); its history comes from `commands::debug_tail`.
                 .target(Target::new(TargetKind::Webview))
                 .level(log::LevelFilter::Info)
-                .level_for("roalt", log::LevelFilter::Debug)
+                .level_for("lram", log::LevelFilter::Debug)
                 // lram.log plus the 4 before it, 5 MB each.
                 .max_file_size(5 << 20)
                 .rotation_strategy(RotationStrategy::KeepSome(5))
@@ -726,14 +715,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn log_lines_name_the_app_not_the_crate() {
-        assert_eq!(module_name("roalt"), "lram");
-        assert_eq!(module_name("roalt::instances::metrics"), "lram::instances::metrics");
-        assert_eq!(module_name("roblox"), "roblox");
-        assert_eq!(module_name("ui"), "ui");
-    }
-
-    #[test]
     fn the_log_file_of_the_old_build_is_taken_over() {
         let dir = temp_dir();
         std::fs::write(dir.join("roalt.log"), "[fatal] old\n").unwrap();
@@ -743,7 +724,7 @@ mod tests {
     }
 
     fn temp_dir() -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("roalt-datadir-{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("lram-datadir-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         dir
     }

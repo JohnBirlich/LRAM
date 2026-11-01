@@ -530,7 +530,7 @@ mod tests {
 
     #[test]
     fn locks_shared_files_while_held_and_creates_missing_ones() {
-        let dir = std::env::temp_dir().join(format!("roalt-test-{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("lram-test-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("RobloxCookies.dat");
         std::fs::write(&file, b"{}").unwrap();

@@ -680,9 +680,9 @@ mod tests {
         let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let stop2 = stop.clone();
         let owner = std::thread::spawn(move || unsafe {
-            let class = WNDCLASSW { lpfnWndProc: Some(insists), lpszClassName: w!("roalt-test-edge"), ..Default::default() };
+            let class = WNDCLASSW { lpfnWndProc: Some(insists), lpszClassName: w!("lram-test-edge"), ..Default::default() };
             RegisterClassW(&class);
-            let hwnd = CreateWindowExW(WINDOW_EX_STYLE(0), w!("roalt-test-edge"), w!("t"), WS_OVERLAPPEDWINDOW | WS_VISIBLE, 100, 100, 1000, 800, None, None, None, None).unwrap();
+            let hwnd = CreateWindowExW(WINDOW_EX_STYLE(0), w!("lram-test-edge"), w!("t"), WS_OVERLAPPEDWINDOW | WS_VISIBLE, 100, 100, 1000, 800, None, None, None, None).unwrap();
             tx.send(hwnd.0 as isize).unwrap();
             let mut msg = MSG::default();
             while !stop2.load(std::sync::atomic::Ordering::Relaxed) {

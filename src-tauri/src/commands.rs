@@ -1824,7 +1824,7 @@ fn diagnostics_sources(s: &App) -> Result<crate::diagnostics::Sources> {
         }
     }
     roblox_logs.truncate(5);
-    Ok(crate::diagnostics::Sources { head, roalt_log: s.data_dir.join("logs").join("lram.log"), roblox_logs, names })
+    Ok(crate::diagnostics::Sources { head, lram_log: s.data_dir.join("logs").join("lram.log"), roblox_logs, names })
 }
 
 #[tauri::command]
@@ -2294,12 +2294,6 @@ pub fn settings_set(app: AppHandle, s: State<'_, App>, patch: SettingsPatch) -> 
     let mut v = s.db.settings()?;
     apply_performance(&mut v, &patch)?;
     if let Some(t) = patch.theme { v.theme = t }
-    if let Some(l) = &patch.language {
-        if !(l.is_empty() || crate::i18n::LANGS.contains(&l.as_str())) {
-            return Err(AppError::Invalid(tr!("That language isn't available.")));
-        }
-        v.language = l.clone();
-    }
     if let Some(a) = patch.accent {
         if !(a.is_empty() || (a.len() == 7 && a.starts_with('#') && a[1..].bytes().all(|c| c.is_ascii_hexdigit()))) {
             return Err(AppError::Invalid(tr!("The accent must be a #rrggbb colour.")));
@@ -2414,10 +2408,6 @@ pub fn settings_set(app: AppHandle, s: State<'_, App>, patch: SettingsPatch) -> 
         log::warn!("could not roll back the panic hotkey after a failed save: {e}");
     }
     rest?;
-    if patch.language.is_some() {
-        crate::i18n::set(&v.language);
-        crate::tray::refresh(&app);
-    }
     if let Some(u) = self_update {
         crate::self_update::switched(&app, u);
     }
@@ -2436,7 +2426,7 @@ pub fn network_status(s: State<'_, App>) -> NetworkStatus {
 mod tests {
     #[test]
     fn tail_keeps_the_last_lines() {
-        let path = std::env::temp_dir().join(format!("roalt-tail-{}.log", uuid::Uuid::new_v4()));
+        let path = std::env::temp_dir().join(format!("lram-tail-{}.log", uuid::Uuid::new_v4()));
         assert!(crate::commands::tail(&path, 5).unwrap().is_empty());
         std::fs::write(&path, "a\nb\nc\nd\n").unwrap();
         assert_eq!(crate::commands::tail(&path, 2).unwrap(), ["c", "d"]);

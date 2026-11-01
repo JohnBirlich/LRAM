@@ -277,8 +277,6 @@ pub struct Settings {
     pub tiny_on_launch: bool,
     /// Launch on a Public network too (`network`); off: refused. On by default.
     pub allow_public_networks: bool,
-    /// UI and message language (`i18n::LANGS`), or "" to follow Windows' display language.
-    pub language: String,
 }
 
 /// The network LRAM runs on (`network`). Never its name: streamers show LRAM on screen.
@@ -499,7 +497,6 @@ impl Default for Settings {
             micro_height: 240,
             tiny_on_launch: false,
             allow_public_networks: true,
-            language: String::new(),
         }
     }
 }
@@ -590,8 +587,6 @@ pub struct SettingsPatch {
     pub tiny_on_launch: Option<bool>,
     #[ts(optional)]
     pub allow_public_networks: Option<bool>,
-    #[ts(optional)]
-    pub language: Option<String>,
 }
 
 /// What a Roblox log clean-up deleted (`logs_clean`).

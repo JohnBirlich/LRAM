@@ -91,7 +91,7 @@ QuikSwitch/                      repo root (product name RoALT)
 │     ├─ vault/
 │     │  ├─ mod.rs               data key, lock/unlock, auto-lock, re-auth
 │     │  ├─ dpapi.rs  master.rs  key wrapping
-│     │  └─ backup.rs            .roalt export/import
+│     │  └─ backup.rs            .lram export/import
 │     ├─ webview.rs              login capture + per-account session windows (temp WebView2 profiles)
 │     └─ storage/
 │        ├─ mod.rs               one Mutex<Connection>, used via spawn_blocking

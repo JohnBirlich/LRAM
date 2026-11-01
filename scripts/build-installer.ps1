@@ -73,7 +73,7 @@ try {
 # Where cargo put the build (CARGO_TARGET_DIR may move it).
 $meta = & cargo metadata --no-deps --format-version 1 --manifest-path "$root\src-tauri\Cargo.toml" | ConvertFrom-Json
 if ($LASTEXITCODE -ne 0) { Stop-Build 'cargo metadata failed' 'run it yourself to see why' }
-$exe = Join-Path $meta.target_directory 'release\roalt.exe'
+$exe = Join-Path $meta.target_directory 'release\lram.exe'
 
 Write-Host 'Compiling the installer'
 $isccArgs = @('/Q', "/DAppVersion=$version", "/DAppNumVersion=$($version -replace '[-+].*$','')", "/DAppExe=$exe", "$root\installer\LRAM.iss")

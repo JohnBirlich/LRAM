@@ -11,7 +11,9 @@ use ts_rs::TS;
 use crate::error::{AppError, Result};
 use crate::model::{Adaptive, MemThrottle, RenderFlags, Settings, SettingsPatch};
 
-const FORMAT: &str = "roalt-performance";
+const FORMAT: &str = "lram-performance";
+/// Profiles written before the rename; they still import.
+const LEGACY_FORMAT: &str = "lram-performance";
 const VERSION: u32 = 1;
 /// A profile is a few hundred bytes; anything bigger isn't one.
 pub const MAX_BYTES: usize = 64 * 1024;
@@ -148,7 +150,7 @@ pub fn parse(text: &str, current: &Settings) -> Result<Profile> {
         return Err(not_a_profile());
     }
     let file: File = serde_json::from_str(text.trim_start_matches('\u{feff}')).map_err(|_| not_a_profile())?;
-    if file.format != FORMAT {
+    if file.format != FORMAT && file.format != LEGACY_FORMAT {
         return Err(not_a_profile());
     }
     if file.version > VERSION {
@@ -189,27 +191,34 @@ mod tests {
     #[test]
     fn refuses_what_isnt_a_valid_profile() {
         let s = Settings::default();
-        for bad in ["", "not json", "{}", r#"{"format":"roalt-backup","version":1}"#, "[1]"] {
+        for bad in ["", "not json", "{}", r#"{"format":"lram-backup","version":1}"#, "[1]"] {
             assert!(parse(bad, &s).is_err(), "{bad}");
         }
-        assert!(parse(r#"{"format":"roalt-performance","version":2}"#, &s).is_err(), "newer");
-        assert!(parse(r#"{"format":"roalt-performance","version":1,"settings":{"fpsCap":2}}"#, &s).is_err(), "out of range");
-        assert!(parse(r#"{"format":"roalt-performance","version":1,"settings":{"memRestartMb":100}}"#, &s).is_err());
+        assert!(parse(r#"{"format":"lram-performance","version":2}"#, &s).is_err(), "newer");
+        assert!(parse(r#"{"format":"lram-performance","version":1,"settings":{"fpsCap":2}}"#, &s).is_err(), "out of range");
+        assert!(parse(r#"{"format":"lram-performance","version":1,"settings":{"memRestartMb":100}}"#, &s).is_err());
         assert!(parse(&"x".repeat(MAX_BYTES + 1), &s).is_err(), "too big");
     }
 
     #[test]
+    fn profiles_from_the_old_name_still_import() {
+        let s = Settings::default();
+        let old = r#"{"format":"lram-performance","version":1,"settings":{"fpsCap":30}}"#;
+        assert_eq!(parse(old, &s).unwrap().fps_cap, Some(30));
+    }
+
+    #[test]
     fn what_isnt_in_it_stays_out_and_cores_dont_travel() {
-        let text = r#"{"format":"roalt-performance","version":1,"settings":{"fpsCap":15,"adaptive":{"enabled":true,"background":{"cpuCap":25,"eco":true,"affinity":1}}}}"#;
+        let text = r#"{"format":"lram-performance","version":1,"settings":{"fpsCap":15,"adaptive":{"enabled":true,"background":{"cpuCap":25,"eco":true,"affinity":1}}}}"#;
         let p = parse(text, &Settings::default()).unwrap();
         assert_eq!(p.adaptive.unwrap().background.affinity, None);
-        let json = serde_json::to_value(parse(r#"{"format":"roalt-performance","version":1,"settings":{"fpsCap":15}}"#, &Settings::default()).unwrap()).unwrap();
+        let json = serde_json::to_value(parse(r#"{"format":"lram-performance","version":1,"settings":{"fpsCap":15}}"#, &Settings::default()).unwrap()).unwrap();
         assert_eq!(json, serde_json::json!({ "fpsCap": 15 }), "no nulls for the UI to save");
     }
 
     #[test]
     fn carries_only_performance_settings() {
-        let text = r#"{"format":"roalt-performance","version":1,"settings":{"fpsCap":15,"launchArgs":"--evil","panicHotkey":"Ctrl+A","previewFps":45},"extra":1}"#;
+        let text = r#"{"format":"lram-performance","version":1,"settings":{"fpsCap":15,"launchArgs":"--evil","panicHotkey":"Ctrl+A","previewFps":45},"extra":1}"#;
         let p = parse(text, &Settings::default()).unwrap();
         assert_eq!(p, Profile { fps_cap: Some(15), ..Default::default() }, "unknown keys and a bad preview rate are dropped");
         let patch = patch_of(&p);

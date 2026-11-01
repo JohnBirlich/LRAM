@@ -166,7 +166,4 @@ tinyOnLaunch: boolean,
  * Launch on a Public network too (`network`); off: refused. On by default.
  */
 allowPublicNetworks: boolean, 
-/**
- * UI and message language (`i18n::LANGS`), or "" to follow Windows' display language.
- */
-language: string, };
+};

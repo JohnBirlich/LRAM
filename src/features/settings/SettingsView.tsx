@@ -67,7 +67,7 @@ const SHORTCUTS: [Key, string][] = [
   ["settings.shortcut.close", "Esc"],
 ];
 
-const backupFilter = () => [{ name: t("settings.backupFilter"), extensions: ["roalt"] }];
+const backupFilter = () => [{ name: t("settings.backupFilter"), extensions: ["lram"] }];
 const RELEASES = "https://github.com/JohnBirlich/RAM/releases";
 const cancelled = () => ({ kind: "cancelled", message: "" });
 
@@ -511,7 +511,7 @@ export function SettingsView({ vault, settings, onPerformance, onRecoveryCode }:
         nextLabel={t("settings.backupPassword")}
         onSubmit={async ({ current, next }) => {
           const date = new Date().toISOString().slice(0, 10);
-          const path = await saveFile({ defaultPath: `LRAM-backup-${date}.roalt`, filters: backupFilter() });
+          const path = await saveFile({ defaultPath: `LRAM-backup-${date}.lram`, filters: backupFilter() });
           if (!path) throw cancelled();
           const n = await api.backupExport(path, next, master ? current : undefined);
           toast(t("settings.exported", { count: n }));

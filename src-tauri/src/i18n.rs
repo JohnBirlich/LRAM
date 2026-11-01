@@ -2,10 +2,7 @@
 
 use std::fmt::Display;
 
-pub const LANGS: [&str; 1] = ["en"];
-
-pub fn set(_pref: &str) {}
-
+/// The one language there is; the tray menu keeps it in its key so a change would rebuild it.
 pub fn current() -> &'static str {
     "en"
 }

@@ -316,7 +316,7 @@ async fn run_install(app: &AppHandle, s: &App) -> Result<()> {
     *lock(&s.update.latest) = Some(version.clone());
     let url = installer_url(&version).ok_or_else(|| AppError::Roblox("unexpected version name".into()))?;
 
-    let dir = TempDir::new("roalt-install-")?;
+    let dir = TempDir::new("lram-install-")?;
     let mut shown = 0;
     let bytes = s
         .api
@@ -512,7 +512,7 @@ mod tests {
     #[test]
     fn run_waits_for_a_write_locked_program() {
         let system = std::env::var_os("SystemRoot").map_or_else(|| PathBuf::from(r"C:\Windows"), PathBuf::from);
-        let dir = TempDir::new("roalt-install-").unwrap();
+        let dir = TempDir::new("lram-install-").unwrap();
         let exe = dir.0.join("ping-copy.exe");
         std::fs::copy(system.join(r"System32\PING.EXE"), &exe).unwrap();
         let pinned = OpenOptions::new().read(true).share_mode(FILE_SHARE_READ).open(&exe).unwrap();

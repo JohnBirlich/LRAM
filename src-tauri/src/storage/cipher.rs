@@ -198,7 +198,7 @@ mod tests {
     use crate::storage::Db;
 
     fn tmp() -> PathBuf {
-        std::env::temp_dir().join(format!("roalt-cipher-{}", uuid::Uuid::new_v4()))
+        std::env::temp_dir().join(format!("lram-cipher-{}", uuid::Uuid::new_v4()))
     }
 
     fn plain_has_rows(path: &Path) -> rusqlite::Result<i64> {

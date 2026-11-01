@@ -10,7 +10,7 @@ default, optional Argon2id + AES-256-GCM master password with auto-lock); SQLite
 accounts through Roblox's own sign-in page in a throw-away WebView2 profile or by pasting a
 cookie (validated first); validation on start and on demand; groups, alias, notes, colour,
 favourite, drag order, search and filters; reveal/copy behind Windows Hello or the master
-password (copy kept out of clipboard history, cleared after 30 s); encrypted `.roalt` backups;
+password (copy kept out of clipboard history, cleared after 30 s); encrypted `.lram` backups;
 Inno Setup installer, CI, and a tag → draft GitHub release workflow.
 
 **Test:** add an account both ways, validate, reveal/copy, set a master password and lock,

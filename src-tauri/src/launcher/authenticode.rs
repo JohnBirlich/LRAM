@@ -137,7 +137,7 @@ mod tests {
 
     #[test]
     fn unsigned_file_is_refused() {
-        let dir = std::env::temp_dir().join(format!("roalt-sig-{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("lram-sig-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir(&dir).unwrap();
         let exe = dir.join("unsigned.exe");
         std::fs::write(&exe, b"MZ not really a program").unwrap();

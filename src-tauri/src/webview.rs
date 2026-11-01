@@ -488,7 +488,7 @@ mod tests {
 
     #[test]
     fn sweep_removes_leftover_profiles() {
-        let root = std::env::temp_dir().join(format!("roalt-sweep-{}", uuid::Uuid::new_v4()));
+        let root = std::env::temp_dir().join(format!("lram-sweep-{}", uuid::Uuid::new_v4()));
         let tmp = root.join(TMP_DIR);
         std::fs::create_dir_all(tmp.join("a").join("EBWebView")).unwrap();
         std::fs::write(tmp.join("a").join("EBWebView").join("Cookies"), b"x").unwrap();

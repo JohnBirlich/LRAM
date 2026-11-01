@@ -215,7 +215,7 @@ for the amount you pick, and you confirm the purchase on Roblox.
 
 | Area | What you get |
 |---|---|
-| 🔐 **Vault** | DPAPI by default (opens silently). Optional master password with auto-lock after idle, and an optional one-use recovery code for it. Encrypted `.roalt` backups you can export and import. Copied cookies are kept out of clipboard history and cleared after 30 s. |
+| 🔐 **Vault** | DPAPI by default (opens silently). Optional master password with auto-lock after idle, and an optional one-use recovery code for it. Encrypted `.lram` backups you can export and import. Copied cookies are kept out of clipboard history and cleared after 30 s. |
 | 👥 **Accounts** | Add through Roblox's sign-in page (passkeys and security keys work), by pasting a cookie, by pasting many cookies at once, or by importing from Roblox Account Manager (an unlocked `AccountData.json`). Groups, alias, notes, colour, favourite, drag to reorder. Presence, Robux, Plus / Premium (legacy), friend and follower counts, join date, email and 2-step status. "Open on roblox.com" signed in as that account. |
 | 🚀 **Play** | Game links, place IDs, `roblox://` links, job IDs, private server links, `roblox.com/share` links (both formats), universes, profiles, `@username`. Join a friend or one of your other accounts. Favourites on the Play page and in the tray. `Ctrl+Enter` to launch. |
 | 🪟 **Batches** | Accounts launch strictly one after another with a stagger (default 6 s). **Same server**: *Pick a server* finds one with room for everyone first; *Follow the first* sends the rest to wherever the first account landed. Cancel at any time; one click re-picks the accounts that didn't launch. |
@@ -407,7 +407,7 @@ In **Settings → Launching**, turn on **Auto-rejoin** (and, if you like, **Auto
 
 > [!IMPORTANT]
 > Your `.ROBLOSECURITY` cookie is the key to your account. LRAM keeps it encrypted, but never share a cookie,
-> a `.roalt` backup or its password with anyone, including people who say they are helping you.
+> a `.lram` backup or its password with anyone, including people who say they are helping you.
 
 <br>
 
@@ -460,10 +460,10 @@ password. The code works once and you get a new one. It's optional: make one whe
 
 - A code file on the same PC opens the vault for anyone who finds it, so keep it on a USB stick, a phone or paper.
 - It works only for the same Windows user on the same PC. After a Windows reinstall or on a new PC it won't help; a
-  `.roalt` backup does.
+  `.lram` backup does.
 
 Without a code the password can't be recovered: that is what makes it safe. Remove the data folder
-(`%LOCALAPPDATA%\LRAM`) and add your accounts again, or import a `.roalt` backup whose password you know.
+(`%LOCALAPPDATA%\LRAM`) and add your accounts again, or import a `.lram` backup whose password you know.
 
 </details>
 
@@ -525,7 +525,7 @@ flowchart LR
 
 | Module | Role |
 |---|---|
-| [`vault/`](src-tauri/src/vault) | Envelope encryption: one random data key encrypts every secret (AES-256-GCM, row-bound AAD). The key is wrapped with DPAPI, or with an Argon2id key from the master password and then DPAPI. Windows Hello re-auth, `.roalt` backups. |
+| [`vault/`](src-tauri/src/vault) | Envelope encryption: one random data key encrypts every secret (AES-256-GCM, row-bound AAD). The key is wrapped with DPAPI, or with an Argon2id key from the master password and then DPAPI. Windows Hello re-auth, `.lram` backups. |
 | [`roblox_api/`](src-tauri/src/roblox_api) | The one typed Roblox client. Every URL in `endpoints.rs`. CSRF from the real request's 403, per-route queues driven by `x-ratelimit-*`, rotated `.ROBLOSECURITY` saved atomically, three error-body shapes parsed. |
 | [`launcher/`](src-tauri/src/launcher) | `target.rs` parses any pasted link locally; `uri.rs` builds the `roblox-player:` URI exactly like the website; `bulk.rs` runs batches and same-server; `client_settings.rs` the FPS cap and lowest graphics; `flags.rs` the rendering flags; `update.rs` + `authenticode.rs` install Roblox updates after `WinVerifyTrust`. |
 | [`instances/`](src-tauri/src/instances) | `tracker.rs` ties each client to its account by PID, start time and log file; `logwatch.rs` reads job IDs and disconnects; `rejoin.rs` and the crash breaker; `limits.rs` CPU caps, affinity, efficiency mode, trims; `metrics.rs`; `multi.rs` the singleton lock and take-over; `capture.rs` live previews; `window.rs` hidden clients, micro and tile; `resize.rs` free resizing; `qos.rs`; `afk.rs`. |

@@ -77,7 +77,7 @@ let settings: Settings = {
   antiAfk: { enabled: false, intervalMin: 15, mode: "focus" },
   discord: { crash: true, hang: true, memRestart: true, disconnect: true, restart: true, breaker: true, batchDone: true, launch: false, statusEveryMin: 0 },
   autoUpdate: false, selfUpdate: true, tabLayout: "top", discordPresence: true, minimizeOnLaunch: false, liveHiddenPreviews: true, microWidth: 320, microHeight: 240, tinyOnLaunch: false, panicHotkey: "", cleanLogs: false, fpsCap: 0, lowGraphics: true, skipSplash: false, lighterRendering: true, renderFlags: { msaa: "x1", texture: "lowest", mode: "default", graySky: false, noGrass: true, lowestFrm: true, pauseVoxelizer: false },
-  allowPublicNetworks: true, language: "",
+  allowPublicNetworks: true,
 };
 
 // Outdated, so Settings offers the update and the Launch view warns before a batch.
@@ -206,7 +206,7 @@ const PERF_KEYS = ["fpsCap", "lowGraphics", "lighterRendering", "renderFlags", "
 function perfProfile(previewFps: number) {
   const s: Record<string, unknown> = {};
   for (const k of PERF_KEYS) s[k] = settings[k];
-  return JSON.stringify({ format: "roalt-performance", version: 1, exportedAt: Date.now(), settings: { ...s, previewFps } }, null, 2);
+  return JSON.stringify({ format: "lram-performance", version: 1, exportedAt: Date.now(), settings: { ...s, previewFps } }, null, 2);
 }
 
 /** The profile in `text` as performance_parse returns it, or the error message. */
@@ -218,7 +218,7 @@ function perfParse(text: string): Record<string, unknown> | string {
   } catch {
     return refused;
   }
-  if (file?.format !== "roalt-performance") return refused;
+  if (file?.format !== "lram-performance") return refused;
   if ((file.version ?? 0) > 1) return "This profile was made by a newer LRAM; update LRAM first.";
   const p = file.settings ?? {};
   const fps = p.fpsCap as number | undefined;
@@ -280,14 +280,14 @@ function logLine(level: number, target: string, message: string, live = true) {
   if (live) emit("log://log", { level, message: line });
 }
 [
-  [3, "roalt", "multi-instance not active at start: another client holds the singleton"],
-  [4, "roalt::roblox_api", "users.roblox.com/v1/users/authenticated: HTTP 401, code Some((0, 0)): This cookie is not valid or has expired. Sign in again."],
-  [3, "roalt::commands", "account 3 marked Invalid: This cookie is not valid or has expired. Sign in again."],
-  [2, "roalt::instances::tracker", "instance 7f3a: client log not readable: The process cannot access the file"],
-  [5, "roalt", "panic in thread tokio-runtime-worker at src/instances/tracker.rs:612:9: index out of bounds"],
+  [3, "lram", "multi-instance not active at start: another client holds the singleton"],
+  [4, "lram::roblox_api", "users.roblox.com/v1/users/authenticated: HTTP 401, code Some((0, 0)): This cookie is not valid or has expired. Sign in again."],
+  [3, "lram::commands", "account 3 marked Invalid: This cookie is not valid or has expired. Sign in again."],
+  [2, "lram::instances::tracker", "instance 7f3a: client log not readable: The process cannot access the file"],
+  [5, "lram", "panic in thread tokio-runtime-worker at src/instances/tracker.rs:612:9: index out of bounds"],
   [4, "roblox", "account 2 instance 7f3a: [FLog::Error] Texture failed to load (x3)"],
 ].forEach(([l, t, m]) => logLine(l as number, t as string, m as string, false));
-setInterval(() => logLine(1 + Math.ceil(Math.random() * 4), "roalt::mock", "periodic mock line"), 4000);
+setInterval(() => logLine(1 + Math.ceil(Math.random() * 4), "lram::mock", "periodic mock line"), 4000);
 
 setInterval(() => {
   if (!settings.antiAfk.enabled) return;
@@ -1216,9 +1216,9 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
     }
 
     case "plugin:dialog|save":
-      return `C:\\Users\\you\\Documents\\${args.options?.defaultPath ?? "backup.roalt"}`;
+      return `C:\\Users\\you\\Documents\\${args.options?.defaultPath ?? "backup.lram"}`;
     case "plugin:dialog|open":
-      return args.options?.directory ? "D:\\LRAM data" : "C:\\Users\\you\\Documents\\LRAM-backup-2026-10-01.roalt";
+      return args.options?.directory ? "D:\\LRAM data" : "C:\\Users\\you\\Documents\\LRAM-backup-2026-10-01.lram";
     case "plugin:window|is_maximized":
       return false;
     default:

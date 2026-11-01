@@ -1,6 +1,6 @@
-//! Password-protected `.roalt` backup files (portable: no DPAPI).
+//! Password-protected `.lram` backup files (portable: no DPAPI).
 //!
-//! Layout: `b"ROALTBK1" | m_kib u32le | t u32le | p u32le | salt[16] | seal(key, header, json)`
+//! Layout: `b"LRAMBK01" | m_kib u32le | t u32le | p u32le | salt[16] | seal(key, header, json)`
 //! where `header` is every byte before the sealed part and `key = Argon2id(password, salt)`.
 
 use std::fs;
@@ -13,7 +13,11 @@ use zeroize::Zeroizing;
 use super::{Kdf, master};
 use crate::error::{AppError, Result};
 
-pub const MAGIC: &[u8; 8] = b"ROALTBK1";
+pub const MAGIC: &[u8; 8] = b"LRAMBK01";
+/// Backups written before the rename; they open as before.
+const LEGACY_MAGIC: &[u8; 8] = b"ROALTBK1";
+/// The header offsets below are counted from the magic's length, so the two must match.
+const _: () = assert!(MAGIC.len() == LEGACY_MAGIC.len());
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -80,8 +84,14 @@ const MAX_P: u32 = 16;
 
 /// Writes atomically (temp file in the same folder, then rename).
 pub fn write(path: &Path, password: &str, payload: &BackupPayload) -> Result<()> {
+    write_atomic(path, &build(MAGIC, password, payload)?)
+}
+
+/// The whole file, sealed over a header that starts with `magic` (the header is authenticated, so
+/// the magic cannot be swapped afterwards).
+fn build(magic: &[u8], password: &str, payload: &BackupPayload) -> Result<Vec<u8>> {
     let kdf = master::new_kdf();
-    let mut out = MAGIC.to_vec();
+    let mut out = magic.to_vec();
     for v in [kdf.m_kib, kdf.t, kdf.p] {
         out.extend_from_slice(&v.to_le_bytes());
     }
@@ -95,7 +105,7 @@ pub fn write(path: &Path, password: &str, payload: &BackupPayload) -> Result<()>
     let key = master::derive_key(password, &kdf)?;
     let sealed = master::seal(&key, &out, &json)?;
     out.extend_from_slice(&sealed);
-    write_atomic(path, &out)
+    Ok(out)
 }
 
 /// `WrongPassword` when the password (or file) does not authenticate,
@@ -107,7 +117,7 @@ pub fn read(path: &Path, password: &str) -> Result<BackupPayload> {
         return Err(not_backup());
     }
     let bytes = fs::read(path)?;
-    if bytes.len() < HEADER_LEN + SEAL_OVERHEAD || !bytes.starts_with(MAGIC) {
+    if bytes.len() < HEADER_LEN + SEAL_OVERHEAD || !(bytes.starts_with(MAGIC) || bytes.starts_with(LEGACY_MAGIC)) {
         log::debug!("not a backup: bad magic or truncated ({} bytes)", bytes.len());
         return Err(not_backup());
     }
@@ -153,7 +163,7 @@ mod tests {
     const PASSWORD: &str = "backup pass";
 
     fn tmp_path() -> PathBuf {
-        std::env::temp_dir().join(format!("roalt-test-{}.roalt", uuid::Uuid::new_v4()))
+        std::env::temp_dir().join(format!("lram-test-{}.lram", uuid::Uuid::new_v4()))
     }
 
     fn sample() -> BackupPayload {
@@ -221,5 +231,16 @@ mod tests {
             assert!(matches!(r, Err(AppError::Invalid(m)) if m == "This isn't a LRAM backup."));
         }
         assert!(matches!(cut_body, Err(AppError::WrongPassword)));
+    }
+
+    #[test]
+    fn backups_from_the_old_name_still_open() {
+        let path = tmp_path();
+        let legacy = build(LEGACY_MAGIC, PASSWORD, &sample()).unwrap();
+        assert!(legacy.starts_with(LEGACY_MAGIC));
+        fs::write(&path, &legacy).unwrap();
+        let back = read(&path, PASSWORD);
+        let _ = fs::remove_file(&path);
+        assert_eq!(back.unwrap().accounts.len(), 1);
     }
 }

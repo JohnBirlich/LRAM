@@ -568,7 +568,7 @@ mod tests {
         }
         // Asset names must match exactly, and come from github.com over https.
         for (field, value) in [
-            ("name", "roalt-setup-0.5.1.exe"),
+            ("name", "lram-setup-0.5.1.exe"),
             ("browser_download_url", "http://github.com/JohnBirlich/RAM/releases/download/v0.5.1/LRAM-Setup-0.5.1.exe"),
             ("browser_download_url", "https://evil.example/LRAM-Setup-0.5.1.exe"),
             ("browser_download_url", "https://github.com.evil.example/LRAM-Setup-0.5.1.exe"),

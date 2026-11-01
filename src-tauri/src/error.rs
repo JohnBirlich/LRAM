@@ -38,6 +38,42 @@ pub enum AppError {
     Internal(String),
 }
 
+/// A Windows error in English: the system text comes in the language of Windows, and the
+/// interface is English only. The code stays, so a report can still be looked up.
+#[cfg(windows)]
+pub fn windows_error(e: &windows::core::Error) -> String {
+    use windows::Win32::Foundation::{
+        ERROR_ACCESS_DENIED, ERROR_INVALID_HANDLE, ERROR_INVALID_PARAMETER, ERROR_NOT_ENOUGH_MEMORY, ERROR_PRIVILEGE_NOT_HELD,
+        ERROR_SHARING_VIOLATION,
+    };
+    let code = e.code().0 as u32;
+    let known = [
+        (ERROR_ACCESS_DENIED.0, "access denied"),
+        (ERROR_INVALID_HANDLE.0, "invalid handle"),
+        (ERROR_NOT_ENOUGH_MEMORY.0, "not enough memory"),
+        (ERROR_SHARING_VIOLATION.0, "the file is in use"),
+        (ERROR_INVALID_PARAMETER.0, "the parameter is incorrect"),
+        (ERROR_PRIVILEGE_NOT_HELD.0, "the privilege is not held"),
+    ];
+    match known.iter().find(|(c, _)| *c == code) {
+        Some((_, what)) => format!("{what} (0x{code:08X})"),
+        None => format!("Windows error 0x{code:08X}"),
+    }
+}
+
+#[cfg(all(test, windows))]
+mod windows_error_tests {
+    use super::*;
+
+    #[test]
+    fn windows_errors_are_english() {
+        use windows::Win32::Foundation::{E_ACCESSDENIED, HRESULT};
+        assert_eq!(windows_error(&windows::core::Error::from_hresult(E_ACCESSDENIED)), "access denied (0x80070005)");
+        let odd = windows::core::Error::from_hresult(HRESULT(0x8004_5678u32 as i32));
+        assert_eq!(windows_error(&odd), "Windows error 0x80045678");
+    }
+}
+
 impl AppError {
     pub fn kind(&self) -> &'static str {
         match self {

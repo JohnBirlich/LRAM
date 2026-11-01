@@ -517,7 +517,7 @@ pub fn trim(pid: u32, t0: u64) -> Result<()> {
     // SAFETY: `h` is live with PROCESS_SET_QUOTA | PROCESS_QUERY_LIMITED_INFORMATION.
     unsafe { K32EmptyWorkingSet(*h) }
         .ok()
-        .map_err(|e| AppError::Internal(tr!("Could not trim Roblox (process {pid}): {why}", pid = pid, why = e.message())))
+        .map_err(|e| AppError::Internal(tr!("Could not trim Roblox (process {pid}): {why}", pid = pid, why = crate::error::windows_error(&e))))
 }
 
 /// Sets the cores the client may use; None: all of them (the system's mask). A mask naming no
@@ -538,7 +538,7 @@ fn set_affinity(pid: u32, t0: u64, mask: Option<u64>) -> Result<()> {
 
 fn new_job() -> Result<Job> {
     // SAFETY: default security, no name; Owned closes the handle on drop.
-    unsafe { CreateJobObjectW(None, PCWSTR::null()) }.map(|h| Job(unsafe { Owned::new(h) })).map_err(|e| AppError::Internal(e.message()))
+    unsafe { CreateJobObjectW(None, PCWSTR::null()) }.map(|h| Job(unsafe { Owned::new(h) })).map_err(|e| AppError::Internal(crate::error::windows_error(&e)))
 }
 
 /// None turns the cap off (the job stays, with no limit).
@@ -560,7 +560,7 @@ fn set_cap(job: &Job, cap: Option<u8>) -> Result<()> {
             size_of::<JOBOBJECT_CPU_RATE_CONTROL_INFORMATION>() as u32,
         )
     }
-    .map_err(|e| AppError::Internal(tr!("Could not set the CPU limit: {why}", why = e.message())))
+    .map_err(|e| AppError::Internal(tr!("Could not set the CPU limit: {why}", why = crate::error::windows_error(&e))))
 }
 
 /// On: EcoQoS, below-normal priority, and what may fail without harm on older Windows: ignoring
@@ -606,7 +606,7 @@ fn client(pid: u32, t0: u64, rights: PROCESS_ACCESS_RIGHTS) -> Result<Owned<HAND
 }
 
 fn failed(pid: u32, e: windows::core::Error) -> AppError {
-    AppError::Internal(tr!("Could not limit Roblox (process {pid}): {why}", pid = pid, why = e.message()))
+    AppError::Internal(tr!("Could not limit Roblox (process {pid}): {why}", pid = pid, why = crate::error::windows_error(&e)))
 }
 
 #[cfg(test)]

@@ -252,7 +252,7 @@ fn create_mutex(name: &str) -> Result<Singleton> {
         if e.code() == ERROR_INVALID_HANDLE.to_hresult() {
             AppError::Invalid(running())
         } else {
-            AppError::Internal(tr!("Could not take the multi-instance lock: {why}", why = e.message()))
+            AppError::Internal(tr!("Could not take the multi-instance lock: {why}", why = crate::error::windows_error(&e)))
         }
     })?;
     // SAFETY: as above.
@@ -343,7 +343,7 @@ fn close_in(pid: u32, table: &[(u32, usize)], suffix: &str) -> Result<usize> {
     let proc = unsafe { OpenProcess(PROCESS_DUP_HANDLE, false, pid) }
         // SAFETY: as above.
         .map(|h| unsafe { Owned::new(h) })
-        .map_err(|e| AppError::Invalid(tr!("Windows wouldn't let LRAM into Roblox (process {pid}): {why}", pid = pid, why = e.message())))?;
+        .map_err(|e| AppError::Invalid(tr!("Windows wouldn't let LRAM into Roblox (process {pid}): {why}", pid = pid, why = crate::error::windows_error(&e))))?;
     let mut closed = 0;
     for &(_, value) in table.iter().filter(|(p, _)| *p == pid) {
         let source = HANDLE(value as *mut c_void);

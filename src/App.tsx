@@ -25,6 +25,7 @@ import { RecoveryCodeDialog } from "./features/vault/RecoveryCodeDialog";
 import { UnlockScreen, type LockReason } from "./features/vault/UnlockScreen";
 import { setLang, t } from "./i18n";
 import { Icon } from "./ui/Icon";
+import { DirectionSwitcher } from "./ui/DirectionSwitcher";
 import { Divider, usePanelWidth } from "./ui/Resizer";
 import { TitleBar } from "./ui/TitleBar";
 import { friendly, toast, toastError, Toaster } from "./ui/Toast";
@@ -38,6 +39,8 @@ export default function App() {
       <Root />
       <Toaster />
       <Splash />
+      {/* Design proposals for review; tree-shaken out of release builds. */}
+      {import.meta.env.DEV && <DirectionSwitcher />}
     </QueryClientProvider>
   );
 }

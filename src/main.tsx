@@ -3,7 +3,9 @@ import { createRoot } from "react-dom/client";
 import "@fontsource-variable/geist";
 import "@fontsource-variable/geist-mono";
 import "./theme.css";
+import "./styles/directions.css";
 import App, { THEME_KEY } from "./App";
+import { applyDirection, DIRECTION_KEY } from "./ui/DirectionSwitcher";
 import { debugLog } from "./api";
 import { t } from "./i18n";
 
@@ -56,7 +58,9 @@ try {
   const t = localStorage.getItem(THEME_KEY);
   // The resolved theme (never "system").
   if (t === "light") document.documentElement.dataset.theme = t;
-
+  // Design direction (dev-only proposals, src/styles/directions.css).
+  const d = localStorage.getItem(DIRECTION_KEY);
+  if (d) applyDirection(d);
 } catch {
   // No storage: the default (dark) applies until settings load.
 }

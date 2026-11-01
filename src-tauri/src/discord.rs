@@ -1,5 +1,5 @@
 //! Discord alerts (opt-in): what happens to the clients, posted to a webhook the user pastes.
-//! The only host besides Roblox RoALT talks to, and only once a webhook is set.
+//! The only host besides Roblox LRAM talks to, and only once a webhook is set.
 //!
 //! The webhook URL holds its token, so it is a secret: kept in the vault (AES-GCM, `DISCORD_AAD`)
 //! as hex in the settings table, never logged, never sent to the UI (only its id's last digits).
@@ -136,8 +136,8 @@ impl Event {
                 "⛔ {}",
                 trn!(
                     *count,
-                    "**{name}**: RoALT gave up after {n} relaunch in {minutes} min.",
-                    "**{name}**: RoALT gave up after {n} relaunches in {minutes} min.",
+                    "**{name}**: LRAM gave up after {n} relaunch in {minutes} min.",
+                    "**{name}**: LRAM gave up after {n} relaunches in {minutes} min.",
                     name = name,
                     minutes = window_min
                 )
@@ -227,9 +227,9 @@ pub fn message(events: &[Event]) -> Value {
         _ => 0xB4_F0_00,
     };
     json!({
-        "username": "RoALT",
+        "username": "LRAM",
         "allowed_mentions": { "parse": [] },
-        "embeds": [{ "title": "RoALT", "description": lines.join("\n"), "color": color }],
+        "embeds": [{ "title": "LRAM", "description": lines.join("\n"), "color": color }],
     })
 }
 
@@ -368,9 +368,9 @@ pub fn set(s: &App, url: Option<&str>) -> Result<DiscordStatus> {
 pub async fn test(s: &App) -> Result<()> {
     let hook = webhook(s)?.ok_or_else(|| AppError::Invalid(tr!("Set a webhook first.")))?;
     let body = json!({
-        "username": "RoALT",
+        "username": "LRAM",
         "allowed_mentions": { "parse": [] },
-        "embeds": [{ "title": "RoALT", "description": format!("✅ {}", tr!("Test message: RoALT's alerts reach this channel.")), "color": 0xB4_F0_00 }],
+        "embeds": [{ "title": "LRAM", "description": format!("✅ {}", tr!("Test message: LRAM's alerts reach this channel.")), "color": 0xB4_F0_00 }],
     });
     let now = Instant::now();
     let r = post(s, &hook, &body).await;
@@ -641,7 +641,7 @@ mod tests {
         assert_eq!(t(inst(InGame, Some(HUNG)), inst(InGame, Some(HUNG))), None, "still hung");
         assert_eq!(t(inst(InGame, None), inst(Exited, Some(UNEXPECTED))), Some(CrashKind::Crash));
         assert_eq!(t(inst(Starting, None), inst(Exited, Some(UNEXPECTED))), Some(CrashKind::Crash));
-        // Ended after a disconnect (already told), closed by the user or RoALT, replaced.
+        // Ended after a disconnect (already told), closed by the user or LRAM, replaced.
         assert_eq!(t(inst(Disconnected, None), inst(Exited, Some(UNEXPECTED))), None);
         assert_eq!(t(inst(InGame, None), inst(Exited, Some("Closed"))), None);
         assert_eq!(t(inst(InGame, Some(HUNG)), inst(Exited, Some("Closed"))), None);
@@ -667,7 +667,7 @@ mod tests {
     fn builds_one_embed_per_message() {
         let crash = Event::Crash { name: "Nova (@nova\\_builds)".into(), place_id: Some(1818) };
         let one = message(std::slice::from_ref(&crash));
-        assert_eq!(one["username"], "RoALT");
+        assert_eq!(one["username"], "LRAM");
         assert_eq!(one["allowed_mentions"]["parse"], json!([]));
         let embeds = one["embeds"].as_array().unwrap();
         assert_eq!(embeds.len(), 1);

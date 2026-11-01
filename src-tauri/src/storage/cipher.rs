@@ -23,6 +23,9 @@ use crate::error::{AppError, Result};
 use crate::vault::master::random_bytes;
 use crate::vault::{protect_with, unprotect_with};
 
+/// DPAPI entropy of the database key. Frozen at the original product name: changing it would make
+/// every existing `lram.db.key` unreadable (DPAPI mixes the entropy into the key), so a rename of
+/// the product must never touch it.
 const ENTROPY: &[u8] = b"RoALT/db/v1";
 
 /// `<db>` plus a suffix: `roalt.db` → `roalt.db.key`.
@@ -232,7 +235,7 @@ mod tests {
     fn a_plain_database_is_encrypted_with_its_data() {
         let dir = tmp();
         let path = dir.join("roalt.db");
-        // A plain database as an older RoALT left it: migrated schema, one account, WAL.
+        // A plain database as an older LRAM left it: migrated schema, one account, WAL.
         std::fs::create_dir_all(&dir).unwrap();
         Db::open_in_memory().unwrap().copy_to(&path, || Ok(())).unwrap();
         put(&path, 42);

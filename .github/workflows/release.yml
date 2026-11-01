@@ -1,7 +1,7 @@
 name: Release
 
 # On a v* tag, or by hand (Actions > Release > Run workflow): builds the installer, signs it for
-# RoALT's self-updater (RoALT-Setup-<version>.exe.sig, ECDSA P-256 with the ROALT_UPDATE_KEY
+# LRAM's self-updater (LRAM-Setup-<version>.exe.sig, ECDSA P-256 with the LRAM_UPDATE_KEY
 # secret), then puts both with their SHA-256 on a draft release v<version>. Nothing is published:
 # a maintainer reviews the draft and publishes it, which creates the tag when a manual run made it.
 on:
@@ -26,8 +26,12 @@ jobs:
       version: ${{ steps.v.outputs.version }}
       tag: ${{ steps.v.outputs.tag }}
       signed: ${{ env.HAS_SIGNPATH }}
+      self_signed: ${{ env.HAS_UPDATE_KEY }}
     env:
       HAS_SIGNPATH: ${{ secrets.SIGNPATH_API_TOKEN != '' }}
+      # No LRAM_UPDATE_KEY secret, no updater signature: this fork ships builds installed by hand,
+      # and a release must still go through without that secret.
+      HAS_UPDATE_KEY: ${{ secrets.LRAM_UPDATE_KEY != '' }}
     steps:
       - uses: actions/checkout@v7
       - id: v
@@ -55,14 +59,14 @@ jobs:
         if: env.HAS_SIGNPATH == 'true'
         with:
           name: unsigned
-          path: dist-installer/RoALT-Setup-${{ steps.v.outputs.version }}.exe
+          path: dist-installer/LRAM-Setup-${{ steps.v.outputs.version }}.exe
           if-no-files-found: error
       - uses: signpath/github-action-submit-signing-request@v2
         if: env.HAS_SIGNPATH == 'true'
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
-          project-slug: RoALT
+          project-slug: LRAM
           signing-policy-slug: release-signing
           artifact-configuration-slug: github-ci
           github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
@@ -70,28 +74,29 @@ jobs:
           output-artifact-directory: dist-signed
       - name: Use the signed installer
         if: env.HAS_SIGNPATH == 'true'
-        run: Copy-Item "dist-signed\RoALT-Setup-${{ steps.v.outputs.version }}.exe" dist-installer\ -Force
+        run: Copy-Item "dist-signed\LRAM-Setup-${{ steps.v.outputs.version }}.exe" dist-installer\ -Force
       - name: Sign the installer for the self-updater
+        if: env.HAS_UPDATE_KEY == 'true'
         # The key (a PKCS#8 PEM P-256 private key) reaches Node only through the environment and is
-        # never printed. Signed: "RoALT-Setup-<version>.exe\n" then the installer's bytes, so the
+        # never printed. Signed: "LRAM-Setup-<version>.exe\n" then the installer's bytes, so the
         # version can't be swapped. The signature is IEEE P1363 (r||s, 64 bytes) in base64: what
-        # RoALT checks, and it is checked here against the PUBLIC_KEY in self_update.rs first.
+        # LRAM checks, and it is checked here against the PUBLIC_KEY in self_update.rs first.
         env:
-          ROALT_UPDATE_KEY: ${{ secrets.ROALT_UPDATE_KEY }}
+          LRAM_UPDATE_KEY: ${{ secrets.LRAM_UPDATE_KEY }}
           VERSION: ${{ steps.v.outputs.version }}
         run: |
           node -e '
             const crypto = require("crypto"), fs = require("fs");
-            const key = process.env.ROALT_UPDATE_KEY;
-            if (!key) { console.log("::error::the ROALT_UPDATE_KEY secret is not set: the installer cannot be signed"); process.exit(1); }
-            const name = `RoALT-Setup-${process.env.VERSION}.exe`, exe = `dist-installer/${name}`;
+            const key = process.env.LRAM_UPDATE_KEY;
+            if (!key) { console.log("::error::the LRAM_UPDATE_KEY secret is not set: the installer cannot be signed"); process.exit(1); }
+            const name = `LRAM-Setup-${process.env.VERSION}.exe`, exe = `dist-installer/${name}`;
             const data = Buffer.concat([Buffer.from(name + "\n"), fs.readFileSync(exe)]);
             const sig = crypto.sign("sha256", data, { key, dsaEncoding: "ieee-p1363" });
             const hex = fs.readFileSync("src-tauri/src/self_update.rs", "utf8").match(/const PUBLIC_KEY: &str = "([0-9a-f]{128})"/)[1];
             const xy = Buffer.from(hex, "hex"), b64 = (b) => b.toString("base64url");
             const pub = crypto.createPublicKey({ key: { kty: "EC", crv: "P-256", x: b64(xy.subarray(0, 32)), y: b64(xy.subarray(32)) }, format: "jwk" });
             if (!crypto.verify("sha256", data, { key: pub, dsaEncoding: "ieee-p1363" }, sig)) {
-              console.log("::error::ROALT_UPDATE_KEY is not the key whose public half is PUBLIC_KEY in self_update.rs: RoALT would refuse this installer");
+              console.log("::error::LRAM_UPDATE_KEY is not the key whose public half is PUBLIC_KEY in self_update.rs: LRAM would refuse this installer");
               process.exit(1);
             }
             fs.writeFileSync(exe + ".sig", sig.toString("base64"));
@@ -102,9 +107,9 @@ jobs:
         with:
           name: windows
           path: |
-            dist-installer/RoALT-Setup-${{ steps.v.outputs.version }}.exe
-            dist-installer/RoALT-Setup-${{ steps.v.outputs.version }}.exe.sig
-          if-no-files-found: error
+            dist-installer/LRAM-Setup-${{ steps.v.outputs.version }}.exe
+            dist-installer/LRAM-Setup-${{ steps.v.outputs.version }}.exe.sig
+          if-no-files-found: ignore
 
   release:
     needs: windows
@@ -124,16 +129,24 @@ jobs:
           TAG: ${{ needs.windows.outputs.tag }}
           VERSION: ${{ needs.windows.outputs.version }}
           SIGNED: ${{ needs.windows.outputs.signed }}
+          UPDATER_SIGNED: ${{ needs.windows.outputs.self_signed }}
         run: |
           sha256sum -- * > SHA256SUMS.txt
           cat SHA256SUMS.txt
-          test -s "RoALT-Setup-$VERSION.exe.sig" || { echo "::error::RoALT-Setup-$VERSION.exe.sig is missing"; exit 1; }
+          updater=""
+          if [ "$UPDATER_SIGNED" = true ]; then
+            test -s "LRAM-Setup-$VERSION.exe.sig" || { echo "::error::LRAM-Setup-$VERSION.exe.sig is missing"; exit 1; }
+            updater="LRAM-Setup-$VERSION.exe.sig is the signature LRAM's built-in updater checks before it runs the installer."
+          else
+            rm -f "LRAM-Setup-$VERSION.exe.sig"
+            updater="This build carries no updater key: install new versions by hand from this page."
+          fi
           signing="No Authenticode signature yet: SmartScreen warns."
           if [ "$SIGNED" = true ]; then signing="Code signed."; fi
           cat > ../notes.md <<EOF
-          $signing The SHA-256 sums are below and in SHA256SUMS.txt; RoALT-Setup-$VERSION.exe.sig is the signature RoALT's built-in updater checks before it runs the installer.
+          $signing The SHA-256 sums are below and in SHA256SUMS.txt. $updater
 
-          - **Windows** 10 1809 or later, or Windows 11, x64: RoALT-Setup-$VERSION.exe. SmartScreen warns on first run: More info → Run anyway.
+          - **Windows** 10 1809 or later, or Windows 11, x64: LRAM-Setup-$VERSION.exe. SmartScreen warns on first run: More info → Run anyway.
           - Needs the Microsoft Edge WebView2 Runtime (Windows 11 has it). Setup checks, and offers Microsoft's download when it is missing.
 
           ~~~
@@ -153,5 +166,5 @@ jobs:
             gh release upload "$TAG" ./* --clobber
             gh release edit "$TAG" --target "$GITHUB_SHA" --notes-file ../notes.md
           else
-            gh release create "$TAG" ./* --draft --target "$GITHUB_SHA" --title "RoALT $VERSION" --notes-file ../notes.md
+            gh release create "$TAG" ./* --draft --target "$GITHUB_SHA" --title "LRAM $VERSION" --notes-file ../notes.md
           fi

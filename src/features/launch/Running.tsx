@@ -160,7 +160,7 @@ const KINDS: Record<CrashKind, Key> = {
   mem: "launch.crash.mem",
 };
 
-/** What RoALT recorded about an ended client: how it ended, what its log said, its log. */
+/** What LRAM recorded about an ended client: how it ended, what its log said, its log. */
 function CrashDetails({ crash: c }: { crash: Crash }) {
   return (
     <div className="well flex flex-col gap-2 px-4 py-3">
@@ -250,7 +250,7 @@ export function EndedPanel({ accounts }: { accounts: AccountSummary[] }) {
 const HOLD_MS = 1000;
 
 /** The panic button: held for a second (pointer, Space or Enter), it cancels the batch, stops
- * rejoins and restarts, and terminates every Roblox client at once, RoALT's or not. */
+ * rejoins and restarts, and terminates every Roblox client at once, LRAM's or not. */
 export function KillAllButton() {
   const qc = useQueryClient();
   const [held, setHeld] = useState(false);

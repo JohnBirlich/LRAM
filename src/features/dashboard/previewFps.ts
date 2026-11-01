@@ -6,7 +6,7 @@ export const PREVIEW_FPS = [5, 15, 30, 60] as const;
 export type PreviewFps = (typeof PREVIEW_FPS)[number];
 const KEY = "roalt.previewFps";
 const CHANGED = "roalt:previewFps";
-/** When this PC keeps no storage, the choice lasts until RoALT closes. */
+/** When this PC keeps no storage, the choice lasts until LRAM closes. */
 let unsaved: PreviewFps | null = null;
 
 export function storedFps(): PreviewFps {
@@ -28,7 +28,7 @@ export function setPreviewFps(f: PreviewFps) {
   window.dispatchEvent(new Event(CHANGED));
 }
 
-/** The preview rate, following changes made anywhere in RoALT. */
+/** The preview rate, following changes made anywhere in LRAM. */
 export function usePreviewFps(): [PreviewFps, (f: PreviewFps) => void] {
   const [fps, setFps] = useState(storedFps);
   useEffect(() => {

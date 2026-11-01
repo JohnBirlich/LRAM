@@ -3,11 +3,13 @@ import { createRoot } from "react-dom/client";
 import "@fontsource-variable/geist";
 import "@fontsource-variable/geist-mono";
 import "./theme.css";
+import "./styles/directions.css";
 import App, { THEME_KEY } from "./App";
+import { applyDirection, DEFAULT_DIRECTION, DIRECTION_KEY } from "./ui/DirectionSwitcher";
 import { debugLog } from "./api";
 import { t } from "./i18n";
 
-// Everything that goes wrong in the UI reaches roalt.log (the Debug tab).
+// Everything that goes wrong in the UI reaches lram.log (the Debug tab).
 let forwarding = false;
 function report(level: "error" | "warn", message: string) {
   // A failure while forwarding must not forward itself again.
@@ -56,7 +58,8 @@ try {
   const t = localStorage.getItem(THEME_KEY);
   // The resolved theme (never "system").
   if (t === "light") document.documentElement.dataset.theme = t;
-
+  // Design direction (dev-only proposals, src/styles/directions.css).
+  applyDirection(localStorage.getItem(DIRECTION_KEY) ?? DEFAULT_DIRECTION);
 } catch {
   // No storage: the default (dark) applies until settings load.
 }

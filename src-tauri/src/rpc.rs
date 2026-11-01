@@ -1,9 +1,9 @@
-//! Discord rich presence (`Settings.discord_presence`): "Playing RoALT", idling or with the
-//! game and how many alts run, plus Get RoALT / Join Discord buttons.
+//! Discord rich presence (`Settings.discord_presence`): "Playing LRAM", idling or with the
+//! game and how many alts run, plus a Get LRAM button. Off by default.
 //!
 //! Spoken to the Discord app on this PC over its local IPC pipe `\\.\pipe\discord-ipc-N`: each
 //! frame is an opcode and a length (u32 LE each), then JSON. Nothing goes over the network from
-//! RoALT, and nothing happens while Discord isn't running (the pipe is retried every tick).
+//! LRAM, and nothing happens while Discord isn't running (the pipe is retried every tick).
 
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
@@ -16,10 +16,9 @@ use crate::App;
 use crate::commands::{cached_game_name, now_ms};
 use crate::model::{Instance, InstanceState};
 
-/// The "RoALT" application on Discord's Developer Portal; its art asset `roalt` is the logo.
+/// The "LRAM" application on Discord's Developer Portal; its art asset `roalt` is the logo.
 const CLIENT_ID: &str = "1565066775752741165";
-const DOWNLOAD: &str = "https://github.com/inspectsoftware/RoALT/releases/latest";
-const INVITE: &str = "https://discord.gg/qcj68tHKCX";
+const DOWNLOAD: &str = "https://github.com/JohnBirlich/RAM/releases/latest";
 /// Discord allows about 5 activity updates per 20 s; one is sent only when it changed.
 const TICK: Duration = Duration::from_secs(5);
 
@@ -128,11 +127,8 @@ fn activity((details, state): &(String, String), since_ms: i64) -> Value {
         "details": details,
         "state": state,
         "timestamps": { "start": since_ms / 1000 },
-        "assets": { "large_image": "roalt", "large_text": format!("RoALT · {}", tr!("Managing Roblox alts")) },
-        "buttons": [
-            { "label": tr!("Get RoALT"), "url": DOWNLOAD },
-            { "label": tr!("Join Discord"), "url": INVITE },
-        ],
+        "assets": { "large_image": "roalt", "large_text": format!("LRAM · {}", tr!("Managing Roblox alts")) },
+        "buttons": [{ "label": tr!("Get LRAM"), "url": DOWNLOAD }],
     })
 }
 
@@ -254,10 +250,10 @@ mod tests {
     }
 
     #[test]
-    fn activity_has_both_buttons() {
+    fn activity_has_the_download_button() {
         let a = activity(&("Idling".into(), "Managing Roblox alts".into()), 5_000);
         assert_eq!(a["timestamps"]["start"], 5);
-        assert_eq!(a["buttons"][0]["label"], "Get RoALT");
-        assert_eq!(a["buttons"][1]["url"], INVITE);
+        assert_eq!(a["buttons"][0]["label"], "Get LRAM");
+        assert_eq!(a["buttons"][0]["url"], DOWNLOAD);
     }
 }

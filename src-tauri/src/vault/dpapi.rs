@@ -9,6 +9,8 @@ use zeroize::{Zeroize, Zeroizing};
 
 use crate::error::{AppError, Result};
 
+/// DPAPI entropy of every vault wrap. Frozen at the original product name, like the database's:
+/// changing it would strand the data key of every existing vault.
 pub const ENTROPY: &[u8] = b"RoALT/vault/v1";
 
 pub fn protect(data: &[u8]) -> Result<Vec<u8>> {

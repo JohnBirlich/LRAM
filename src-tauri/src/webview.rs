@@ -49,7 +49,7 @@ pub async fn capture_login(app: &AppHandle, data_dir: &Path) -> Result<Secret> {
     let label = format!("login-{id}");
     let profile = data_dir.join(TMP_DIR).join(id.to_string());
     let built = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(parse_url(endpoints::LOGIN_PAGE)?))
-        .title(tr!("Sign in to Roblox — RoALT"))
+        .title(tr!("Sign in to Roblox — LRAM"))
         .inner_size(480.0, 760.0)
         .center()
         .data_directory(profile.clone())

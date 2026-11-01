@@ -1,4 +1,4 @@
-//! The tray icon (`tray-icon` feature): left click shows the window; the menu has Show RoALT,
+//! The tray icon (`tray-icon` feature): left click shows the window; the menu has Show LRAM,
 //! Favourites (those with `in_tray`), Close all clients, Kill all Roblox, Lock vault
 //! (master-password mode), Quit.
 
@@ -34,12 +34,12 @@ fn shown() -> MutexGuard<'static, Option<View>> {
     SHOWN.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// Builds the tray icon (the app's window icon, tooltip "RoALT") and its menu; menu events go
+/// Builds the tray icon (the app's window icon, tooltip "LRAM") and its menu; menu events go
 /// to `on_menu`. Called once from setup.
 pub fn setup(app: &AppHandle) -> tauri::Result<()> {
     let view = view(app);
     let mut tray = TrayIconBuilder::with_id(TRAY)
-        .tooltip("RoALT")
+        .tooltip("LRAM")
         .menu(&menu(app, &view)?)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, e| on_menu(app, e.id().as_ref()))
@@ -57,8 +57,8 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
 }
 
 /// Rebuilds the menu: favourites in tray order by name (ids `fav:<id>`; disabled with the label
-/// "Unlock RoALT to launch" while the vault is locked; "No favourites" when none), "Close all
-/// clients" (disabled when none run), "Kill all Roblox" (always: it also ends clients RoALT
+/// "Unlock LRAM to launch" while the vault is locked; "No favourites" when none), "Close all
+/// clients" (disabled when none run), "Kill all Roblox" (always: it also ends clients LRAM
 /// didn't start), "Lock vault" (only in master-password mode, disabled
 /// while locked). Called after favourites change, the vault locks or unlocks, and clients
 /// start or end. Never fails loudly: errors are logged.
@@ -109,7 +109,7 @@ fn menu(app: &AppHandle, v: &View) -> tauri::Result<Menu<Wry>> {
     if v.favourites.is_empty() {
         favourites.append(&MenuItem::new(app, tr!("No favourites"), false, None::<&str>)?)?;
     } else if v.locked {
-        favourites.append(&MenuItem::new(app, tr!("Unlock RoALT to launch"), false, None::<&str>)?)?;
+        favourites.append(&MenuItem::new(app, tr!("Unlock LRAM to launch"), false, None::<&str>)?)?;
     } else {
         for (id, name) in &v.favourites {
             // A single `&` would mark a shortcut key in a Windows menu.
@@ -119,7 +119,7 @@ fn menu(app: &AppHandle, v: &View) -> tauri::Result<Menu<Wry>> {
     let menu = Menu::with_items(
         app,
         &[
-            &item("show", &tr!("Show RoALT"), true)?,
+            &item("show", &tr!("Show LRAM"), true)?,
             &favourites,
             &item("close-all", &tr!("Close all clients"), v.running)?,
             &item("kill-all", &tr!("Stop all Roblox"), true)?,
@@ -129,7 +129,7 @@ fn menu(app: &AppHandle, v: &View) -> tauri::Result<Menu<Wry>> {
         menu.append(&item("lock", &tr!("Lock vault"), !v.locked)?)?;
     }
     menu.append(&PredefinedMenuItem::separator(app)?)?;
-    menu.append(&item("quit", &tr!("Quit RoALT"), true)?)?;
+    menu.append(&item("quit", &tr!("Quit LRAM"), true)?)?;
     Ok(menu)
 }
 
@@ -185,7 +185,7 @@ pub fn kill_all(app: &AppHandle) {
 /// Launches a favourite from the tray with its stored accounts that have a valid cookie: one →
 /// `commands::launch_tracked` (the favourite marked used); several → `launcher::bulk::start`
 /// with the launch delay and `SameServer::PickFirst`; none → show the window with an
-/// `app://notice` saying to pick accounts for it in RoALT. Errors become `app://notice`
+/// `app://notice` saying to pick accounts for it in LRAM. Errors become `app://notice`
 /// (error), also when the window is hidden.
 fn launch_favourite(app: &AppHandle, id: i64) {
     let app = app.clone();
@@ -215,7 +215,7 @@ async fn launch(app: &AppHandle, id: i64) -> Result<()> {
     match ids.len() {
         0 => {
             show_main(app);
-            notice(app, false, tr!("No account of \"{name}\" can launch. Pick accounts for it in RoALT.", name = fav.name));
+            notice(app, false, tr!("No account of \"{name}\" can launch. Pick accounts for it in LRAM.", name = fav.name));
         }
         1 => {
             // Without the multi-instance lock it would end the client that runs.

@@ -10,7 +10,7 @@
 //! and goes on drawing, so its preview stays live. A minimized client draws nothing, so one nobody
 //! watches goes to sleep that way (`sweep`) and comes back when its preview is asked for (`wake`).
 //! The user gets one back from Home, the taskbar or Alt-Tab (`resize`). A ghost left by a hard kill
-//! stays invisible until RoALT starts again (`recover`).
+//! stays invisible until LRAM starts again (`recover`).
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -137,7 +137,7 @@ pub fn preview(pid: Option<u32>, max_w: u32) -> Preview {
 /// preview stays live (an off-screen client stops delivering pictures; measured).
 const GHOST: u32 = WS_EX_LAYERED.0 | WS_EX_TRANSPARENT.0;
 const GHOST_ALPHA: u8 = 1;
-/// An older RoALT parked clients this far left. Only ever read, to bring them back.
+/// An older LRAM parked clients this far left. Only ever read, to bring them back.
 const OLD_PARK_LEFT: i32 = -15_000;
 const OLD_PARK_BACK: (i32, i32) = (100, 100);
 /// A hidden client with no preview request for this long goes to sleep (really minimized).
@@ -214,7 +214,7 @@ fn has_ghost_bits(hwnd: HWND) -> bool {
 }
 
 /// Whether the window is a ghost, asleep or not. Read from the window itself, so it survives a
-/// restart of RoALT.
+/// restart of LRAM.
 pub fn is_hidden(hwnd: HWND) -> bool {
     let (mut alpha, mut flags) = (0u8, LAYERED_WINDOW_ATTRIBUTES_FLAGS(0));
     // SAFETY: reads one window's style and layering into locals; no message reaches the client.
@@ -264,7 +264,7 @@ pub fn back_down(hwnd: HWND) {
 }
 
 /// Fully drawn again, whatever becomes of the ghost bits. Doesn't wait for the client (a test says
-/// so), which is why a RoALT that is ending does this first.
+/// so), which is why a LRAM that is ending does this first.
 fn opaque(hwnd: HWND) {
     // SAFETY: a window-manager call on a top-level layered window.
     if let Err(e) = unsafe { SetLayeredWindowAttributes(hwnd, COLORREF(0), 255, LWA_ALPHA) } {
@@ -471,7 +471,7 @@ pub fn sweep(clients: &[(u32, Option<(u32, u32)>)]) {
         let mut t = tiny();
         t.retain(|e| clients.iter().any(|c| c.0 == e.0 && c.1.is_some()));
         for &(pid, size) in clients {
-            // A size of its own (`micro`) stays; else it is a client from before RoALT restarted.
+            // A size of its own (`micro`) stays; else it is a client from before LRAM restarted.
             if let Some(size) = size
                 && !t.iter().any(|e| e.0 == pid)
             {
@@ -556,7 +556,7 @@ pub fn show_all(pids: &[u32], what: Show) {
     });
 }
 
-/// RoALT is ending: nothing else could find these clients. All are drawn again at once, which needs
+/// LRAM is ending: nothing else could find these clients. All are drawn again at once, which needs
 /// no answer from them; a client that answers within `limit` also takes clicks again. Sleeping ones
 /// stay minimized, for the taskbar to bring back.
 pub fn unhide_quickly(pids: &[u32], limit: Duration) {
@@ -570,12 +570,12 @@ pub fn unhide_quickly(pids: &[u32], limit: Duration) {
         })
         .collect();
     if !all_at_once(ghosts, limit, |h| clear_ghost(HWND(h as *mut _))) {
-        log::warn!("a hidden client didn't answer: it takes no clicks until RoALT starts again");
+        log::warn!("a hidden client didn't answer: it takes no clicks until LRAM starts again");
     }
 }
 
 /// At startup, for what a crash or a kill left behind: ghosts not followed again (`followed`: their
-/// pids) and half-made ones are made plain, and clients an older RoALT parked off-screen come back,
+/// pids) and half-made ones are made plain, and clients an older LRAM parked off-screen come back,
 /// followed or not, since nothing else here could. Each waits for its own client only.
 pub fn recover(followed: &[u32]) {
     let clients: Vec<(u32, bool)> = process::roblox_processes().into_iter().map(|p| (p.pid, followed.contains(&p.pid))).collect();
@@ -628,15 +628,15 @@ pub fn show(pid: u32, what: Show) -> Result<()> {
             let hwnd = window_to_change(pid)?;
             unhide(pid, hwnd);
             if !afk::to_front(hwnd) {
-                return Err(AppError::Invalid(tr!("Windows didn't let RoALT bring that client to the front.")));
+                return Err(AppError::Invalid(tr!("Windows didn't let LRAM bring that client to the front.")));
             }
         }
     }
     Ok(())
 }
 
-/// Where each window RoALT resized was before, by (instance id, pid), so "Normal size" puts it
-/// back exactly; the first resize's wins. In memory only: after RoALT restarts, a small window
+/// Where each window LRAM resized was before, by (instance id, pid), so "Normal size" puts it
+/// back exactly; the first resize's wins. In memory only: after LRAM restarts, a small window
 /// stays small.
 static SAVED: Mutex<Vec<(String, u32, WINDOWPLACEMENT)>> = Mutex::new(Vec::new());
 
@@ -1112,7 +1112,7 @@ mod tests {
         sweep(&[(4_000_001, Some((320, 240))), (4_000_002, Some((320, 240))), (4_000_003, None)]);
         let of = |pid| tiny().iter().find(|e| e.0 == pid).map(|e| e.1);
         assert_eq!(of(4_000_001), Some((100, 80)), "the size it was made tiny at");
-        assert_eq!(of(4_000_002), Some((320, 240)), "from before RoALT restarted");
+        assert_eq!(of(4_000_002), Some((320, 240)), "from before LRAM restarted");
         tiny().iter_mut().find(|e| e.0 == 4_000_001).unwrap().1 = (500, 400);
         sweep(&[(4_000_001, Some((320, 240))), (4_000_002, Some((320, 240)))]);
         assert_eq!(of(4_000_001), Some((500, 400)), "a size the user dragged it to stays too");

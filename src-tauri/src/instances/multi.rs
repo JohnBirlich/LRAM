@@ -1,6 +1,6 @@
 //! Multi-instance: hold a mutex named exactly `ROBLOX_singletonEvent` (no prefix, not owned)
 //! before any client starts, so a new client can't create its singleton event and doesn't
-//! close the running one (research multi-instance M1-M5). Optionally, while RoALT's clients
+//! close the running one (research multi-instance M1-M5). Optionally, while LRAM's clients
 //! run, hold Roblox's shared login files (`%LOCALAPPDATA%\Roblox\LocalStorage\RobloxCookies.dat`,
 //! `appStorage.json`) open with share mode 0 so clients can't overwrite each other's session (M6).
 //!
@@ -42,10 +42,10 @@ pub struct Multi {
 /// The mutex handle and the locked files; dropping it releases everything.
 struct Held {
     _mutex: Singleton,
-    /// Empty unless RoALT's clients run with protection on.
+    /// Empty unless LRAM's clients run with protection on.
     files: Vec<File>,
     /// Clients (pid, start time) already running when the lock was taken: started under an
-    /// earlier lock (a normal Roblox would have made `take` fail), e.g. before RoALT restarted.
+    /// earlier lock (a normal Roblox would have made `take` fail), e.g. before LRAM restarted.
     survivors: Vec<(u32, u64)>,
 }
 
@@ -76,7 +76,7 @@ impl Multi {
 
     /// Takes the lock (no-op when held). The name decides: if it already belongs to an event
     /// (`ERROR_INVALID_HANDLE`), Roblox is running unprotected and nothing is held; the error
-    /// says Roblox must be closed first. Clients RoALT started under an earlier lock never
+    /// says Roblox must be closed first. Clients LRAM started under an earlier lock never
     /// created that event, so the lock can be taken again while they run (e.g. after a
     /// restart). An existing *mutex* of that name (another tool) is fine: it blocks clients the
     /// same way.
@@ -139,7 +139,7 @@ impl Multi {
         self.launches.load(Ordering::SeqCst) > 0
     }
 
-    /// Clients RoALT follows again after a restart (`Tracker::readopt`): its own, not survivors.
+    /// Clients LRAM follows again after a restart (`Tracker::readopt`): its own, not survivors.
     pub fn adopt(&self, clients: &[(u32, u64)]) {
         if let Some(h) = self.held().as_mut() {
             h.survivors.retain(|s| !clients.contains(s));
@@ -343,7 +343,7 @@ fn close_in(pid: u32, table: &[(u32, usize)], suffix: &str) -> Result<usize> {
     let proc = unsafe { OpenProcess(PROCESS_DUP_HANDLE, false, pid) }
         // SAFETY: as above.
         .map(|h| unsafe { Owned::new(h) })
-        .map_err(|e| AppError::Invalid(tr!("Windows wouldn't let RoALT into Roblox (process {pid}): {why}", pid = pid, why = e.message())))?;
+        .map_err(|e| AppError::Invalid(tr!("Windows wouldn't let LRAM into Roblox (process {pid}): {why}", pid = pid, why = e.message())))?;
     let mut closed = 0;
     for &(_, value) in table.iter().filter(|(p, _)| *p == pid) {
         let source = HANDLE(value as *mut c_void);
@@ -447,7 +447,7 @@ mod tests {
 
     /// Never the real name: tests must not touch Roblox's singleton.
     fn test_name() -> String {
-        format!("RoALT_test_singleton_{}", uuid::Uuid::new_v4())
+        format!("LRAM_test_singleton_{}", uuid::Uuid::new_v4())
     }
 
     /// What a starting client does: create an event of that name (closed again right away).
@@ -520,7 +520,7 @@ mod tests {
         assert!(m.has_survivors());
         assert_eq!(m.held().as_ref().unwrap().survivors.len(), 1);
         m.adopt(&[(child.id(), t)]);
-        assert!(!m.has_survivors(), "followed again: RoALT's own");
+        assert!(!m.has_survivors(), "followed again: LRAM's own");
         m.held().as_mut().unwrap().survivors = vec![(child.id(), t)];
         child.kill().unwrap();
         child.wait().unwrap();

@@ -6,9 +6,9 @@ import { Icon } from "../../ui/Icon";
 import { toast, toastError } from "../../ui/Toast";
 import { t } from "../../i18n";
 
-/** Lines kept in view; older ones stay in roalt.log. */
+/** Lines kept in view; older ones stay in lram.log. */
 const KEEP = 5000;
-/** History read from roalt.log when the tab opens. */
+/** History read from lram.log when the tab opens. */
 const HISTORY = 2000;
 
 const LEVELS = ["error", "warn", "info", "debug"] as const;
@@ -18,7 +18,7 @@ type Line = { id: number; level: Level; text: string };
 /** tauri-plugin-log's numeric levels (Trace 1 … Error 5). */
 const BY_NUMBER: Record<number, Level> = { 1: "debug", 2: "debug", 3: "info", 4: "warn", 5: "error" };
 
-/** The `[LEVEL]` tag of a roalt.log line; lines without one (a panic's next lines) follow `prev`. */
+/** The `[LEVEL]` tag of a lram.log line; lines without one (a panic's next lines) follow `prev`. */
 function levelOf(text: string, prev: Level): Level {
   const m = /\[(TRACE|DEBUG|INFO|WARN|ERROR)\]/.exec(text);
   if (!m) return text.startsWith("[fatal]") ? "error" : prev;
@@ -29,7 +29,7 @@ const COLOR: Record<Level, string> = { error: "text-err", warn: "text-warn", inf
 
 let nextId = 0;
 
-/** The newest line Clear hid. roalt.log keeps everything (the diagnostics report reads it), so what
+/** The newest line Clear hid. lram.log keeps everything (the diagnostics report reads it), so what
  * the history shows starts after this line, across tab switches and restarts. */
 const CLEARED_KEY = "roalt.debug.clearedAfter";
 function clearedAfter(): string | null {
@@ -54,7 +54,7 @@ function afterMarker(lines: string[], marker: string | null): string[] {
   return at < 0 ? lines : lines.slice(at + 1);
 }
 
-/** Everything RoALT logs (roalt.log), live, terminal-style. */
+/** Everything LRAM logs (lram.log), live, terminal-style. */
 export function DebugView() {
   const [lines, setLines] = useState<Line[]>([]);
   const [shown, setShown] = useState<Record<Level, boolean>>({ error: true, warn: true, info: true, debug: false });
@@ -140,7 +140,7 @@ export function DebugView() {
       .then(() => toast(t("debug.reportCopied")), toastError);
   const saveReport = async () => {
     try {
-      const path = await saveFile({ defaultPath: `RoALT-diagnostics-${new Date().toISOString().slice(0, 10)}.txt`, filters: [{ name: t("debug.reportFilter"), extensions: ["txt"] }] });
+      const path = await saveFile({ defaultPath: `LRAM-diagnostics-${new Date().toISOString().slice(0, 10)}.txt`, filters: [{ name: t("debug.reportFilter"), extensions: ["txt"] }] });
       if (!path) return;
       await api.diagnosticsSave(path);
       toast(t("debug.reportSaved"));

@@ -1,4 +1,4 @@
-//! Following the clients RoALT starts: one entry per launch, polled once a second.
+//! Following the clients LRAM starts: one entry per launch, polled once a second.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -35,7 +35,7 @@ pub fn challenged() -> String {
 pub fn auth_failed() -> String {
     tr!("Roblox refused the sign-in (error 403)")
 }
-/// The note of a client that ended without RoALT closing it and with nothing else to blame.
+/// The note of a client that ended without LRAM closing it and with nothing else to blame.
 pub fn unexpected() -> String {
     tr!("Closed unexpectedly")
 }
@@ -43,7 +43,7 @@ pub fn unexpected() -> String {
 pub fn hung() -> String {
     tr!("Not responding")
 }
-/// The note of a client the user (or RoALT) closed.
+/// The note of a client the user (or LRAM) closed.
 pub fn closed() -> String {
     tr!("Closed")
 }
@@ -66,7 +66,7 @@ pub struct Tracker {
     persisted: Mutex<Vec<Saved>>,
 }
 
-/// What a restarted RoALT needs to follow a running client again (`readopt`), kept in the
+/// What a restarted LRAM needs to follow a running client again (`readopt`), kept in the
 /// database while the client runs (`persist`).
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Saved {
@@ -135,7 +135,7 @@ struct Entry {
     in_game_at: Option<i64>,
     /// Polls in a row its window was not responding (`process::hung`).
     hung_polls: u32,
-    /// RoALT gave up restarting it (the crash breaker): its note from then on.
+    /// LRAM gave up restarting it (the crash breaker): its note from then on.
     gave_up: Option<String>,
     /// Unix ms `rejoin` started working on relaunching it, which can take an hour: the one task for
     /// it, it isn't pruned, and Close all ends it (`cancel_relaunches`).
@@ -160,7 +160,7 @@ struct Entry {
     mem_strikes: u32,
     /// Its private memory at the last sample, MB.
     mem_mb: u64,
-    /// RoALT is closing it for its memory (`mark_restart`): its exit is recorded as `Mem`.
+    /// LRAM is closing it for its memory (`mark_restart`): its exit is recorded as `Mem`.
     mem_restart: bool,
     /// Handed out by `first_in_game`, so "Minimize on launch" is done with it.
     window_seen: bool,
@@ -282,7 +282,7 @@ impl Tracker {
         inst
     }
 
-    /// The running clients a restarted RoALT can follow again: those known to be the client
+    /// The running clients a restarted LRAM can follow again: those known to be the client
     /// itself (not a bootstrapper standing in for it).
     pub fn saved(&self) -> Vec<Saved> {
         self.entries()
@@ -322,7 +322,7 @@ impl Tracker {
         }
     }
 
-    /// Follows clients from before RoALT restarted again (before the first poll): each one
+    /// Follows clients from before LRAM restarted again (before the first poll): each one
     /// `readoptable` among the running Roblox clients `roblox`, its log read on from where it
     /// was. Returns the (pid, start time) of each one followed again.
     pub fn readopt(&self, saved: Vec<Saved>, roblox: &[ProcInfo]) -> Vec<(u32, u64)> {
@@ -451,7 +451,7 @@ impl Tracker {
         self.entries().iter().filter(|e| e.inst.state != InstanceState::Exited).filter_map(|e| e.log.clone()).collect()
     }
 
-    /// True while a client RoALT started hasn't ended.
+    /// True while a client LRAM started hasn't ended.
     pub fn any_running(&self) -> bool {
         self.entries().iter().any(|e| e.inst.state != InstanceState::Exited)
     }
@@ -558,7 +558,7 @@ impl Tracker {
         self.entries().iter().any(|e| e.inst.id == id && !e.closing && e.cause().is_some())
     }
 
-    /// Still to be relaunched, after a check that took a while: `still_wants_rejoin` (`closed`: RoALT
+    /// Still to be relaunched, after a check that took a while: `still_wants_rejoin` (`closed`: LRAM
     /// closed it for this, so only that it isn't cleared), unless Close all stopped the relaunch or
     /// the account was launched since it began.
     pub fn relaunch_wanted(&self, id: &str, closed: bool) -> bool {
@@ -762,7 +762,7 @@ impl Tracker {
                         ONCE.call_once(|| log::warn!("LOCALAPPDATA not set: Roblox client logs can't be followed"));
                     }
                     let moved = s.tracker.poll(dir.as_deref(), &Live, &user_of, crate::commands::now_ms());
-                    // The shared login files are held only while RoALT's clients run (or launch).
+                    // The shared login files are held only while LRAM's clients run (or launch).
                     s.multi.release_if(|| !s.tracker.any_running());
                     // Also gives a client re-adopted under a new pid its limits again.
                     let clients = s.tracker.clients();
@@ -844,7 +844,7 @@ impl Tracker {
                         if let Err(e) = s.db.add_crash(&row) {
                             log::warn!("could not record the end of instance {}: {e}", c.instance_id);
                         }
-                        // RoALT closed that one itself, for its memory.
+                        // LRAM closed that one itself, for its memory.
                         if c.kind != CrashKind::Mem {
                             std::thread::spawn(move || super::autopsy::report(&c));
                         }
@@ -930,7 +930,7 @@ impl Tracker {
     }
 }
 
-/// Follows the clients saved before RoALT closed again (`readopt`), as its own (not multi-
+/// Follows the clients saved before LRAM closed again (`readopt`), as its own (not multi-
 /// instance survivors); the saved ones no longer running go from the database.
 fn restore(app: &AppHandle) {
     let s = app.state::<crate::App>();
@@ -959,7 +959,7 @@ fn restore(app: &AppHandle) {
         super::limits::reset_followed(pid, t0);
     }
     s.multi.adopt(&found);
-    log::info!("following {} client(s) from before RoALT restarted", found.len());
+    log::info!("following {} client(s) from before LRAM restarted", found.len());
     if total > found.len() {
         log::debug!("{} saved client(s) no longer running, dropped", total - found.len());
     }
@@ -1149,7 +1149,7 @@ fn observe(e: &mut Entry, dir: Option<&Path>, procs: &dyn Procs, roblox: &mut Op
         e.gone_at.get_or_insert(now);
     }
     // ponytail: one window enumeration per client per poll; batch them if clients number hundreds.
-    // Kept once it is gone, so a hung client RoALT then closed still ends as hung.
+    // Kept once it is gone, so a hung client LRAM then closed still ends as hung.
     if e.alive && e.adopted {
         e.hung_polls = if procs.hung(e.inst.pid) { e.hung_polls.saturating_add(1) } else { 0 };
     }
@@ -1237,7 +1237,7 @@ fn adopt(e: &mut Entry, p: ProcInfo, taken: &mut Vec<u32>) {
 
 /// The client that wrote a log: started within a few seconds of the log's creation and since
 /// `after`. PIDs already followed are skipped. Nothing else counts: a client the user started
-/// themselves must never be taken for RoALT's.
+/// themselves must never be taken for LRAM's.
 fn pick_client(procs: &[ProcInfo], log_created: Option<u64>, after: u64, taken: &[u32]) -> Option<ProcInfo> {
     let c = log_created?;
     procs.iter().filter(|p| p.start_time >= after && !taken.contains(&p.pid) && p.start_time.abs_diff(c) <= LOG_SKEW_SECS).min_by_key(|p| p.start_time.abs_diff(c)).cloned()
@@ -1277,7 +1277,7 @@ fn settle(e: &mut Entry, now: i64) -> Option<CrashKind> {
     let written = !e.closing && e.writer_at.is_some_and(|w| now - w < WRITER_PROOF_MS);
     let ended = !e.alive && !may_appear(e, now) && !written;
     let (state, mut note) = state_of(&e.facts, e.log.is_some(), ended, e.closing, e.expected_user);
-    // A client RoALT closed for its memory ends as `Mem` (its note: "Closed").
+    // A client LRAM closed for its memory ends as `Mem` (its note: "Closed").
     let crash = match ended {
         true if e.closing && e.mem_restart => Some(CrashKind::Mem),
         true => crash_kind(&e.facts, e.hung(), note.as_deref()),
@@ -2039,7 +2039,7 @@ mod tests {
             assert_eq!(wants_rejoin(&inst(state, Some(HUNG)), &none, true), Some(Hang), "{state:?}");
         }
         assert_eq!(wants_rejoin(&inst(Disconnected, Some(HUNG)), &kicked, true), Some(Hang));
-        assert_eq!(wants_rejoin(&inst(Exited, Some("Closed")), &none, true), None, "a hung client RoALT closed");
+        assert_eq!(wants_rejoin(&inst(Exited, Some("Closed")), &none, true), None, "a hung client LRAM closed");
     }
 
     #[test]
@@ -2133,7 +2133,7 @@ mod tests {
         assert!(!t.begin_relaunch(&id, start) && t.is_relaunching(&id));
         poll(start + 201_000);
         assert!(t.relaunch_wanted(&id, false));
-        // RoALT's own close: `closing` no longer ends it, once it says so.
+        // LRAM's own close: `closing` no longer ends it, once it says so.
         t.entries()[0].closing = true;
         assert!(!t.relaunch_wanted(&id, false));
         assert!(t.relaunch_wanted(&id, true));
@@ -2365,7 +2365,7 @@ mod tests {
             t.check_memory(4_096, true, &read);
         }
 
-        // RoALT closes it: it ends as a memory restart, with what it used.
+        // LRAM closes it: it ends as a memory restart, with what it used.
         t.mark_restart(&id, Some(CrashKind::Mem));
         procs.set(&[]);
         t.poll(None, &procs, &user_of, start + 3_000);

@@ -21,7 +21,7 @@ export function RecoveryCodeDialog({ code, onClose }: { code: string | null; onC
   async function saveToFile() {
     if (!code) return;
     try {
-      const path = await saveFile({ defaultPath: "RoALT-recovery-code.txt", filters: [{ name: t("vault.recovery.fileFilter"), extensions: ["txt"] }] });
+      const path = await saveFile({ defaultPath: "LRAM-recovery-code.txt", filters: [{ name: t("vault.recovery.fileFilter"), extensions: ["txt"] }] });
       if (!path) return;
       await api.vaultRecoverySave(path, code);
       toast(t("vault.recovery.savedTo"));

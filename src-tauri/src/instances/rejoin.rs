@@ -145,14 +145,14 @@ async fn rejoin(app: &AppHandle, r: Rejoin, user_id: Option<i64>) {
             return;
         }
         if say_waiting(Instant::now()) {
-            notice(app, false, tr!("Waiting to relaunch clients. RoALT keeps trying for up to {minutes} minutes. Last problem: {why}", minutes = RETRY_FOR.as_secs() / 60, why = why));
+            notice(app, false, tr!("Waiting to relaunch clients. LRAM keeps trying for up to {minutes} minutes. Last problem: {why}", minutes = RETRY_FOR.as_secs() / 60, why = why));
         }
         wait = retry_wait(tries);
         tries += 1;
     }
 }
 
-/// `Tracker::give_up`, with the note shown also when RoALT itself closed the client (`closed`).
+/// `Tracker::give_up`, with the note shown also when LRAM itself closed the client (`closed`).
 fn give_up(s: &App, r: &Rejoin, closed: bool, note: String) {
     if closed {
         s.tracker.clear_closing(&r.from);
@@ -168,7 +168,7 @@ fn give_up(s: &App, r: &Rejoin, closed: bool, note: String) {
 /// (`Bulk::begin_rejoin`), whether it is still wanted is asked again; skip it (`skip_reason`;
 /// logged, plus an `app://notice`, unless it may pass); give up (note "Gave up after N ...", error
 /// notice) when the breaker trips; close the client (graceful for `close_grace_s`, then forced;
-/// marked as closed by RoALT); `commands::launch_tracked(account, target, no favourite, the old
+/// marked as closed by LRAM); `commands::launch_tracked(account, target, no favourite, the old
 /// client's FPS cap)` and `tracker.set_rejoins(new id, r.rejoins)`. Only a launch that happened
 /// counts for the breaker. `closed`: the old client was closed by an earlier go too.
 async fn attempt(app: &AppHandle, s: &App, r: &Rejoin, user_id: Option<i64>, kills: u64, closed: &mut bool) -> Option<String> {
@@ -267,8 +267,8 @@ async fn attempt(app: &AppHandle, s: &App, r: &Rejoin, user_id: Option<i64>, kil
                 trn!(n, "Gave up after {n} rejoin", "Gave up after {n} rejoins"),
                 trn!(
                     n,
-                    "{name} wasn't rejoined: it needed {n} rejoin in {minutes} minutes, so RoALT gave up.",
-                    "{name} wasn't rejoined: it needed {n} rejoins in {minutes} minutes, so RoALT gave up.",
+                    "{name} wasn't rejoined: it needed {n} rejoin in {minutes} minutes, so LRAM gave up.",
+                    "{name} wasn't rejoined: it needed {n} rejoins in {minutes} minutes, so LRAM gave up.",
                     name = name,
                     minutes = v.breaker_window_min
                 ),
@@ -278,8 +278,8 @@ async fn attempt(app: &AppHandle, s: &App, r: &Rejoin, user_id: Option<i64>, kil
                 trn!(n, "Gave up after {n} restart", "Gave up after {n} restarts"),
                 trn!(
                     n,
-                    "{name} wasn't restarted: it needed {n} restart in {minutes} minutes, so RoALT gave up.",
-                    "{name} wasn't restarted: it needed {n} restarts in {minutes} minutes, so RoALT gave up.",
+                    "{name} wasn't restarted: it needed {n} restart in {minutes} minutes, so LRAM gave up.",
+                    "{name} wasn't restarted: it needed {n} restarts in {minutes} minutes, so LRAM gave up.",
                     name = name,
                     minutes = v.breaker_window_min
                 ),

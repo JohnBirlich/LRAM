@@ -1,18 +1,21 @@
 <div align="center">
 
-# RoALT
+# LRAM
 
 ### Every Roblox account you own, signed in, checked and one click from any game.
 
 A fast, local-only account manager and multi-client launcher for Windows.<br>
 Your cookies stay encrypted on your PC. Nothing is sent anywhere except Roblox.
 
-[![Latest release](https://img.shields.io/github/v/release/inspectsoftware/RoALT?style=for-the-badge&color=b4f000&labelColor=1a1a1a&label=release)](https://github.com/inspectsoftware/RoALT/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/inspectsoftware/RoALT/total?style=for-the-badge&color=2b2b2b&labelColor=1a1a1a)](https://github.com/inspectsoftware/RoALT/releases)
-[![Windows 10 | 11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078d4?style=for-the-badge&logo=windows&labelColor=1a1a1a)](#-install)
-[![Discord](https://img.shields.io/badge/Discord-join-5865f2?style=for-the-badge&logo=discord&logoColor=white&labelColor=1a1a1a)](https://discord.gg/qcj68tHKCX)
+<sub>**LRAM** — Local Roblox Account Manager. A personal build: the built-in updater is off (no
+release key ships with it), donations and the community Discord server of the original project are
+not part of it, and releases are installed by hand.</sub>
 
-[![CI](https://img.shields.io/github/actions/workflow/status/inspectsoftware/RoALT/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/inspectsoftware/RoALT/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/JohnBirlich/RAM?style=for-the-badge&color=b4f000&labelColor=1a1a1a&label=release)](https://github.com/JohnBirlich/RAM/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/JohnBirlich/RAM/total?style=for-the-badge&color=2b2b2b&labelColor=1a1a1a)](https://github.com/JohnBirlich/RAM/releases)
+[![Windows 10 | 11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078d4?style=for-the-badge&logo=windows&labelColor=1a1a1a)](#-install)
+
+[![CI](https://img.shields.io/github/actions/workflow/status/JohnBirlich/RAM/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/JohnBirlich/RAM/actions/workflows/ci.yml)
 ![Tauri 2](https://img.shields.io/badge/Tauri-2-24c8db?style=flat-square&logo=tauri&logoColor=white)
 ![Rust](https://img.shields.io/badge/Rust-2024-dea584?style=flat-square&logo=rust&logoColor=white)
 ![React 19](https://img.shields.io/badge/React-19-61dafb?style=flat-square&logo=react&logoColor=white)
@@ -20,15 +23,15 @@ Your cookies stay encrypted on your PC. Nothing is sent anywhere except Roblox.
 
 <br>
 
-[**⬇ Download**](https://github.com/inspectsoftware/RoALT/releases/latest) &nbsp;·&nbsp;
-[**💬 Discord**](https://discord.gg/qcj68tHKCX) &nbsp;·&nbsp;
+[**⬇ Download**](https://github.com/JohnBirlich/RAM/releases/latest) &nbsp;·&nbsp;
+[**🐛 Issues**](https://github.com/JohnBirlich/RAM/issues) &nbsp;·&nbsp;
 [Quick start](#-quick-start) &nbsp;·&nbsp;
 [Privacy](#-safety-and-privacy) &nbsp;·&nbsp;
 [For developers](#-for-developers)
 
 <br>
 
-<img src="docs/images/home.png" alt="RoALT's Home page: account tabs, running clients with live previews, and dials for what the clients use" width="900">
+<img src="docs/images/home.png" alt="LRAM's Home page: account tabs, running clients with live previews, and dials for what the clients use" width="900">
 
 </div>
 
@@ -38,7 +41,7 @@ Your cookies stay encrypted on your PC. Nothing is sent anywhere except Roblox.
 
 | For everyone | For developers |
 |---|---|
-| [What is RoALT?](#-what-is-roalt) | [Architecture](#-architecture) |
+| [What is LRAM?](#-what-is-roalt) | [Architecture](#-architecture) |
 | [Features](#-features) | [Tech stack](#-tech-stack) |
 | [Install](#-install) | [Build from source](#-build-from-source) |
 | [Quick start](#-quick-start) | [Project layout](#-project-layout) |
@@ -48,17 +51,17 @@ Your cookies stay encrypted on your PC. Nothing is sent anywhere except Roblox.
 
 <br>
 
-## 💡 What is RoALT?
+## 💡 What is LRAM?
 
 If you play Roblox on more than one account, you know the routine: sign out, sign in, find the game again,
-and only ever one client open at a time. RoALT removes all of that.
+and only ever one client open at a time. LRAM removes all of that.
 
-- **Add each account once**, through Roblox's own sign-in page. RoALT keeps it signed in.
+- **Add each account once**, through Roblox's own sign-in page. LRAM keeps it signed in.
 - **See every account at a glance**: online status, Robux, friends, whether the sign-in still works.
 - **Paste any game link** and launch one account, or ten, into it. Even into the same server.
-- **Run several Roblox windows side by side**, and let RoALT bring back any that crash or get kicked.
+- **Run several Roblox windows side by side**, and let LRAM bring back any that crash or get kicked.
 
-It runs entirely on your PC. There is no RoALT account, no RoALT server and no tracking.
+It runs entirely on your PC. There is no LRAM account, no LRAM server and no tracking.
 
 <table>
 <tr>
@@ -97,7 +100,7 @@ favourites, search and filters. Check sign-ins, one or all, in a click.
 
 ### 🚀 Launch anything
 Paste a game link, place ID, job ID, private server or share link, a profile or `@username`:
-RoALT works out what it is. Join a friend, or save a target as a favourite.
+LRAM works out what it is. Join a friend, or save a target as a favourite.
 
 </td>
 <td valign="top">
@@ -164,14 +167,14 @@ it is signed by Roblox Corporation. Optional auto-update when no client runs.
 Browser-style **account tabs**, each with its own game and options. Every running client as a live preview,
 even hidden ones, in cards you can drag and resize, with dials for what your clients use. Right-click one to
 focus, minimize, shrink it, limit it or close it. Tile all clients in one click. Anti-AFK has its own switch here.
-Prefer vertical tabs? Put your accounts on the side and RoALT's sections along the top, and drag either into your own order.
+Prefer vertical tabs? Put your accounts on the side and LRAM's sections along the top, and drag either into your own order.
 
 </td>
 <td valign="top">
 
 ### 🛡️ Public networks
 Windows calls some networks **Public** (café, hotel, school Wi-Fi). Turn off **Allow public networks** in Settings,
-Security, and RoALT won't launch on them and a master-password vault locks there. It is on by default.
+Security, and LRAM won't launch on them and a master-password vault locks there. It is on by default.
 
 </td>
 </tr>
@@ -201,8 +204,8 @@ Japanese, Korean, Polish, Portuguese (Brazil), Russian, Spanish, Swedish, Thai, 
 </td>
 <td valign="top">
 
-### ❤️ Support RoALT
-RoALT is free. The **Donate** button in the sidebar opens a [Roblox gamepass](https://www.roblox.com/games/102259086923102/Donation-Experience#!/store)
+### ❤️ Support LRAM
+LRAM is free. The **Donate** button in the sidebar opens a [Roblox gamepass](https://www.roblox.com/games/102259086923102/Donation-Experience#!/store)
 for the amount you pick, and you confirm the purchase on Roblox.
 
 </td>
@@ -220,15 +223,15 @@ for the amount you pick, and you confirm the purchase on Roblox.
 | 🚀 **Play** | Game links, place IDs, `roblox://` links, job IDs, private server links, `roblox.com/share` links (both formats), universes, profiles, `@username`. Join a friend or one of your other accounts. Favourites on the Play page and in the tray. `Ctrl+Enter` to launch. |
 | 🪟 **Batches** | Accounts launch strictly one after another with a stagger (default 6 s). **Same server**: *Pick a server* finds one with room for everyone first; *Follow the first* sends the rest to wherever the first account landed. Cancel at any time; one click re-picks the accounts that didn't launch. |
 | 🔁 **Recovery** | Auto-rejoin after kicks, shutdowns and lost connections (not after you leave on purpose). Opt-in auto-restart for crashes, frozen windows (30 s) and a memory limit. Crash breaker: default 3 relaunches in 10 minutes, with growing backoff. Per-account "Allow disconnect". Crash history with the log's reason. |
-| ↔️ **Free resizing** | Drag a client's edge to any size, past the minimum Roblox holds its window to, and move a small window by its title bar without it growing back. RoALT sizes the window itself (a mouse hook in RoALT's own process); nothing goes into the client. **Start clients tiny** opens every new client at a size you choose. |
-| 🖥️ **Home** | Live preview for every client at 5, 15, 30 or 60 FPS, even hidden ones, with state, game, uptime, CPU and RAM. Drag cards to sort them and resize them from the corner; **Detailed view** off shows only the preview and username. Dials show what all Roblox clients use together. Browser-style **account tabs** give each account its own game and options, and launch one or all of them. **Tab layout** (Settings or the title bar) moves accounts to a list on the side and RoALT's sections to tabs along the top. Drag accounts and sections to sort them, or use `Alt` and the arrow keys; the order is saved, and a launch of all tabs follows it. The **⋯** key, right-click, the menu key or `Shift+F10` for focus, minimize, restore, tiny window (any size, 320×240 by default) and back, CPU limit, efficiency mode, anti-AFK, close. **Tile** fits all clients in a grid on the screen; **Tile micro** lays out micro windows. Minimize all, Restore all. |
+| ↔️ **Free resizing** | Drag a client's edge to any size, past the minimum Roblox holds its window to, and move a small window by its title bar without it growing back. LRAM sizes the window itself (a mouse hook in LRAM's own process); nothing goes into the client. **Start clients tiny** opens every new client at a size you choose. |
+| 🖥️ **Home** | Live preview for every client at 5, 15, 30 or 60 FPS, even hidden ones, with state, game, uptime, CPU and RAM. Drag cards to sort them and resize them from the corner; **Detailed view** off shows only the preview and username. Dials show what all Roblox clients use together. Browser-style **account tabs** give each account its own game and options, and launch one or all of them. **Tab layout** (Settings or the title bar) moves accounts to a list on the side and LRAM's sections to tabs along the top. Drag accounts and sections to sort them, or use `Alt` and the arrow keys; the order is saved, and a launch of all tabs follows it. The **⋯** key, right-click, the menu key or `Shift+F10` for focus, minimize, restore, tiny window (any size, 320×240 by default) and back, CPU limit, efficiency mode, anti-AFK, close. **Tile** fits all clients in a grid on the screen; **Tile micro** lays out micro windows. Minimize all, Restore all. |
 | 🛑 **Stop all** | Hold one button in the sidebar, use the tray, or press a global **panic hotkey** you choose (off by default) to end every Roblox process and stop pending launches and rejoins. |
 | 🌍 **Languages** | English, Arabic (right to left), Bosnian, Chinese (Simplified), Filipino, French, German, Indonesian, Japanese, Korean, Polish, Portuguese (Brazil), Russian, Spanish, Swedish, Thai, Turkish, Vietnamese. |
-| ⏲️ **Automation** | Minimize each new client on launch. Auto-shutdown timer: close the clients and shut the PC down at a set time (survives a RoALT restart, can be cancelled). Hourly Roblox log cleaner (logs older than a day or over 50 MB). Open logs button; RoALT's own logs rotate at 5 MB. |
+| ⏲️ **Automation** | Minimize each new client on launch. Auto-shutdown timer: close the clients and shut the PC down at a set time (survives a LRAM restart, can be cancelled). Hourly Roblox log cleaner (logs older than a day or over 50 MB). Open logs button; LRAM's own logs rotate at 5 MB. |
 | ⚙️ **Launch control** | Custom launch arguments (default and per account, checked before use and never logged), a cooldown between launches, a configurable close grace (1–60 s). |
 | 🎚️ **Limits** | Per client: CPU cap, efficiency mode, core affinity, working-set trim (every N minutes and sooner if a background client grows, or "Page memory out now"). A trim lowers the Memory column for a while; commit size doesn't change. Adaptive manager for background clients; a limit you set on a client wins for that limit. **Memory throttle**: a client whose commit size is over a limit gets a CPU cap, which lowers its frame rate, until it drops under 90 % of the limit. It doesn't free memory; only **Restart on high memory** does, and that disconnects the client. |
-| 🎞️ **FPS cap & graphics** | A default frame-rate cap (5–360), a per-account override and a per-launch one under Play's More options (a rejoin keeps it), plus the lowest graphics for every client (on by default). Set through Roblox's own Maximum Frame Rate and Graphics Quality just before each client starts; your own Roblox settings are put back once it has read them, and again when such a client closes (or when RoALT next starts, if it wasn't running then). Everything performance-related lives in its own **Performance** tab. |
-| 🪶 **Lighter rendering** | Clients RoALT starts get low geometry detail and the graphics flags below (on by default): less GPU time and memory per client. Written just before each client starts and put back once it has read them; skipped under a bootstrapper. |
+| 🎞️ **FPS cap & graphics** | A default frame-rate cap (5–360), a per-account override and a per-launch one under Play's More options (a rejoin keeps it), plus the lowest graphics for every client (on by default). Set through Roblox's own Maximum Frame Rate and Graphics Quality just before each client starts; your own Roblox settings are put back once it has read them, and again when such a client closes (or when LRAM next starts, if it wasn't running then). Everything performance-related lives in its own **Performance** tab. |
+| 🪶 **Lighter rendering** | Clients LRAM starts get low geometry detail and the graphics flags below (on by default): less GPU time and memory per client. Written just before each client starts and put back once it has read them; skipped under a bootstrapper. |
 | 🎚️ **Graphics flags** | Pick MSAA, texture quality, rendering mode, gray sky, no grass and lowest render quality, from the FastFlags Roblox still allows. Roblox may ignore Vulkan and OpenGL. |
 | 👑 **Main account** | Mark an account **Full quality** and its clients keep your own Roblox graphics, without lowest graphics or lighter rendering. |
 | 🕘 **Recent servers** | Each account remembers the servers it reached (stored on this PC); rejoin a public one in a click. |
@@ -236,9 +239,9 @@ for the amount you pick, and you confirm the purchase on Roblox.
 | 📤 **Performance profiles** | Export your performance settings to a file or a share code, or import someone else's: you see what changes, then apply it. Only performance settings travel, never accounts, passwords, launch arguments or hotkeys. |
 | 📶 **Bandwidth** | One upload cap for all Roblox clients through a Windows QoS policy. Applied only when you click Apply (admin prompt); cleared when Windows restarts. |
 | 💤 **Anti-AFK** | Off by default, with a switch on Home. While you are away from the PC, every few minutes each client is briefly brought to the front and gets one Space press, so Roblox doesn't kick it after 20 idle minutes. Hidden and minimized clients get it too, invisibly. Stops the moment you touch the mouse. Or **in the background**: a Tab press is posted to the window without bringing it to the front, even when minimized (Roblox may not count it in every game; auto-rejoin stays the fallback). Per-client opt-out. |
-| 🔔 **Discord** | Crash, disconnect, restart and batch alerts, plus an opt-in alert when a client gets into a game. Mute alerts per account. **Rich presence** (on by default, a switch in Settings): your profile shows "Playing RoALT", idling or with the game and how many alts run. |
-| 🔄 **RoALT updates** | Looks for a new RoALT on GitHub Releases at start and every 6 hours (can be turned off; *Check now* in Settings). A banner offers it; *Update now* downloads it, checks its release signature, installs it silently and restarts RoALT. Never installs on its own. |
-| 🧰 **Comfort** | Tray menu with favourites, close to tray, relaunch an ended client in one click, movable data folder, keyboard shortcuts. Dark, light or system theme, any accent colour, and your own background image, with a choice of how much the theme covers it. Optional skip of the splash screen. Your RoALT and Roblox versions at the top of Settings. |
+| 🔔 **Discord** | Crash, disconnect, restart and batch alerts, plus an opt-in alert when a client gets into a game. Mute alerts per account. **Rich presence** (on by default, a switch in Settings): your profile shows "Playing LRAM", idling or with the game and how many alts run. |
+| 🔄 **LRAM updates** | Looks for a new LRAM on GitHub Releases at start and every 6 hours (can be turned off; *Check now* in Settings). A banner offers it; *Update now* downloads it, checks its release signature, installs it silently and restarts LRAM. Never installs on its own. |
+| 🧰 **Comfort** | Tray menu with favourites, close to tray, relaunch an ended client in one click, movable data folder, keyboard shortcuts. Dark, light or system theme, any accent colour, and your own background image, with a choice of how much the theme covers it. Optional skip of the splash screen. Your LRAM and Roblox versions at the top of Settings. |
 
 </details>
 
@@ -246,25 +249,25 @@ for the amount you pick, and you confirm the purchase on Roblox.
 
 ## 📥 Install
 
-1. Download **`RoALT-Setup-<version>.exe`** from the [latest release](https://github.com/inspectsoftware/RoALT/releases/latest).
-2. Run it. No admin rights needed; it installs to `%LOCALAPPDATA%\Programs\RoALT`.
-3. Start RoALT from the Start menu or the desktop icon.
+1. Download **`LRAM-Setup-<version>.exe`** from the [latest release](https://github.com/JohnBirlich/RAM/releases/latest).
+2. Run it. No admin rights needed; it installs to `%LOCALAPPDATA%\Programs\LRAM`.
+3. Start LRAM from the Start menu or the desktop icon.
 
 | Requirement | |
 |---|---|
 | Windows | 10 (1809 or later) or 11, x64 |
 | WebView2 Runtime | Built into Windows 11. Setup offers to download it when missing. |
-| Roblox | Installed normally (RoALT can install or update it for you) |
+| Roblox | Installed normally (LRAM can install or update it for you) |
 
 > [!NOTE]
 > The installer isn't code-signed yet, so Windows SmartScreen warns on first run. To be sure the file is genuine,
 > compare its SHA-256 with `SHA256SUMS.txt` on the release page, then choose **More info → Run anyway**.
 >
 > ```powershell
-> Get-FileHash .\RoALT-Setup-0.9.0.exe -Algorithm SHA256
+> Get-FileHash .\LRAM-Setup-0.9.0.exe -Algorithm SHA256
 > ```
 
-Your accounts and settings live in `%LOCALAPPDATA%\RoALT`. Uninstalling keeps them unless you tick
+Your accounts and settings live in `%LOCALAPPDATA%\LRAM`. Uninstalling keeps them unless you tick
 **"also delete my data"**.
 
 <br>
@@ -276,7 +279,7 @@ Your accounts and settings live in `%LOCALAPPDATA%\RoALT`. Uninstalling keeps th
 <br>
 
 Press **Add account** (or `Ctrl+N`). A clean Roblox sign-in window opens: sign in as usual, including 2-step or
-passkeys. RoALT keeps the sign-in, closes the window and throws its browser profile away. You can also paste a
+passkeys. LRAM keeps the sign-in, closes the window and throws its browser profile away. You can also paste a
 `.ROBLOSECURITY` cookie; it is checked before it is saved.
 
 </details>
@@ -286,7 +289,7 @@ passkeys. RoALT keeps the sign-in, closes the window and throws its browser prof
 <br>
 
 By default the vault is locked to your Windows account, so it opens silently. For extra protection, set a master
-password in **Settings**. RoALT then asks for it on start and locks itself after you've been idle.
+password in **Settings**. LRAM then asks for it on start and locks itself after you've been idle.
 
 </details>
 
@@ -303,8 +306,8 @@ Pick several accounts to launch a batch. Under **More options**, turn on **Same 
 <summary><b>4. Run several clients at once</b></summary>
 <br>
 
-**Multi-instance** is on by default (the switch is in **Settings → Launching**); start RoALT before Roblox. If Roblox is already open, RoALT says so and offers
-**Close Roblox** or **Take over**. Every client RoALT starts shows up on **Home**
+**Multi-instance** is on by default (the switch is in **Settings → Launching**); start LRAM before Roblox. If Roblox is already open, LRAM says so and offers
+**Close Roblox** or **Take over**. Every client LRAM starts shows up on **Home**
 (`Ctrl+1`), with its state, server and uptime.
 
 </details>
@@ -340,23 +343,23 @@ In **Settings → Launching**, turn on **Auto-rejoin** (and, if you like, **Auto
 <tr>
 <td width="50%" valign="top">
 
-#### ✅ What RoALT does
+#### ✅ What LRAM does
 
-- Talks **only** to `*.roblox.com` and `*.rbxcdn.com`, plus GitHub to look for RoALT updates (can be turned off), and your Discord webhook.
+- Talks **only** to `*.roblox.com` and `*.rbxcdn.com`, plus GitHub to look for LRAM updates (can be turned off), and your Discord webhook.
 - Encrypts every cookie with **AES-256-GCM** under a key protected by **Windows DPAPI**, plus your master password if you set one.
 - Encrypts the **whole database** too (SQLCipher, AES-256), with its own DPAPI-protected key: a copied `roalt.db` can't be read on another PC or Windows account.
 - Signs you in through **Roblox's own page**, in a throw-away browser profile.
 - Installs Roblox updates **only** when the installer is signed by Roblox Corporation.
-- Updates itself **only** when you click Update now, and only with an installer that carries RoALT's release signature.
+- Updates itself **only** when you click Update now, and only with an installer that carries LRAM's release signature.
 - Redacts launch tickets from anything it reads in Roblox's logs.
 
 </td>
 <td width="50%" valign="top">
 
-#### 🚫 What RoALT never does
+#### 🚫 What LRAM never does
 
 - **Never** reads or writes the Roblox client's memory or files, with two exceptions for the clients it starts: Roblox's own settings file (`GlobalBasicSettings_13.xml`, only the frame-rate cap and graphics quality) and the allowlisted rendering flags in the version folder's `ClientSettings\ClientAppSettings.json`. Both are put back as they were once the client has read them.
-- **Never** sends telemetry. There is no RoALT server and no RoALT account.
+- **Never** sends telemetry. There is no LRAM server and no LRAM account.
 - **Never** writes cookies, tickets or launch arguments to its logs.
 - **Never** changes Windows settings, except the opt-in bandwidth limit.
 - **Never** contacts Discord's servers unless you paste a webhook. Rich presence goes only to the Discord app on your PC.
@@ -369,44 +372,44 @@ In **Settings → Launching**, turn on **Auto-rejoin** (and, if you like, **Auto
 <summary><b>The details</b></summary>
 <br>
 
-- **Discord rich presence (on by default).** RoALT tells the Discord app on this PC, over its local pipe, the game's
+- **Discord rich presence (on by default).** LRAM tells the Discord app on this PC, over its local pipe, the game's
   name and how many clients run. Discord shows that on your profile. Turn it off under **Settings → Show on Discord**.
 - **Discord alerts (opt-in).** If you paste a webhook in the Discord tab, alerts go to that webhook on `discord.com`. The URL is
   kept encrypted in the vault, and messages name accounts by display name and username only, with mentions disabled.
   Nothing is sent while the vault is locked.
 - **Roblox updates** come from Roblox only: the version from `clientsettingscdn.roblox.com`, the installer from
   `setup.rbxcdn.com`, run only when its signature checks out as Roblox Corporation's.
-- **RoALT updates** are looked up on GitHub (`api.github.com`, this repository's latest published release) as soon
-  as RoALT starts and every 6 hours, unless you turn *Check for RoALT updates* off in Settings. The request carries only
-  `RoALT/<version>` as its user agent. When you click Update now, the installer and its `.sig` are downloaded from
+- **LRAM updates** are looked up on GitHub (`api.github.com`, this repository's latest published release) as soon
+  as LRAM starts and every 6 hours, unless you turn *Check for LRAM updates* off in Settings. The request carries only
+  `LRAM/<version>` as its user agent. When you click Update now, the installer and its `.sig` are downloaded from
   `github.com` (GitHub's own download hosts only), and the installer runs only if its ECDSA P-256 signature checks out
-  against the public key built into RoALT. The signature covers the version too, so the release must be newer than
-  the RoALT you run and the installer must be the one signed for that version. It installs silently, and RoALT starts again.
-  Roblox clients keep running through it, and the restarted RoALT follows them again (also after you close and reopen
-  RoALT). Their limits are lifted while RoALT is closed and set again when it starts.
-- **Multi-instance** works by creating one named Windows object before Roblox starts. RoALT also holds Roblox's shared
+  against the public key built into LRAM. The signature covers the version too, so the release must be newer than
+  the LRAM you run and the installer must be the one signed for that version. It installs silently, and LRAM starts again.
+  Roblox clients keep running through it, and the restarted LRAM follows them again (also after you close and reopen
+  LRAM). Their limits are lifted while LRAM is closed and set again when it starts.
+- **Multi-instance** works by creating one named Windows object before Roblox starts. LRAM also holds Roblox's shared
   sign-in files while its clients run, so clients can't sign each other out.
-- **Limits** go through Windows itself (job objects, priority, affinity). RoALT only ever opens a client with the
+- **Limits** go through Windows itself (job objects, priority, affinity). LRAM only ever opens a client with the
   narrow rights a change needs, never to read its memory.
-- **Take over (on request)** closes the one "Roblox is already running" lock inside an open Roblox, so RoALT's clients
+- **Take over (on request)** closes the one "Roblox is already running" lock inside an open Roblox, so LRAM's clients
   can run next to it. It needs to copy that one handle (`PROCESS_DUP_HANDLE`) and never reads or writes the client's memory.
 - **Anti-AFK (opt-in)** briefly brings a client to the front and presses Space the way a keyboard does, or, in background
   mode, posts a Tab press to its window.
 - **Window tools** (previews, hide, micro, tile) use ordinary Windows calls: Windows.Graphics.Capture for previews, and
   `ShowWindow`, `SetWindowPos`, `SetWindowLongPtr` and `SetLayeredWindowAttributes` for the rest. A hidden client gets the
-  layered and click-through window styles at alpha 1. Clean exit and panics clear them; if RoALT is killed outright, the
-  client stays invisible until RoALT starts again.
+  layered and click-through window styles at alpha 1. Clean exit and panics clear them; if LRAM is killed outright, the
+  client stays invisible until LRAM starts again.
 - **Free resizing and hidden clients** use a low-level mouse hook and window-event hooks (foreground, Alt-Tab, minimize,
-  drags) in RoALT's own process. They see where the mouse is and which window changes across the PC, and store and send
-  nothing. A press only acts on the edge or title bar of a client RoALT started; a press on the taskbar or its thumbnails
+  drags) in LRAM's own process. They see where the mouse is and which window changes across the PC, and store and send
+  nothing. A press only acts on the edge or title bar of a client LRAM started; a press on the taskbar or its thumbnails
   is only noted, for a moment, as you asking for a hidden client back.
-- **Bandwidth limit (opt-in)** adds a Windows QoS policy named `RoALT-Roblox` through an admin prompt, only when you click
-  Apply. Windows drops it on restart. It is the only change RoALT makes to Windows.
+- **Bandwidth limit (opt-in)** adds a Windows QoS policy named `LRAM-Roblox` through an admin prompt, only when you click
+  Apply. Windows drops it on restart. It is the only change LRAM makes to Windows.
 
 </details>
 
 > [!IMPORTANT]
-> Your `.ROBLOSECURITY` cookie is the key to your account. RoALT keeps it encrypted, but never share a cookie,
+> Your `.ROBLOSECURITY` cookie is the key to your account. LRAM keeps it encrypted, but never share a cookie,
 > a `.roalt` backup or its password with anyone, including people who say they are helping you.
 
 <br>
@@ -414,12 +417,12 @@ In **Settings → Launching**, turn on **Auto-rejoin** (and, if you like, **Auto
 ## ❓ FAQ
 
 <details>
-<summary><b>Is RoALT safe to use with my account?</b></summary>
+<summary><b>Is LRAM safe to use with my account?</b></summary>
 <br>
 
-RoALT signs in the same way the Roblox website does and never touches the Roblox client. Roblox has said that
+LRAM signs in the same way the Roblox website does and never touches the Roblox client. Roblox has said that
 multi-instance methods which don't modify the client are not affected by its modified-client enforcement, but it
-doesn't officially support running several clients at once. Use RoALT only with accounts you own.
+doesn't officially support running several clients at once. Use LRAM only with accounts you own.
 
 </details>
 
@@ -436,8 +439,8 @@ The installer isn't code-signed yet, so SmartScreen doesn't recognise it. Check 
 <summary><b>Multi-instance says Roblox is already running.</b></summary>
 <br>
 
-Roblox's tray app or an open client already holds the lock RoALT needs. Click **Close Roblox** when RoALT offers it, then
-launch from RoALT. To keep that client open, click **Take over** instead.
+Roblox's tray app or an open client already holds the lock LRAM needs. Click **Close Roblox** when LRAM offers it, then
+launch from LRAM. To keep that client open, click **Take over** instead.
 
 </details>
 
@@ -463,7 +466,7 @@ password. The code works once and you get a new one. It's optional: make one whe
   `.roalt` backup does.
 
 Without a code the password can't be recovered: that is what makes it safe. Remove the data folder
-(`%LOCALAPPDATA%\RoALT`) and add your accounts again, or import a `.roalt` backup whose password you know.
+(`%LOCALAPPDATA%\LRAM`) and add your accounts again, or import a `.roalt` backup whose password you know.
 
 </details>
 
@@ -471,8 +474,8 @@ Without a code the password can't be recovered: that is what makes it safe. Remo
 <summary><b>Does it work with Bloxstrap?</b></summary>
 <br>
 
-Yes. RoALT launches through the registered bootstrapper and follows its clients. It won't install Roblox updates over a
-bootstrapper, since the bootstrapper keeps Roblox up to date itself. RoALT's graphics flags are skipped there, because a
+Yes. LRAM launches through the registered bootstrapper and follows its clients. It won't install Roblox updates over a
+bootstrapper, since the bootstrapper keeps Roblox up to date itself. LRAM's graphics flags are skipped there, because a
 bootstrapper writes its own.
 
 </details>
@@ -481,7 +484,7 @@ bootstrapper writes its own.
 <summary><b>Where is my data? Can I move it?</b></summary>
 <br>
 
-In `%LOCALAPPDATA%\RoALT`. **Settings → Data** opens it or moves it to another folder or drive.
+In `%LOCALAPPDATA%\LRAM`. **Settings → Data** opens it or moves it to another folder or drive.
 
 </details>
 
@@ -489,8 +492,8 @@ In `%LOCALAPPDATA%\RoALT`. **Settings → Data** opens it or moves it to another
 
 ## 💬 Community
 
-Questions, ideas or bug reports? Join the **[Discord server](https://discord.gg/qcj68tHKCX)** or
-[open an issue](https://github.com/inspectsoftware/RoALT/issues).
+Questions, ideas or bug reports? Open an **[issue](https://github.com/JohnBirlich/RAM/issues)** or
+[open an issue](https://github.com/JohnBirlich/RAM/issues).
 
 <br>
 
@@ -504,7 +507,7 @@ Questions, ideas or bug reports? Join the **[Discord server](https://discord.gg/
 
 ## 🧭 Architecture
 
-RoALT is a [Tauri 2](https://tauri.app) app: a Rust backend that owns every secret, process and network call, and a
+LRAM is a [Tauri 2](https://tauri.app) app: a Rust backend that owns every secret, process and network call, and a
 React UI that talks to it over typed IPC. The UI never sees a cookie unless you reveal one.
 
 ```mermaid
@@ -582,8 +585,8 @@ What each milestone added and how to test it is in [docs/MILESTONES.md](docs/MIL
 [Inno Setup 6.6 or newer](https://jrsoftware.org/isdl.php).
 
 ```powershell
-git clone https://github.com/inspectsoftware/RoALT.git
-cd RoALT
+git clone https://github.com/JohnBirlich/RAM.git
+cd LRAM
 npm ci
 npm run tauri dev        # run the app with hot reload
 ```
@@ -594,11 +597,11 @@ npm run tauri dev        # run the app with hot reload
 | `npm run dev` | Runs the UI alone in a browser, against a built-in mock of the backend (`src/dev/mockIpc.ts`). |
 | `npm run build` | Type-checks and builds the UI into `dist/`. |
 | `npm run bindings` | Regenerates the TypeScript types in `src/bindings/` from the Rust types. Run it after changing a `#[ts(export)]` type. |
-| `powershell -ExecutionPolicy Bypass -File scripts\build-installer.ps1` | Release build plus installer: `dist-installer\RoALT-Setup-<version>.exe` and its SHA-256. |
-| `…\build-installer.ps1 -Dev` | Also keeps `installers\RoALT-Setup-<version>-dev-<stamp>.exe`, one per change. |
+| `powershell -ExecutionPolicy Bypass -File scripts\build-installer.ps1` | Release build plus installer: `dist-installer\LRAM-Setup-<version>.exe` and its SHA-256. |
+| `…\build-installer.ps1 -Dev` | Also keeps `installers\LRAM-Setup-<version>-dev-<stamp>.exe`, one per change. |
 
 > [!TIP]
-> Set `ROALT_DATA_DIR` to a scratch folder to run a build without touching your real accounts.
+> Set `LRAM_DATA_DIR` to a scratch folder to run a build without touching your real accounts.
 
 <br>
 
@@ -621,7 +624,7 @@ npm run tauri dev        # run the app with hot reload
 │  │  ├─ discord.rs  webview.rs  tray.rs  error.rs
 │  ├─ tests/fixtures/      recorded Roblox responses (no real cookies)
 │  └─ tauri.conf.json
-├─ installer/RoALT.iss     Inno Setup script
+├─ installer/LRAM.iss     Inno Setup script
 ├─ scripts/                build-installer.ps1
 ├─ docs/                   DESIGN.md · MILESTONES.md · research/
 └─ .github/workflows/      ci.yml · release.yml
@@ -648,7 +651,7 @@ round-trips, and response parsing from recorded fixtures. They never use real co
 
 Bug reports, ideas and pull requests are welcome.
 
-1. Open an [issue](https://github.com/inspectsoftware/RoALT/issues) or ask on [Discord](https://discord.gg/qcj68tHKCX) first for anything big.
+1. Open an [issue](https://github.com/JohnBirlich/RAM/issues) first for anything big.
 2. Keep changes small and focused, and match the surrounding code.
 3. Run the [tests](#-testing) and `npm run bindings` if you changed a shared type.
 4. Never commit a real cookie, ticket or webhook, including in fixtures or screenshots.
@@ -673,11 +676,11 @@ Bug reports, ideas and pull requests are welcome.
 
 ## 📜 Disclaimer
 
-RoALT is an independent project, not affiliated with or endorsed by Roblox Corporation. Use it only
+LRAM is an independent project, not affiliated with or endorsed by Roblox Corporation. Use it only
 with accounts you own. Roblox doesn't officially support running several clients at once and may
 change how its client behaves at any time.
 
 <div align="center">
 <br>
-<sub>Made for people with too many alts. &nbsp;·&nbsp; <a href="https://discord.gg/qcj68tHKCX">Discord</a> &nbsp;·&nbsp; <a href="https://github.com/inspectsoftware/RoALT/releases/latest">Download</a></sub>
+<sub>Made for people with too many alts. &nbsp;·&nbsp; <a href="https://github.com/JohnBirlich/RAM/issues">Issues</a> &nbsp;·&nbsp; <a href="https://github.com/JohnBirlich/RAM/releases/latest">Releases</a></sub>
 </div>

@@ -18,7 +18,7 @@ import { usePreviewFps, type PreviewFps } from "./previewFps";
 import { useGridDrag } from "./useGridDrag";
 
 const CAPS = [0, 50, 25, 10, 5];
-/** How often a hidden RoALT window looks again whether it is shown. */
+/** How often a hidden LRAM window looks again whether it is shown. */
 const HIDDEN_MS = 500;
 
 /** All cards together ask for at most this many pictures a second.
@@ -30,10 +30,10 @@ const STATUSES = ["live", "minimized", "noWindow", "pending", "unsupported"] as 
 /** The cards scrolled into view, sharing `PICTURES_PER_SECOND`. */
 let cardsInView = 0;
 
-/** Draws the client's window on `canvas` up to `fps` times a second while the RoALT window is
+/** Draws the client's window on `canvas` up to `fps` times a second while the LRAM window is
  * visible, one request in flight at a time; a request that gets no new picture changes nothing on
  * the canvas. `status`: what the client's window is doing (`window::Status`), null before the first
- * answer; `painted`: the canvas holds a picture, maybe an old one; `ghost`: RoALT hid it, and it
+ * answer; `painted`: the canvas holds a picture, maybe an old one; `ghost`: LRAM hid it, and it
  * draws while asked for; `ageS`: seconds since its picture, when it is live and that has gone on too long. */
 function useThumbnail(id: string, canvas: React.RefObject<HTMLCanvasElement | null>, fps: PreviewFps) {
   const [status, setStatus] = useState<(typeof STATUSES)[number] | null>(null);

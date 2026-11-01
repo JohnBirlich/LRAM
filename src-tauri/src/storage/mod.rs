@@ -167,7 +167,7 @@ impl Db {
     /// meanwhile. Fails when `path` exists.
     pub fn copy_to<T>(&self, path: &Path, then: impl FnOnce() -> Result<T>) -> Result<T> {
         if path.exists() {
-            return Err(AppError::Invalid(tr!("That folder already has a RoALT database.")));
+            return Err(AppError::Invalid(tr!("That folder already has a LRAM database.")));
         }
         let conn = self.conn();
         match &self.file {

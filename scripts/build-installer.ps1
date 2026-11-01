@@ -1,14 +1,14 @@
 <#
 .SYNOPSIS
-  Builds the Windows installer: dist-installer\RoALT-Setup-<version>.exe.
+  Builds the Windows installer: dist-installer\LRAM-Setup-<version>.exe.
 
 .DESCRIPTION
-  Release-builds the app (npm run tauri build -- --no-bundle), then compiles installer\RoALT.iss
+  Release-builds the app (npm run tauri build -- --no-bundle), then compiles installer\LRAM.iss
   with Inno Setup 6. Prints the installer's path and SHA-256. Needs Rust (with the Build Tools'
   C++ workload), Node.js and Inno Setup 6 (https://jrsoftware.org/isdl.php).
 
 .PARAMETER Dev
-  Also keeps a copy as installers\RoALT-Setup-<version>-dev-<yyyyMMdd-HHmm>.exe: one installer
+  Also keeps a copy as installers\LRAM-Setup-<version>-dev-<yyyyMMdd-HHmm>.exe: one installer
   per change, earlier ones never overwritten.
 
 .EXAMPLE
@@ -59,7 +59,7 @@ $perl = @("C:\Strawberry\perl\bin", "$env:ProgramFiles\Strawberry\perl\bin") | W
 if (-not $perl) { Stop-Build 'Strawberry Perl was not found (OpenSSL, for the encrypted database, needs it to build)' 'winget install StrawberryPerl.StrawberryPerl, then run this again' }
 $env:PATH = "$perl;$env:PATH"
 
-Write-Host "Building RoALT $version (release)"
+Write-Host "Building LRAM $version (release)"
 Push-Location $root
 try {
     if (-not (Test-Path node_modules)) {
@@ -76,7 +76,7 @@ if ($LASTEXITCODE -ne 0) { Stop-Build 'cargo metadata failed' 'run it yourself t
 $exe = Join-Path $meta.target_directory 'release\roalt.exe'
 
 Write-Host 'Compiling the installer'
-$isccArgs = @('/Q', "/DAppVersion=$version", "/DAppNumVersion=$($version -replace '[-+].*$','')", "/DAppExe=$exe", "$root\installer\RoALT.iss")
+$isccArgs = @('/Q', "/DAppVersion=$version", "/DAppNumVersion=$($version -replace '[-+].*$','')", "/DAppExe=$exe", "$root\installer\LRAM.iss")
 # Antivirus scanning the fresh setup.exe can make ISCC's resource update fail once (error 110).
 foreach ($try in 1..2) {
     $ErrorActionPreference = 'Continue'
@@ -87,10 +87,10 @@ foreach ($try in 1..2) {
 }
 if ($LASTEXITCODE -ne 0) { Stop-Build "ISCC failed (exit $LASTEXITCODE)" 'fix the error ISCC names above, then run this again' }
 
-$setup = Get-Item "$root\dist-installer\RoALT-Setup-$version.exe"
+$setup = Get-Item "$root\dist-installer\LRAM-Setup-$version.exe"
 if ($Dev) {
     New-Item -ItemType Directory -Force "$root\installers" | Out-Null
-    $setup = Copy-Item $setup.FullName "$root\installers\RoALT-Setup-$version-dev-$(Get-Date -Format 'yyyyMMdd-HHmm').exe" -PassThru
+    $setup = Copy-Item $setup.FullName "$root\installers\LRAM-Setup-$version-dev-$(Get-Date -Format 'yyyyMMdd-HHmm').exe" -PassThru
 }
 Write-Host ''
 Write-Host "Installer: $($setup.FullName)" -ForegroundColor Green

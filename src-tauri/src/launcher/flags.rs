@@ -1,4 +1,4 @@
-//! Lighter rendering for the clients RoALT starts (`Settings.lighter_rendering`), through the only
+//! Lighter rendering for the clients LRAM starts (`Settings.lighter_rendering`), through the only
 //! local flags Roblox still honours: its allowlist (DevForum "Allowlist for local client
 //! configuration via Fast Flags"; any other is logged as "Denied local configuration for: ...")
 //! in `<version folder>\ClientSettings\ClientAppSettings.json`. Lowest geometry detail always, and

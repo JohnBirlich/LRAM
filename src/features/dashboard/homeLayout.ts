@@ -8,7 +8,7 @@ const ORDER = "roalt.homeOrder";
 const SIZES = "roalt.homeSizes";
 const TABS = "roalt.homeTabs";
 const SECTIONS = "roalt.sectionOrder";
-/** When this PC keeps no storage, the choices last until RoALT closes. */
+/** When this PC keeps no storage, the choices last until LRAM closes. */
 let unsavedSections: string[] | null = null;
 let unsavedDetailed: boolean | null = null;
 let unsavedOrder: number[] | null = null;
@@ -118,7 +118,7 @@ export function byOrder<T>(ids: readonly T[], order: T[]): T[] {
   return [...ids].sort((a, b) => rank(a) - rank(b));
 }
 
-/** RoALT's sections in the order the user dragged them to, by name. */
+/** LRAM's sections in the order the user dragged them to, by name. */
 export function useSectionOrder(): [string[], (ids: string[]) => void] {
   const [order, setOrder] = useState(storedSections);
   return [order, (next) => {
@@ -145,7 +145,7 @@ export function reordered<T>(order: T[], shown: T[], from: number, over: number)
 }
 
 /** What of a draft may be written to disk. Anyone with a private server's or a share link's code
- * can join, so those stay in memory until RoALT closes. Only known-harmless parses pass, rebuilt
+ * can join, so those stay in memory until LRAM closes. Only known-harmless parses pass, rebuilt
  * from the parse and not the typed text: text that doesn't parse may be a mistyped link with a code,
  * and a bare job ID reads the same as a private server's access code. */
 export function storedText(d: Draft): string {

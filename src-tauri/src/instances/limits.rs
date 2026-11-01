@@ -4,12 +4,12 @@
 //! pages the client's memory out, it pages back in as used; nothing is read or written). `plan` adds the settings:
 //! the adaptive manager's background limits, the fair CPU cap, the default trim and auto-spread
 //! affinity; the client being played, loading or hung, and Full quality accounts, get none of those.
-//! Roblox has no per-client frame cap RoALT could set without touching the client; a CPU cap is
+//! Roblox has no per-client frame cap LRAM could set without touching the client; a CPU cap is
 //! what lowers its load (its frame rate drops with it). Trim and memory priority lower the working
 //! set and RAM pressure, not commit. Process handles stay short-lived and are checked against the
 //! start time as in `process`; only the job handle is kept, so its cap can change later.
-//! A job outlives RoALT while its client runs, but a restarted RoALT can't find it again (nor
-//! knows what was set), so RoALT takes its limits back when it exits (`release_all`), resets what
+//! A job outlives LRAM while its client runs, but a restarted LRAM can't find it again (nor
+//! knows what was set), so LRAM takes its limits back when it exits (`release_all`), resets what
 //! it can on the clients it follows again (`reset_followed`) and sets them anew.
 
 use std::collections::HashMap;
@@ -313,8 +313,8 @@ impl Limiter {
     }
 
     /// At exit: takes back what was set (CPU cap off, efficiency mode off, every core), so a
-    /// restarted RoALT, which assumes nothing is set, starts from the client's own state.
-    // ponytail: a RoALT killed outright or aborted by a panic can't: see `reset_followed`.
+    /// restarted LRAM, which assumes nothing is set, starts from the client's own state.
+    // ponytail: a LRAM killed outright or aborted by a panic can't: see `reset_followed`.
     pub fn release_all(&self) {
         RELEASED.store(true, std::sync::atomic::Ordering::Relaxed);
         let applied = std::mem::take(&mut *self.applied.lock().unwrap_or_else(|e| e.into_inner()));
@@ -371,10 +371,10 @@ impl Limiter {
     }
 }
 
-/// A client followed again after RoALT restarted, which may never have got to `release_all`: its
+/// A client followed again after LRAM restarted, which may never have got to `release_all`: its
 /// efficiency mode and cores go back to the client's own (`sync` then sets what it should have).
-// ponytail: a cap can't be reset: its job's name went with RoALT's handle, and Windows has no way to
-// reach a process's job without one. So after RoALT is killed the old cap stays until the client
+// ponytail: a cap can't be reset: its job's name went with LRAM's handle, and Windows has no way to
+// reach a process's job without one. So after LRAM is killed the old cap stays until the client
 // closes (a new job nests inside it), even on the client played. A helper process holding the job
 // handles would lift it. Being in a job doesn't prove a cap (one taken off leaves its job behind),
 // so this is only logged.
@@ -386,7 +386,7 @@ pub fn reset_followed(pid: u32, t0: u64) {
     let mut inside = BOOL(0);
     // SAFETY: `h` is live; `inside` is a local.
     if unsafe { IsProcessInJob(*h, None, &mut inside) }.is_ok() && inside.as_bool() {
-        log::info!("client {pid} is already in a job: a CPU cap from before RoALT restarted may stay on until it closes");
+        log::info!("client {pid} is already in a job: a CPU cap from before LRAM restarted may stay on until it closes");
     }
 }
 
@@ -699,7 +699,7 @@ mod tests {
     #[test]
     fn a_followed_client_gets_its_efficiency_mode_and_cores_back() {
         let (mut child, pid, t0) = ping();
-        // What a RoALT that was killed leaves behind: it never told this one.
+        // What a LRAM that was killed leaves behind: it never told this one.
         Limiter::new().apply("i", pid, t0, Limits { eco: true, affinity: Some(1), ..Limits::default() }).unwrap();
         reset_followed(pid, t0);
         assert_eq!(throttling(pid), (0, 0));
@@ -782,7 +782,7 @@ mod tests {
         assert_eq!(l.grown_trim(at(195), busy, |_, _| panic!("read before the next look")), None);
         assert_eq!(grown(200, 850), None, "under a quarter");
         assert_eq!(grown(210, 850), None);
-        // Far lower without a trim of RoALT's: the user's, or Windows'. It must settle again.
+        // Far lower without a trim of LRAM's: the user's, or Windows'. It must settle again.
         assert_eq!(grown(220, 50), None);
         assert_eq!(l.applied.lock().unwrap()["a"].baseline, None);
         assert_eq!(grown(230, 900), None, "not growth");

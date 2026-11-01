@@ -1,20 +1,8 @@
-/* Design layer — the LRAM look, built from the two reference screenshots:
- * dark navy surfaces, 1 px structural borders, square corners, blue-violet accent, uppercase
- * micro-labels, dense tables, a log well.
- *
- * <html data-direction="lram"> is the default (src/main.tsx). Without the attribute — or with
- * "soft" — every rule here is inert and the original LRAM design shows through, which is what the
- * dev switcher uses for an A/B.
- *
- * Dark palette only: it sits under :not([data-theme="light"]) so the light theme keeps its own
- * contrast-checked colours while still getting the shapes.
- */
+/* The LRAM look: dark surfaces, square corners, hairline rules. Inert without data-direction="lram". */
 
 @layer components {
-  /* ─────────────────────────────────────────────────────────────── Tokens ────────────────── */
 
   :root[data-direction="lram"]:not([data-theme="light"]) {
-    /* Surfaces, sampled from the reference: #171e2a surfaces, #111720 content, #0f131b fields. */
     --frame: #0c1017;
     --bg: #111720;
     --panel: #171e2a;
@@ -39,7 +27,6 @@
     --focus: #70a4ff;
     --backdrop: rgb(4 7 12 / 0.78);
   }
-  /* Delegated by the reference: headings and key labels are the lighter blue. */
   :root[data-direction="lram"]:not([data-theme="light"]) :is(.brand-name, .page-title) {
     color: var(--text);
   }
@@ -60,7 +47,6 @@
     --primary-edge: #2f62cc;
   }
 
-  /* ─────────────────────────────────────────────────────────────── Shell ─────────────────── */
 
   :root[data-direction="lram"] body {
     background: var(--frame);
@@ -94,7 +80,6 @@
     background: color-mix(in oklab, var(--bg) 88%, transparent);
   }
 
-  /* ────────────────────────────────────────────────────────── Surfaces and cards ─────────── */
 
   :root[data-direction="lram"] .panel {
     border-radius: 2px;
@@ -113,7 +98,6 @@
     border-radius: 0;
   }
 
-  /* ────────────────────────────────────────────────────────────────── Controls ──────────── */
 
   :root[data-direction="lram"] .btn,
   :root[data-direction="lram"] .chip,
@@ -311,7 +295,6 @@
     background: #0f131b;
   }
 
-  /* ─────────────────────────────────────────────────────────────── Navigation ───────────── */
 
   :root[data-direction="lram"] .nav-item {
     min-height: 34px;
@@ -345,7 +328,6 @@
     color: var(--text);
   }
 
-  /* ─────────────────────────────────────────────────────── Typography and headings ─────── */
 
   :root[data-direction="lram"] .page-title {
     font-size: 21px;
@@ -371,7 +353,6 @@
     letter-spacing: 0;
   }
 
-  /* ─────────────────────────────────────────────────────────────── Tables ──────────────── */
 
   :root[data-direction="lram"] .row {
     height: 46px;
@@ -407,7 +388,6 @@
     height: 38px;
   }
 
-  /* ────────────────────────────────────────────────────────────── Dialogs ──────────────── */
 
   :root[data-direction="lram"] .dlg {
     border-radius: 2px;
@@ -442,7 +422,6 @@
     border-radius: 1px;
   }
 
-  /* ─────────────────────────────────────────────────────── Status and small marks ──────── */
 
   :root[data-direction="lram"] .led {
     box-shadow: none;
@@ -466,7 +445,6 @@
     border-end-end-radius: 2px;
   }
 
-  /* The title bar's brand block: name, version chip, one-line tagline (reference layout). */
   :root[data-direction="lram"] .brand-name {
     gap: 8px;
     font-size: 14.5px;
@@ -488,7 +466,6 @@
     color: #b1bccf;
   }
 
-  /* ───────────────────────────────────────────────── Counters and the log dock ──────────── */
 
   :root[data-direction="lram"] .counters {
     border-radius: 2px;
@@ -506,7 +483,6 @@
   :root[data-direction="lram"] .counter b {
     font-size: 12.5px;
   }
-  /* In the reference the strip's figure colours carry the meaning: green free, red taken. */
   :root[data-direction="lram"] .counter[data-tone="ok"] b {
     color: #9ad5b0;
   }
@@ -542,7 +518,6 @@
   :root[data-direction="lram"] .logdock-foot {
     padding: 5px 10px;
   }
-  /* The reference's log colours: timestamps and targets amber, messages plain. */
   :root[data-direction="lram"] .log-line[data-level="info"] {
     color: #e6e6e6;
   }
@@ -553,7 +528,6 @@
     color: #ff8074;
   }
 
-  /* The dev switcher, in this language too. */
   :root[data-direction="lram"] .dir-switch {
     border-radius: 2px;
     border-color: var(--line-strong);

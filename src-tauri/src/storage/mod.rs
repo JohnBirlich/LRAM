@@ -40,7 +40,7 @@ pub struct Db {
     file: Option<PathBuf>,
 }
 
-/// The key file beside a database: `roalt.db` → `roalt.db.key`.
+/// The key file beside a database: `lram.db` → `lram.db.key`.
 pub fn key_path(db: &Path) -> PathBuf {
     cipher::beside(db, ".key")
 }
@@ -947,7 +947,7 @@ mod tests {
     #[test]
     fn opens_file_in_wal_and_reopens() {
         let dir = std::env::temp_dir().join(format!("roalt-test-{}", uuid::Uuid::new_v4()));
-        let path = dir.join("nested").join("roalt.db");
+        let path = dir.join("nested").join("lram.db");
         {
             let db = Db::open(&path).unwrap();
             add(&db, 1);
@@ -961,10 +961,10 @@ mod tests {
     #[test]
     fn copies_itself_while_open() {
         let dir = std::env::temp_dir().join(format!("roalt-test-{}", uuid::Uuid::new_v4()));
-        let db = Db::open(&dir.join("roalt.db")).unwrap();
+        let db = Db::open(&dir.join("lram.db")).unwrap();
         add(&db, 1);
         add(&db, 2);
-        let copy = dir.join("moved").join("roalt.db");
+        let copy = dir.join("moved").join("lram.db");
         std::fs::create_dir_all(copy.parent().unwrap()).unwrap();
         db.copy_to(&copy, || Ok(())).unwrap();
         // The original keeps working; the copy has what it had then.
@@ -981,7 +981,7 @@ mod tests {
     #[test]
     fn replaced_key_wrap_leaves_no_trace_on_disk() {
         let dir = std::env::temp_dir().join(format!("roalt-test-{}", uuid::Uuid::new_v4()));
-        let path = dir.join("roalt.db");
+        let path = dir.join("lram.db");
         let old = b"OLD-DPAPI-WRAP-MARKER-0123456789".to_vec();
         let db = Db::open(&path).unwrap();
         db.save_vault_record(&VaultRecord { mode: VaultMode::Dpapi, wrapped_key: old.clone(), kdf: None }).unwrap();
@@ -993,7 +993,7 @@ mod tests {
         };
         db.save_vault_record(&master).unwrap();
         // The process may exit without closing the connection: check the files as they are.
-        for f in ["roalt.db", "roalt.db-wal"] {
+        for f in ["lram.db", "lram.db-wal"] {
             let bytes = std::fs::read(dir.join(f)).unwrap_or_default();
             assert!(!bytes.windows(old.len()).any(|w| w == old.as_slice()), "old wrap left in {f}");
         }
@@ -1063,14 +1063,14 @@ mod tests {
     #[test]
     fn replaced_recovery_wrap_leaves_no_trace_on_disk() {
         let dir = std::env::temp_dir().join(format!("roalt-test-{}", uuid::Uuid::new_v4()));
-        let path = dir.join("roalt.db");
+        let path = dir.join("lram.db");
         let db = Db::open(&path).unwrap();
         db.save_vault_record(&master_record(1)).unwrap();
         let old = b"OLD-RECOVERY-WRAP-MARKER-0123456".to_vec();
         db.save_recovery_record(&RecoveryRecord { wrapped_key: old.clone(), ..recovery_record(2) }).unwrap();
         add(&db, 1);
         db.save_recovery_record(&recovery_record(3)).unwrap();
-        for f in ["roalt.db", "roalt.db-wal"] {
+        for f in ["lram.db", "lram.db-wal"] {
             let bytes = std::fs::read(dir.join(f)).unwrap_or_default();
             assert!(!bytes.windows(old.len()).any(|w| w == old.as_slice()), "old wrap left in {f}");
         }

@@ -23,7 +23,7 @@ import { LogDock } from "./ui/LogDock";
 import { PublicNetworkBanner } from "./features/settings/PublicNetworkBanner";
 import { RecoveryCodeDialog } from "./features/vault/RecoveryCodeDialog";
 import { UnlockScreen, type LockReason } from "./features/vault/UnlockScreen";
-import { setLang, t } from "./i18n";
+import { t } from "./i18n";
 import { Icon } from "./ui/Icon";
 import { DirectionSwitcher } from "./ui/DirectionSwitcher";
 import { Divider, usePanelWidth } from "./ui/Resizer";
@@ -57,7 +57,6 @@ function Root() {
   const v = vault.data;
   const s = settings.data;
   // Before any child renders, so the whole tree uses the chosen language.
-  setLang(s?.language);
   const unlocked = !!v && !v.locked;
 
   const markLocked = () => {

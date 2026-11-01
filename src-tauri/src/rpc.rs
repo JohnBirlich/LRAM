@@ -16,8 +16,11 @@ use crate::App;
 use crate::commands::{cached_game_name, now_ms};
 use crate::model::{Instance, InstanceState};
 
-/// The "LRAM" application on Discord's Developer Portal; its art asset `roalt` is the logo.
-const CLIENT_ID: &str = "1565066775752741165";
+/// Empty until an application id from Discord's Developer Portal is set (LRAM_DISCORD_APP_ID).
+const CLIENT_ID: &str = match option_env!("LRAM_DISCORD_APP_ID") {
+    Some(id) => id,
+    None => "",
+};
 const DOWNLOAD: &str = "https://github.com/JohnBirlich/RAM/releases/latest";
 /// Discord allows about 5 activity updates per 20 s; one is sent only when it changed.
 const TICK: Duration = Duration::from_secs(5);
@@ -127,13 +130,17 @@ fn activity((details, state): &(String, String), since_ms: i64) -> Value {
         "details": details,
         "state": state,
         "timestamps": { "start": since_ms / 1000 },
-        "assets": { "large_image": "roalt", "large_text": format!("LRAM · {}", tr!("Managing Roblox alts")) },
+        "assets": { "large_image": "lram", "large_text": format!("LRAM · {}", tr!("Managing Roblox alts")) },
         "buttons": [{ "label": tr!("Get LRAM"), "url": DOWNLOAD }],
     })
 }
 
 /// Keeps the presence in step on its own thread (pipe I/O blocks).
 pub fn spawn(app: AppHandle) {
+    if CLIENT_ID.is_empty() {
+        log::info!("discord presence is off: this build carries no Discord application id");
+        return;
+    }
     std::thread::spawn(move || {
         let mut pipe: Option<File> = None;
         // What Discord shows now: None when cleared or not connected.

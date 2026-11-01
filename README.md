@@ -31,7 +31,7 @@ not part of it, and releases are installed by hand.</sub>
 
 <br>
 
-<img src="docs/images/home.png" alt="LRAM's Home page: account tabs, running clients with live previews, and dials for what the clients use" width="900">
+<img src="docs/images/banner.png" alt="LRAM — Local Roblox Account Manager" width="900">
 
 </div>
 
@@ -63,16 +63,13 @@ and only ever one client open at a time. LRAM removes all of that.
 
 It runs entirely on your PC. There is no LRAM account, no LRAM server and no tracking.
 
-<table>
-<tr>
-<td width="50%"><img src="docs/images/accounts.png" alt="Accounts: every account with its status, groups and a details panel"><br><sub><b>Accounts:</b> status, groups and details at a glance</sub></td>
-<td width="50%"><img src="docs/images/play.png" alt="Play: pick who plays, then paste where to"><br><sub><b>Play:</b> who plays, where, then the big button</sub></td>
-</tr>
-<tr>
-<td><img src="docs/images/performance.png" alt="Performance: FPS cap, lowest graphics and graphics flags"><br><sub><b>Performance:</b> FPS cap, graphics flags, presets and profiles</sub></td>
-<td><img src="docs/images/settings.png" alt="Settings: theme, accent colour, background image and more"><br><sub><b>Settings:</b> dark or light, any accent, your own background</sub></td>
-</tr>
-</table>
+| | |
+|---|---|
+| **Accounts** | every account with its status, groups and a details panel |
+| **Play** | who plays, where, then the big button |
+| **Performance** | FPS cap, graphics flags, presets and profiles |
+| **Settings** | dark or light, any accent, your own background |
+| **Logs** | the live log waits collapsed at the bottom of every page |
 
 <br>
 
@@ -197,9 +194,9 @@ background image, and skip the splash screen if you'd rather not wait.
 <tr>
 <td valign="top">
 
-### 🌍 18 languages
-English, Arabic (fully right to left), Bosnian, Chinese (Simplified), Filipino, French, German, Indonesian,
-Japanese, Korean, Polish, Portuguese (Brazil), Russian, Spanish, Swedish, Thai, Turkish and Vietnamese.
+### 🧱 One language, by choice
+English only: the whole interface and every message are written once in English, without a
+translation layer to keep in step.
 
 </td>
 <td valign="top">
@@ -226,7 +223,7 @@ for the amount you pick, and you confirm the purchase on Roblox.
 | ↔️ **Free resizing** | Drag a client's edge to any size, past the minimum Roblox holds its window to, and move a small window by its title bar without it growing back. LRAM sizes the window itself (a mouse hook in LRAM's own process); nothing goes into the client. **Start clients tiny** opens every new client at a size you choose. |
 | 🖥️ **Home** | Live preview for every client at 5, 15, 30 or 60 FPS, even hidden ones, with state, game, uptime, CPU and RAM. Drag cards to sort them and resize them from the corner; **Detailed view** off shows only the preview and username. Dials show what all Roblox clients use together. Browser-style **account tabs** give each account its own game and options, and launch one or all of them. **Tab layout** (Settings or the title bar) moves accounts to a list on the side and LRAM's sections to tabs along the top. Drag accounts and sections to sort them, or use `Alt` and the arrow keys; the order is saved, and a launch of all tabs follows it. The **⋯** key, right-click, the menu key or `Shift+F10` for focus, minimize, restore, tiny window (any size, 320×240 by default) and back, CPU limit, efficiency mode, anti-AFK, close. **Tile** fits all clients in a grid on the screen; **Tile micro** lays out micro windows. Minimize all, Restore all. |
 | 🛑 **Stop all** | Hold one button in the sidebar, use the tray, or press a global **panic hotkey** you choose (off by default) to end every Roblox process and stop pending launches and rejoins. |
-| 🌍 **Languages** | English, Arabic (right to left), Bosnian, Chinese (Simplified), Filipino, French, German, Indonesian, Japanese, Korean, Polish, Portuguese (Brazil), Russian, Spanish, Swedish, Thai, Turkish, Vietnamese. |
+| 🧱 **Language** | English only, in the interface and in every log line and error message. |
 | ⏲️ **Automation** | Minimize each new client on launch. Auto-shutdown timer: close the clients and shut the PC down at a set time (survives a LRAM restart, can be cancelled). Hourly Roblox log cleaner (logs older than a day or over 50 MB). Open logs button; LRAM's own logs rotate at 5 MB. |
 | ⚙️ **Launch control** | Custom launch arguments (default and per account, checked before use and never logged), a cooldown between launches, a configurable close grace (1–60 s). |
 | 🎚️ **Limits** | Per client: CPU cap, efficiency mode, core affinity, working-set trim (every N minutes and sooner if a background client grows, or "Page memory out now"). A trim lowers the Memory column for a while; commit size doesn't change. Adaptive manager for background clients; a limit you set on a client wins for that limit. **Memory throttle**: a client whose commit size is over a limit gets a CPU cap, which lowers its frame rate, until it drops under 90 % of the limit. It doesn't free memory; only **Restart on high memory** does, and that disconnects the client. |

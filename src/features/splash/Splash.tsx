@@ -7,21 +7,20 @@ const GROW_MS = 3000 + 2000;
 /** Set once the splash has run: a webview reload doesn't play it again. */
 const KEY = "lram.splash";
 
-/** The LRAM tile (`Logo` in ui/Icon), with its hole as an evenodd cut-out. */
-const TILE =
-  "M8.5 7.5h6a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-6a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z M10.7 10.3h1.6a.4.4 0 0 1 .4.4v1.6a.4.4 0 0 1-.4.4h-1.6a.4.4 0 0 1-.4-.4v-1.6a.4.4 0 0 1 .4-.4z";
-
-function Tile({ className, fill }: { className: string; fill: string }) {
+/** The LRAM mark in whatever colours a layer of the glitch needs. */
+function Tile({ className, blue, light }: { className: string; blue: string; light: string }) {
   return (
     <svg className={className} width="120" height="120" viewBox="0 0 18 18" aria-hidden="true">
-      <path transform="rotate(15 11.5 11.5)" fillRule="evenodd" fill={fill} d={TILE} />
+      <rect x="2" y="2" width="14" height="14" fill={light} />
+      <rect x="2" y="2" width="5.04" height="13.16" fill={blue} />
+      <rect x="7.04" y="9" width="7.84" height="6.16" fill={blue} />
     </svg>
   );
 }
 
 function seen() {
   // Settings.skip_splash, from `main_window`: the window is already full size.
-  if ((window as { __ROALT_SKIP_SPLASH?: boolean }).__ROALT_SKIP_SPLASH) return true;
+  if ((window as { __LRAM_SKIP_SPLASH?: boolean }).__LRAM_SKIP_SPLASH) return true;
   try {
     return sessionStorage.getItem(KEY) !== null;
   } catch {
@@ -62,17 +61,17 @@ export function Splash() {
         <div className="logo">
           <div className="cube" />
           <div className="tile">
-            <Tile className="red" fill="#ff2a4d" />
-            <Tile className="cyan" fill="#22e8ff" />
-            <Tile className="core" fill="#eceef1" />
-            <Tile className="slice-a" fill="#eceef1" />
-            <Tile className="slice-b" fill="#22e8ff" />
+            <Tile className="red" blue="#ff2a4d" light="#ff2a4d" />
+            <Tile className="cyan" blue="#22e8ff" light="#22e8ff" />
+            <Tile className="core" blue="#3E79C9" light="#98C0FB" />
+            <Tile className="slice-a" blue="#eceef1" light="#eceef1" />
+            <Tile className="slice-b" blue="#22e8ff" light="#22e8ff" />
           </div>
         </div>
       </div>
       <div className="mark">
         <div className="word">
-          <b>ROALT</b>
+          <b>LRAM</b>
           <span>v{import.meta.env.APP_VERSION}</span>
         </div>
       </div>

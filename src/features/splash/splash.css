@@ -10,8 +10,8 @@
   align-items: center;
   justify-content: center;
   gap: 22px;
-  background: #050506;
-  color: #eceef1;
+  background: #0c1017;
+  color: #f0f2f6;
   transition: opacity 300ms var(--ease);
 }
 .splash.out {
@@ -31,7 +31,7 @@
   width: 60px;
   height: 60px;
   border-radius: 6.7px;
-  background: #c6f432;
+  background: #3e79c9;
   animation-name: splash-cube;
   animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
 }

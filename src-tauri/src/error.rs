@@ -51,7 +51,7 @@ pub fn windows_error(e: &windows::core::Error) -> String {
 
 /// What the error codes this app meets mean, in words (`code` is the HRESULT of a Win32 error).
 #[cfg(windows)]
-fn known_win32(code: windows::Win32::Foundation::HRESULT) -> Option<&'static str> {
+fn known_win32(code: windows::core::HRESULT) -> Option<&'static str> {
     use windows::Win32::Foundation::{
         ERROR_ACCESS_DENIED, ERROR_INVALID_HANDLE, ERROR_INVALID_PARAMETER, ERROR_NOT_ENOUGH_MEMORY, ERROR_PRIVILEGE_NOT_HELD,
         ERROR_SHARING_VIOLATION,
@@ -69,7 +69,8 @@ fn known_win32(code: windows::Win32::Foundation::HRESULT) -> Option<&'static str
 
 #[cfg(all(test, windows))]
 mod windows_error_tests {
-    use windows::Win32::Foundation::{E_FAIL, ERROR_ACCESS_DENIED, ERROR_INVALID_PARAMETER, ERROR_NOT_ENOUGH_MEMORY};
+    use windows::Win32::Foundation::{ERROR_ACCESS_DENIED, ERROR_INVALID_PARAMETER, ERROR_NOT_ENOUGH_MEMORY};
+    use windows::core::E_FAIL;
 
     use super::*;
 

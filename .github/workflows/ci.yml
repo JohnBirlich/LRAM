@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write
 
 env:
   CARGO_TERM_COLOR: always
@@ -28,8 +29,16 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-      - run: cargo test --locked
+      - run: cargo test --locked 2>&1 | Tee-Object -FilePath ci.txt
         working-directory: src-tauri
       - if: ${{ !cancelled() }}
-        run: cargo clippy --all-targets --locked -- -D warnings
+        run: cargo clippy --all-targets --locked -- -D warnings 2>&1 | Tee-Object -FilePath ci.txt
         working-directory: src-tauri
+      - if: failure()
+        shell: bash
+        run: |
+          { echo '```'; tail -n 60 ci.txt src-tauri/ci.txt 2>/dev/null; echo '```'; } > note.md
+          n=$(gh pr list --head "$GITHUB_REF_NAME" --state open --json number -q '.[0].number')
+          if [ -n "$n" ]; then gh pr comment "$n" --body-file note.md; fi
+        env:
+          GH_TOKEN: ${{ github.token }}

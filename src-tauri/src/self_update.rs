@@ -1,18 +1,5 @@
-//! LRAM's own updates (Roblox's are `launcher::update`).
-//!
-//! - Check: `GET api.github.com/repos/JohnBirlich/RAM/releases/latest` (published releases
-//!   only, never a draft or prerelease) at start and every 6 h while `self_update` is on,
-//!   or on Check now. A `vX.Y.Z` tag newer than this build (`newer`: never the same or older)
-//!   with the assets `LRAM-Setup-X.Y.Z.exe` and `.exe.sig` is an update; `app://update` says so.
-//! - Install (`install`, only on the user's click): asks GitHub again, downloads both (https only,
-//!   from github.com, redirected only to GitHub's asset hosts; ≤ 200 MB and ≤ 4 KB) into a fresh
-//!   temp folder, write-locks the installer, reads it back through that handle and checks the
-//!   ECDSA P-256 / SHA-256 signature of `LRAM-Setup-X.Y.Z.exe\n` followed by exactly those bytes
-//!   against `PUBLIC_KEY` (Windows CNG): the version is signed too, so an older installer can't
-//!   pass as a newer one. Only then, and if no launch or Roblox install started meanwhile, runs it
-//!   silently with `/RELAUNCH` (LRAM.iss starts LRAM again afterwards) and
-//!   quits, so its files can be replaced. The folder is left to the installer; the next start
-//!   deletes it.
+//! LRAM's own updates. Off in this build: `PUBLIC_KEY` is empty, so nothing is fetched and no
+//! installer is ever run. `scripts/update-key.mjs` makes the key pair that turns it back on.
 
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
@@ -52,10 +39,6 @@ const ASSET_HOSTS: [&str; 3] = ["github.com", "objects.githubusercontent.com", "
 const TEMP_PREFIX: &str = "lram-update-";
 /// Inno Setup's silent install; `/RELAUNCH` is LRAM.iss's own: start LRAM when done.
 const INSTALLER_ARGS: [&str; 5] = ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CLOSEAPPLICATIONS", "/RELAUNCH"];
-/// The release signing key this build trusts: 64 bytes, hex, the uncompressed X‖Y of a P-256 key.
-/// Empty turns the built-in updater off — this fork's default, since its releases are installed by
-/// hand. To switch it on: `node scripts/update-key.mjs` makes a key pair, its public half goes
-/// here, and its private half becomes the `LRAM_UPDATE_KEY` secret the release workflow signs with.
 const PUBLIC_KEY: &str = "";
 
 #[derive(Default)]
@@ -197,7 +180,6 @@ fn base64(text: &str) -> Option<Vec<u8>> {
     Some(out)
 }
 
-/// The release key, or None when this build has none (the updater is off).
 fn public_key() -> Option<[u8; 64]> {
     let hex = PUBLIC_KEY.trim();
     if hex.len() != 128 || !hex.is_ascii() {
@@ -343,8 +325,7 @@ pub fn status(s: &App) -> AppUpdate {
     AppUpdate { current: CURRENT.into(), available: lock(&s.self_update.available).clone() }
 }
 
-/// Asks GitHub now. Without a release key nothing is asked: this build can't verify an installer,
-/// so it must not offer one.
+/// Asks GitHub now; does nothing without a release key.
 pub async fn check(app: &AppHandle) -> Result<AppUpdate> {
     let s = app.state::<App>();
     if public_key().is_none() {
@@ -377,7 +358,6 @@ pub fn switched(app: &AppHandle, on: bool) {
 /// Deletes what earlier updates left in %TEMP%, then checks at start and every 6 hours
 /// while `settings.self_update` is on; `app://update` when there is a newer version.
 pub fn spawn(app: AppHandle) {
-    // No key, no updater: the timer would only wake up to do nothing (and to talk to GitHub).
     if public_key().is_none() {
         log::info!("built-in updater is off: this build carries no release key");
         return;

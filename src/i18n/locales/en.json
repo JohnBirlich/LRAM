@@ -1135,7 +1135,7 @@
   "home.signedOutTitle": "Your accounts need signing in again",
   "home.signedOutLead": "Open Accounts and press Sign in again on each one.",
   "play.allPlaying": "These accounts are already playing. You can see them on Home.",
-  "vault.forgot": "Forgot it? It can't be recovered. To start over, close LRAM, delete roalt.db and roalt.db.key from %LOCALAPPDATA%\\LRAM, and add your accounts again.",
+  "vault.forgot": "Forgot it? It can't be recovered. To start over, close LRAM, delete lram.db and lram.db.key from %LOCALAPPDATA%\\LRAM, and add your accounts again.",
   "performance.tinySize": "Tiny window size",
   "performance.tinyWidth": "Tiny window width",
   "performance.tinyHeight": "Tiny window height",

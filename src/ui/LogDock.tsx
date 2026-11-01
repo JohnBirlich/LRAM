@@ -5,18 +5,14 @@ import { Icon } from "./Icon";
 import { toast, toastError } from "./Toast";
 import { t } from "../i18n";
 
-/** Lines the dock keeps; the rest stay in lram.log (the Debug page shows thousands). */
 const KEEP = 300;
-/** History read when it first opens, so it isn't empty until something happens. */
 const HISTORY = 120;
 
 type Level = "error" | "warn" | "info" | "debug";
 type Line = { id: number; level: Level; text: string };
 
-/** tauri-plugin-log's numeric levels (Trace 1 … Error 5). */
 const BY_NUMBER: Record<number, Level> = { 1: "debug", 2: "debug", 3: "info", 4: "warn", 5: "error" };
 
-/** The `[LEVEL]` tag of a lram.log line; lines without one (a panic's next lines) follow `prev`. */
 function levelOf(text: string, prev: Level): Level {
   const m = /\[(TRACE|DEBUG|INFO|WARN|ERROR)\]/.exec(text);
   if (!m) return text.startsWith("[fatal]") ? "error" : prev;
@@ -25,8 +21,6 @@ function levelOf(text: string, prev: Level): Level {
 
 let nextId = 0;
 
-/** The collapsible log under every page: what LRAM is doing, one line at a time. The Debug page
- * keeps the full view (levels, filter, pause, report); this is the always-there tail. */
 export function LogDock() {
   const [open, setOpen] = useState(false);
   const [lines, setLines] = useState<Line[]>([]);
@@ -53,9 +47,7 @@ export function LogDock() {
         });
         setLines([...history, ...early].slice(-KEEP));
       })
-      .catch(() => {
-        // A dock with only live lines is fine; the Debug page reports a history that won't read.
-      })
+      .catch(() => {})
       .finally(() => {
         loaded = true;
       });
@@ -65,7 +57,6 @@ export function LogDock() {
     };
   }, []);
 
-  // Follows the newest line while it is open.
   useEffect(() => {
     if (open && box.current) box.current.scrollTop = box.current.scrollHeight;
   }, [lines, open]);

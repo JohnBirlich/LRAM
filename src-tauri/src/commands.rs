@@ -1145,14 +1145,14 @@ pub fn shutdown_status(s: State<'_, App>) -> Option<i64> {
     *s.shutdown.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// Copies the database into `path` (a new folder or one without a roalt.db; not the current
+/// Copies the database into `path` (a new folder or one without a lram.db; not the current
 /// folder or inside it) with SQLite's `VACUUM INTO` (consistent while open), records it in
 /// `%LOCALAPPDATA%\LRAM\location.json` as `{"dataDir": path, "movedFrom": current}` and
 /// restarts LRAM, all with the database locked so no write lands in the old copy after the
-/// copy. The next start deletes the old folder's roalt.db, roalt.db-wal and roalt.db-shm once
+/// copy. The next start deletes the old folder's lram.db, lram.db-wal and lram.db-shm once
 /// the new database opened, and drops `movedFrom`. Returns only on failure, after deleting the
 /// database files it may have left in `path`. Refused for test runs (`LRAM_DATA_DIR`), when
-/// `path` already has a roalt.db, and while a launch, batch or auto-rejoin runs (the restart
+/// `path` already has a lram.db, and while a launch, batch or auto-rejoin runs (the restart
 /// would cut it off). Async: the copy can take a moment.
 #[tauri::command]
 pub async fn data_dir_move(app: AppHandle, s: State<'_, App>, path: String) -> Result<()> {

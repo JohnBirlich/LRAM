@@ -6,7 +6,7 @@ import { api, asError, events, type BandwidthStatus, type ConflictPolicy, type I
 import { qk, useMultiStatus, useNetwork, useSetSettings } from "../../data";
 import { NumberField, Segmented, Switch, TextField } from "../../ui/controls";
 import { ConfirmDialog, Dialog } from "../../ui/Dialog";
-import { fmtDate, fmtNum, LANGUAGES, t, tx, type Key } from "../../i18n";
+import { fmtDate, fmtNum, t, tx, type Key } from "../../i18n";
 import { Icon } from "../../ui/Icon";
 import { friendly, toast, toastError } from "../../ui/Toast";
 import { MultiNotice, useMultiToggle } from "../launch/Running";
@@ -155,19 +155,6 @@ export function SettingsView({ vault, settings, onPerformance, onRecoveryCode }:
             options={[{ value: "dark", label: t("settings.themeDark") }, { value: "light", label: t("settings.themeLight") }, { value: "system", label: t("settings.themeSystem") }]}
             onChange={(theme) => set.mutate({ theme })}
           />
-        </Row>
-        <Row title={t("settings.language")} hint={t("settings.languageHint")}>
-          <select
-            className="field w-auto"
-            aria-label={t("settings.language")}
-            value={settings.language}
-            onChange={(e) => set.mutate({ language: e.target.value })}
-          >
-            <option value="">{t("settings.languageWindows")}</option>
-            {LANGUAGES.map(([code, name]) => (
-              <option key={code} value={code} lang={code}>{name}</option>
-            ))}
-          </select>
         </Row>
         <Row title={t("settings.accentColour")} hint={t("settings.accentHint")}>
           <AccentPicker value={settings.accent} onChange={(accent) => set.mutate({ accent })} />

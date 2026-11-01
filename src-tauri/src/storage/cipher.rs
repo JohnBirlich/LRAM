@@ -1,9 +1,9 @@
-//! Whole-file encryption of roalt.db (SQLCipher: AES-256 per page, HMAC-SHA512 per page).
+//! Whole-file encryption of lram.db (SQLCipher: AES-256 per page, HMAC-SHA512 per page).
 //!
 //! The 256-bit raw key is random, made once, and kept beside the database in `<db>.key` as
 //! `DPAPI(key)` (current Windows user, entropy `ENTROPY`). DPAPI only, never the master
 //! password: settings, the theme and the vault record are read before any unlock. So a copied
-//! roalt.db is unreadable on another PC or Windows account; secrets inside it keep their own
+//! lram.db is unreadable on another PC or Windows account; secrets inside it keep their own
 //! layer (`vault`).
 //!
 //! A plain database from before is encrypted once (`migrate`), crash-safely:
@@ -28,7 +28,7 @@ use crate::vault::{protect_with, unprotect_with};
 /// the product must never touch it.
 const ENTROPY: &[u8] = b"RoALT/db/v1";
 
-/// `<db>` plus a suffix: `roalt.db` → `roalt.db.key`.
+/// `<db>` plus a suffix: `lram.db` → `lram.db.key`.
 pub fn beside(db: &Path, suffix: &str) -> PathBuf {
     let mut name = db.file_name().unwrap_or_default().to_os_string();
     name.push(suffix);
@@ -217,7 +217,7 @@ mod tests {
     #[test]
     fn a_new_database_is_unreadable_without_its_key() {
         let dir = tmp();
-        let path = dir.join("roalt.db");
+        let path = dir.join("lram.db");
         drop(Db::open(&path).unwrap());
         assert!(beside(&path, ".key").is_file());
         assert!(plain_has_rows(&path).is_err(), "opens as plain SQLite");
@@ -234,7 +234,7 @@ mod tests {
     #[test]
     fn a_plain_database_is_encrypted_with_its_data() {
         let dir = tmp();
-        let path = dir.join("roalt.db");
+        let path = dir.join("lram.db");
         // A plain database as an older LRAM left it: migrated schema, one account, WAL.
         std::fs::create_dir_all(&dir).unwrap();
         Db::open_in_memory().unwrap().copy_to(&path, || Ok(())).unwrap();
@@ -255,7 +255,7 @@ mod tests {
     #[test]
     fn an_interrupted_commit_is_finished() {
         let dir = tmp();
-        let path = dir.join("roalt.db");
+        let path = dir.join("lram.db");
         std::fs::create_dir_all(&dir).unwrap();
         Db::open_in_memory().unwrap().copy_to(&path, || Ok(())).unwrap();
         put(&path, 7);
@@ -274,8 +274,8 @@ mod tests {
     #[test]
     fn a_copy_is_encrypted_and_carries_its_key() {
         let dir = tmp();
-        let db = Db::open(&dir.join("roalt.db")).unwrap();
-        let copy = dir.join("moved").join("roalt.db");
+        let db = Db::open(&dir.join("lram.db")).unwrap();
+        let copy = dir.join("moved").join("lram.db");
         std::fs::create_dir_all(copy.parent().unwrap()).unwrap();
         db.copy_to(&copy, || Ok(())).unwrap();
         assert!(plain_has_rows(&copy).is_err());

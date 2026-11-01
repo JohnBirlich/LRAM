@@ -27,7 +27,6 @@ const FILTERS: { key: Filter; label: Key }[] = [
   { key: "fav", label: "accounts.filter.fav" },
 ];
 
-/** The strip above the table: six figures, each one click away from filtering the table to it. */
 const STRIP: { filter: Filter; label: Key; tone?: "ok" | "bad" | "warn" }[] = [
   { filter: "all", label: "accounts.filter.all" },
   { filter: "inGame", label: "accounts.presence.inGame" },

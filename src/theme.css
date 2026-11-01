@@ -44,7 +44,6 @@
     --blue: #7ab0ff;
     --orange: #ffa05c;
     --grey: #8b929c;
-    /* Debug tab log levels, and the ok tone of a counter. */
     --err: #ff7b7b;
     --warn: #ffd166;
     --ok: #8ce99a;
@@ -338,8 +337,6 @@
     background: transparent;
   }
 
-  /* The dev-only direction switcher: a small tab on the right edge, out of the way of the page
-     and of the log dock. Built out of release builds (src/App.tsx gates it on DEV). */
   .dir-switch {
     position: fixed;
     inset-block-start: 50%;
@@ -379,7 +376,6 @@
     background: var(--sel);
   }
 
-  /* The figures above a table: one strip, a cell per number, clickable as a filter. */
   .counters {
     display: grid;
     grid-auto-flow: column;
@@ -423,7 +419,6 @@
     background: var(--sel);
     box-shadow: inset 0 -2px 0 var(--accent);
   }
-  /* A narrow page (the accounts view is a container): three cells to a row instead of six. */
   @container (max-width: 780px) {
     .counters {
       grid-auto-flow: row;
@@ -431,7 +426,6 @@
     }
   }
 
-  /* The log dock under the page: a head that toggles it, the lines, and its buttons. */
   .logdock {
     flex: none;
     display: flex;

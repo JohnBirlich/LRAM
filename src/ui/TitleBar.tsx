@@ -4,7 +4,6 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Icon, Logo } from "./Icon";
 import { t } from "../i18n";
 
-/** The product name and its one-line description, as the window shows them. */
 export const PRODUCT = "LRAM";
 export const TAGLINE = "Local Roblox Account Manager";
 
@@ -38,7 +37,6 @@ export function TitleBar({ dark, onToggleTheme, onLock, onRefresh, sideTabs, onT
           <span>{PRODUCT}</span>
           <span className="brand-version">v{import.meta.env.APP_VERSION}</span>
         </div>
-        {/* The product's own words, not UI copy: like the name, they are not translated. */}
         <div className="brand-sub">{TAGLINE}</div>
       </div>
       <div className="ms-auto flex items-center">

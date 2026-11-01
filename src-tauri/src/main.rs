@@ -78,13 +78,11 @@ impl App {
     }
 }
 
-/// The database file. Frozen at the original product name on purpose: a folder moved, backed up or
-/// adopted from a build before the rename keeps opening without a migration, and the name is only
-/// ever seen by someone who opens the data folder.
-pub const DB_FILE: &str = "roalt.db";
+pub const DB_FILE: &str = "lram.db";
 /// The database, its journal and its key (`storage::key_path`): all a data folder move ever
 /// deletes, from the old folder.
-pub const DB_FILES: [&str; 4] = [DB_FILE, "roalt.db-wal", "roalt.db-shm", "roalt.db.key"];
+pub const DB_FILES: [&str; 4] = [DB_FILE, "lram.db-wal", "lram.db-shm", "lram.db.key"];
+pub const LEGACY_DB_FILES: [&str; 4] = ["roalt.db", "roalt.db-wal", "roalt.db-shm", "roalt.db.key"];
 const LOCATION: &str = "location.json";
 
 /// `%LOCALAPPDATA%\LRAM\location.json`: where the data folder was moved to (and from, until
@@ -97,18 +95,14 @@ pub struct Location {
     pub moved_from: Option<PathBuf>,
 }
 
-/// `%LOCALAPPDATA%\LRAM`: the data folder unless moved, and where location.json lives. A folder
-/// from before the rename (`%LOCALAPPDATA%\RoALT`) that holds a database is taken over instead of
-/// ignored, so no account is lost to a rename. `Settings → Change data folder` moves it anywhere,
-/// which is the way to get `LRAM` with its data.
 pub fn default_dir() -> PathBuf {
     let local = std::env::var_os("LOCALAPPDATA").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
     let current = local.join("LRAM");
     let legacy = local.join("RoALT");
-    if !current.exists() && legacy.join(DB_FILE).is_file() { legacy } else { current }
+    let holds_db = |d: &Path| DB_FILES.iter().chain(&LEGACY_DB_FILES).any(|f| d.join(f).is_file());
+    if !current.exists() && holds_db(&legacy) { legacy } else { current }
 }
 
-/// A test run's data folder variable, `LRAM_DATA_DIR` (or the name it had before the rename).
 fn data_dir_var() -> Option<std::ffi::OsString> {
     std::env::var_os("LRAM_DATA_DIR").or_else(|| std::env::var_os("ROALT_DATA_DIR"))
 }
@@ -123,21 +117,38 @@ pub fn data_dir_overridden() -> bool {
 /// (`movedFrom`): `init` deletes its database files once the new database has opened, then
 /// drops `movedFrom`. Err: the moved folder isn't available (a message for `fatal`).
 fn data_dir() -> std::result::Result<(PathBuf, Option<PathBuf>), String> {
-    if let Some(d) = data_dir_var() {
-        return Ok((d.into(), None));
+    let dir = match data_dir_var() {
+        Some(d) => Ok((d.into(), None)),
+        None => {
+            let default = default_dir();
+            let json = std::fs::read_to_string(default.join(LOCATION)).ok();
+            chosen_dir(default, json.as_deref())
+        }
+    }?;
+    adopt_legacy_names(&dir.0);
+    Ok(dir)
+}
+
+fn adopt_legacy_names(dir: &Path) {
+    for (old, new) in LEGACY_DB_FILES.iter().zip(DB_FILES) {
+        let from = dir.join(old);
+        let to = dir.join(new);
+        if from.is_file() && !to.exists() {
+            match std::fs::rename(&from, &to) {
+                Ok(()) => log::info!("data folder: renamed {old} to {new}"),
+                Err(e) => log::warn!("data folder: could not rename {old} to {new}: {e}"),
+            }
+        }
     }
-    let default = default_dir();
-    let json = std::fs::read_to_string(default.join(LOCATION)).ok();
-    chosen_dir(default, json.as_deref())
 }
 
 /// The folder location.json points at, with `movedFrom`: its `dataDir` when that is a full
 /// path; else `default`. Missing or malformed JSON counts as no move. A moved folder without
-/// a roalt.db (a drive not connected) is an error, not a fresh empty vault in `default`.
+/// a database (a drive not connected) is an error, not a fresh empty vault in `default`.
 fn chosen_dir(default: PathBuf, json: Option<&str>) -> std::result::Result<(PathBuf, Option<PathBuf>), String> {
     match json.and_then(|j| serde_json::from_str::<Location>(j).ok()) {
         Some(l) if l.data_dir.is_absolute() => {
-            if l.data_dir.join(DB_FILE).is_file() {
+            if DB_FILES.iter().chain(&LEGACY_DB_FILES).any(|f| l.data_dir.join(f).is_file()) {
                 Ok((l.data_dir, l.moved_from))
             } else if same_dir(&l.data_dir, &default) {
                 Ok((default, None))
@@ -210,7 +221,7 @@ fn finish_move(data_dir: &Path, old: &Path) {
     }
 }
 
-/// Deletes roalt.db and its journal files from `old`: nothing else, and nothing when `old` is
+/// Deletes the database and its journal files from `old`: nothing else, and nothing when `old` is
 /// the folder in use. True when none of them is left there.
 fn remove_old_db(data_dir: &Path, old: &Path) -> bool {
     if same_dir(old, data_dir) {
@@ -247,7 +258,7 @@ fn main_window(app: &TauriApp, data_dir: &Path, skip_splash: bool) -> tauri::Res
         .on_navigation(in_app);
     // The splash decides before any setting could reach the UI.
     if skip_splash {
-        builder = builder.initialization_script("window.__ROALT_SKIP_SPLASH = true;");
+        builder = builder.initialization_script("window.__LRAM_SKIP_SPLASH = true;");
     }
     // Debug builds only: DevTools protocol for automated UI checks on a hidden desktop.
     #[cfg(debug_assertions)]
@@ -697,7 +708,7 @@ mod tests {
     fn location_json_picks_a_folder_with_a_database() {
         let tmp = temp_dir();
         let (default, moved, empty) = (tmp.join("default"), tmp.join("moved"), tmp.join("empty"));
-        touch(&moved.join("roalt.db"));
+        touch(&moved.join(DB_FILE));
         std::fs::create_dir_all(&empty).unwrap();
         let pick = |j: Option<&str>| chosen_dir(default.clone(), j).unwrap();
 
@@ -722,10 +733,30 @@ mod tests {
     }
 
     #[test]
+    fn old_database_names_are_taken_over_once() {
+        let dir = temp_dir();
+        for f in LEGACY_DB_FILES {
+            touch(&dir.join(f));
+        }
+        touch(&dir.join(DB_FILE));
+
+        adopt_legacy_names(&dir);
+        for pair in LEGACY_DB_FILES.iter().zip(DB_FILES) {
+            let (old, new) = (dir.join(pair.0), dir.join(pair.1));
+            assert!(!old.exists() || new.exists(), "{old:?} left behind");
+        }
+        assert!(!dir.join("roalt.db.key").exists() && dir.join("lram.db.key").exists());
+
+        adopt_legacy_names(&dir);
+        assert!(dir.join("lram.db").exists() && dir.join("lram.db.key").exists());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
     fn move_targets() {
         let tmp = temp_dir();
         let current = tmp.join("Current");
-        touch(&current.join("roalt.db"));
+        touch(&current.join(DB_FILE));
         let refused = |p: &Path| matches!(move_target(&current, &p.display().to_string()), Err(AppError::Invalid(_)));
 
         assert!(matches!(move_target(&current, r"relative\folder"), Err(AppError::Invalid(_))));

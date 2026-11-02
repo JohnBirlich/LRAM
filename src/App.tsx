@@ -392,7 +392,7 @@ function Shell({ vault, settings, onRecoveryCode }: { vault: VaultStatus; settin
       {side && view === "settings" && <div className="enter flex-none flex flex-wrap gap-x-1 px-1 pb-2 [&>.sub]:w-auto">{settingsLinks}</div>}
       <div className="sheet min-h-0">
       {view === "dashboard" ? (
-        <DashboardView accounts={accounts.data} home={homeTabs} onLaunch={() => setView("launch")} onAdd={() => openAdd()} onImport={() => openAdd("many")} onAccounts={showAll} />
+        <DashboardView accounts={accounts.data} groups={groups.data} home={homeTabs} onLaunch={() => setView("launch")} onAdd={() => openAdd()} onImport={() => openAdd("many")} onAccounts={showAll} />
       ) : view === "accounts" ? (
         <AccountsView
           accounts={accounts.data}

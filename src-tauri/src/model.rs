@@ -1,6 +1,7 @@
 //! Types shared with the UI. `npm run bindings` exports each one to `src/bindings/<Type>.ts`.
 
 use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
 use ts_rs::TS;
 
 #[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
@@ -131,6 +132,31 @@ pub struct Group {
     pub name: String,
     pub color: Option<String>,
     pub sort_order: i64,
+}
+
+/// The number a group name starts with (`1Main` → 1, `007 Bank` → 7) and what follows it.
+fn number_prefix(name: &str) -> (Option<u32>, &str) {
+    let digits = name.bytes().take_while(u8::is_ascii_digit).count();
+    if digits == 0 {
+        return (None, name);
+    }
+    let n = name.as_bytes()[..digits].iter().fold(0u32, |n, d| n.saturating_mul(10).saturating_add((d - b'0') as u32));
+    (Some(n), name[digits..].trim_start_matches([' ', '-', '_', '.', ':']))
+}
+
+/// Groups that start with a number come first, by that number (`1Main` before `007 Bank`) and then
+/// by what follows it; the rest keep the order they were made in.
+pub fn group_order(a: &Group, b: &Group) -> Ordering {
+    let (na, rest_a) = number_prefix(&a.name);
+    let (nb, rest_b) = number_prefix(&b.name);
+    match (na, nb) {
+        (Some(x), Some(y)) => x.cmp(&y).then_with(|| rest_a.to_lowercase().cmp(&rest_b.to_lowercase())),
+        (Some(_), None) => Ordering::Less,
+        (None, Some(_)) => Ordering::Greater,
+        (None, None) => Ordering::Equal,
+    }
+    .then(a.sort_order.cmp(&b.sort_order))
+    .then(a.id.cmp(&b.id))
 }
 
 /// Create (`id: None`) or rename / recolour a group.
@@ -1316,4 +1342,35 @@ pub struct Crash {
 pub struct Notice {
     pub error: bool,
     pub message: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn group(id: i64, name: &str, sort_order: i64) -> Group {
+        Group { id, name: name.into(), color: None, sort_order }
+    }
+
+    #[test]
+    fn numbered_groups_come_first_by_their_number() {
+        let mut all = [
+            group(1, "Farm", 0),
+            group(2, "007 Bank", 1),
+            group(3, "PvP", 2),
+            group(4, "1Main", 3),
+            group(5, "12 trade", 4),
+        ];
+        all.sort_by(group_order);
+        let names: Vec<&str> = all.iter().map(|g| g.name.as_str()).collect();
+        assert_eq!(names, ["1Main", "007 Bank", "12 trade", "Farm", "PvP"]);
+    }
+
+    #[test]
+    fn a_number_that_does_not_fit_is_no_number() {
+        assert_eq!(number_prefix("1Main"), (Some(1), "Main"));
+        assert_eq!(number_prefix("007  Bank"), (Some(7), "Bank"));
+        assert_eq!(number_prefix("Bank 2"), (None, "Bank 2"));
+        assert_eq!(number_prefix("99999999999999 X").0, Some(u32::MAX));
+    }
 }

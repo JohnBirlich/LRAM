@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, type AccountSummary, type ClientMetrics, type GameInfo, type Instance, type Limits, type WindowShow } from "../../api";
-import { qk, queryClient, useInstances, useMetrics, useSetSettings, useSettings, useSystemUsage } from "../../data";
+import { api, type AccountSummary, type ClientMetrics, type GameInfo, type Group, type Instance, type Limits, type WindowShow } from "../../api";
+import { groupColor, qk, queryClient, useInstances, useMetrics, useSetSettings, useSettings, useSystemUsage } from "../../data";
 import { Segmented, Switch } from "../../ui/controls";
 import { ConfirmDialog } from "../../ui/Dialog";
 import { Icon, type IconName } from "../../ui/Icon";
@@ -181,9 +181,11 @@ function SizeHandle({ name, detailed, onSize }: { name: string; detailed: boolea
 
 /** One running client: its live picture, who, where, how long, what it uses, and its keys; with
  * `detailed` off only the picture and the username, the rest being in the right-click menu. */
-function ClientCard({ inst: i, account: a, metrics: m, now, afkOn, defaultFps, fps, closing, detailed, width, onSize, grip, onMenu }: {
+function ClientCard({ inst: i, account: a, groups, metrics: m, now, afkOn, defaultFps, fps, closing, detailed, width, onSize, grip, onMenu }: {
   inst: Instance;
   account: AccountSummary | undefined;
+  /** The account's groups, in the order the groups list them. */
+  groups: Group[];
   metrics: ClientMetrics | undefined;
   now: number;
   afkOn: boolean;
@@ -293,6 +295,16 @@ function ClientCard({ inst: i, account: a, metrics: m, now, afkOn, defaultFps, f
               {label}
             </span>
           </div>
+          {groups.length > 0 && (
+            <div className="flex flex-wrap gap-1 min-w-0" aria-label={t("accounts.groups.title")}>
+              {groups.map((g) => (
+                <span key={g.id} className="tag">
+                  <span aria-hidden="true" className="w-1.5 h-1.5 rounded-full" style={{ background: groupColor(g) }} />
+                  {g.name}
+                </span>
+              ))}
+            </div>
+          )}
           {i.note && !rejoining && <span className="text-[13px] text-orange">{i.note}</span>}
           <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-dim min-w-0">
             <span className="flex flex-wrap gap-1 min-w-0">
@@ -338,6 +350,13 @@ function ClientCard({ inst: i, account: a, metrics: m, now, afkOn, defaultFps, f
             {/* Only what needs a look; the card's label always says the state. */}
             {(closing || i.state !== "inGame") && <span aria-hidden="true" title={label} className={`led ${moving ? "pulse" : ""}`} style={{ color }} />}
             <span className="font-medium truncate">{a?.username ?? name}</span>
+            {groups.length > 0 && (
+              <span className="flex flex-none gap-1" title={groups.map((g) => g.name).join(", ")}>
+                {groups.slice(0, 3).map((g) => (
+                  <span key={g.id} aria-hidden="true" className="w-1.5 h-1.5 rounded-full" style={{ background: groupColor(g) }} />
+                ))}
+              </span>
+            )}
           </div>
           {i.note && !rejoining && <span className="px-1 text-[13px] text-orange">{i.note}</span>}
         </>
@@ -622,7 +641,7 @@ function Welcome({ hasAccounts, signedOut, onAdd, onImport, onPlay, onAccounts }
 
 /** Every running client at a glance, with a picture of its window, and the window tools; with
  * nothing running, the way to the first game. */
-export function DashboardView({ accounts, home, onLaunch, onAdd, onImport, onAccounts }: { accounts: AccountSummary[]; home: HomeTabs; onLaunch: () => void; onAdd: () => void; onImport: () => void; onAccounts: () => void }) {
+export function DashboardView({ accounts, groups, home, onLaunch, onAdd, onImport, onAccounts }: { accounts: AccountSummary[]; groups: Group[]; home: HomeTabs; onLaunch: () => void; onAdd: () => void; onImport: () => void; onAccounts: () => void }) {
   const setSettings = useSetSettings();
   const qc = useQueryClient();
   const list = useInstances().data ?? [];
@@ -647,6 +666,7 @@ export function DashboardView({ accounts, home, onLaunch, onAdd, onImport, onAcc
   const [closingOne, setClosingOne] = useState<ReadonlySet<string>>(new Set());
   const [fps] = usePreviewFps();
   const byId = new Map(accounts.map((a) => [a.id, a]));
+  const groupsOf = (a: AccountSummary | undefined) => (a ? groups.filter((g) => a.groupIds.includes(g.id)) : []);
   const byInst = new Map(metrics.map((m) => [m.instanceId, m]));
   const inGame = running.filter((i) => i.state === "inGame").length;
   const troubles = list.filter((i) => i.relaunching && i.relaunchProblem);
@@ -750,7 +770,7 @@ export function DashboardView({ accounts, home, onLaunch, onAdd, onImport, onAcc
               <span className="sr-only" aria-live="polite">{drag.moved}</span>
               <section ref={drag.grid} aria-label={t("launch.running.title")} className="flex flex-wrap items-start gap-6">
                 {shown.map((i) => (
-                  <ClientCard key={i.id} inst={i} account={byId.get(i.accountId)} metrics={byInst.get(i.id)} now={now} afkOn={afkOn} defaultFps={settings?.fpsCap ?? 0} fps={fps} closing={closingOne.has(closeKey(i))} detailed={detailed} width={sizes[i.accountId]} onSize={(w) => setSize(i.accountId, w)} grip={drag.grip} onMenu={openMenu} />
+                  <ClientCard key={i.id} inst={i} account={byId.get(i.accountId)} groups={groupsOf(byId.get(i.accountId))} metrics={byInst.get(i.id)} now={now} afkOn={afkOn} defaultFps={settings?.fpsCap ?? 0} fps={fps} closing={closingOne.has(closeKey(i))} detailed={detailed} width={sizes[i.accountId]} onSize={(w) => setSize(i.accountId, w)} grip={drag.grip} onMenu={openMenu} />
                 ))}
               </section>
             </>

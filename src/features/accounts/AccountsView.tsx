@@ -545,7 +545,7 @@ export function AccountsView({ accounts, groups, density, vaultMode, clipboardSe
                         </td>
                         <td className="pe-3 hidden @5xl:table-cell">
                           <div className="flex flex-wrap gap-1">
-                            {a.groupIds.flatMap((gid) => groupById.get(gid) ?? []).map((g) => (
+                            {groups.filter((g) => a.groupIds.includes(g.id)).map((g) => (
                               <span key={g.id} className="tag">
                                 <span aria-hidden="true" className="w-1.5 h-1.5 rounded-full" style={{ background: groupColor(g) }} />
                                 {g.name}

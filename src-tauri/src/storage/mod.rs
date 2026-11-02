@@ -13,7 +13,7 @@ use rusqlite_migration::{M, Migrations};
 
 use crate::commands::now_ms;
 use crate::error::{AppError, Result};
-use crate::model::{AccountPatch, AccountStatus, AccountSummary, Crash, CrashKind, Group, GroupInput, ServerVisit, Settings, VaultMode};
+use crate::model::{group_order, AccountPatch, AccountStatus, AccountSummary, Crash, CrashKind, Group, GroupInput, ServerVisit, Settings, VaultMode};
 use crate::vault::{Kdf, RecoveryRecord, VaultRecord};
 
 /// What `upsert_account` writes. `cookie` is the encrypted blob.
@@ -439,10 +439,13 @@ impl Db {
         Ok(())
     }
 
+    /// Numbered names first (`1Main` before `007 Bank`), the rest in the order they were made.
     pub fn groups(&self) -> Result<Vec<Group>> {
         let c = self.conn();
         let mut st = c.prepare(&format!("{GROUP_SELECT} ORDER BY sort_order, id"))?;
-        Ok(st.query_map([], group_row)?.collect::<rusqlite::Result<_>>()?)
+        let mut all: Vec<Group> = st.query_map([], group_row)?.collect::<rusqlite::Result<_>>()?;
+        all.sort_by(group_order);
+        Ok(all)
     }
 
     /// Name trimmed, 1..=40 chars, unique (case-insensitive) → else `Invalid`.
@@ -1216,6 +1219,16 @@ mod tests {
         assert!(matches!(db.save_group(&input(Some(404), "New", None)), Err(AppError::NotFound)));
         let names: Vec<String> = db.groups().unwrap().into_iter().map(|g| g.name).collect();
         assert_eq!(names, vec!["PVP", "Farm"]);
+    }
+
+    #[test]
+    fn numbered_groups_are_listed_by_number() {
+        let db = Db::open_in_memory().unwrap();
+        for name in ["Farm", "2 Alt", "1Main", "007 Bank"] {
+            db.group_by_name_or_create(name, None).unwrap();
+        }
+        let names: Vec<String> = db.groups().unwrap().into_iter().map(|g| g.name).collect();
+        assert_eq!(names, ["1Main", "2 Alt", "007 Bank", "Farm"]);
     }
 
     #[test]

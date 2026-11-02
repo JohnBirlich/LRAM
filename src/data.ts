@@ -51,7 +51,22 @@ const bySortOrder = <T extends { sortOrder: number }>(list: T[]) => [...list].so
 export const useVault = () => useQuery({ queryKey: qk.vault, queryFn: api.vaultStatus });
 export const useSettings = () => useQuery({ queryKey: qk.settings, queryFn: api.settingsGet });
 export const useAccounts = () => useQuery({ queryKey: qk.accounts, queryFn: api.accountsList, select: bySortOrder });
-export const useGroups = () => useQuery({ queryKey: qk.groups, queryFn: api.groupsList, select: bySortOrder });
+/** `1Main` and `007 Bank` sort by their number, then by what follows it; groups without one keep
+ * the order they were made in. The backend lists them the same way. */
+const groupNumber = (name: string) => {
+  const digits = name.match(/^\d+/)?.[0];
+  return digits === undefined ? null : { n: Math.min(Number(digits), 4294967295), rest: name.slice(digits.length).replace(/^[\s\-_.:]+/, "").toLowerCase() };
+};
+
+export function byGroupOrder(a: Group, b: Group): number {
+  const [na, nb] = [groupNumber(a.name), groupNumber(b.name)];
+  if (na && nb && na.n !== nb.n) return na.n - nb.n;
+  if (na && nb && na.rest !== nb.rest) return na.rest < nb.rest ? -1 : 1;
+  if (!na !== !nb) return na ? -1 : 1;
+  return a.sortOrder - b.sortOrder || a.id - b.id;
+}
+
+export const useGroups = () => useQuery({ queryKey: qk.groups, queryFn: api.groupsList, select: (list: Group[]) => [...list].sort(byGroupOrder) });
 export const useFavourites = () => useQuery({ queryKey: qk.favourites, queryFn: api.favouritesList, select: bySortOrder });
 
 /** Refreshed by instances://changed, and every 5 s in case an event was missed. */

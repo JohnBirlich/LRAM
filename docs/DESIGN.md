@@ -374,6 +374,11 @@ count) and puts that size back when it comes out of fullscreen at another one (`
 `restore_size`). A window the user resized itself wins: `resize::on_event` reports the end of a drag to
 `window::user_sized`, which makes that the size to keep. Tiny clients are `keep_tiny`'s.
 
+Groups are listed with numbered names first (`model::group_order`: `1Main` before `007 Bank`, then by
+what follows the number), the rest in the order they were made; `storage::groups` sorts them and the UI
+sorts its own cache the same way (`byGroupOrder` in `data.ts`). The dashboard's client cards show the
+account's groups so membership is visible without going back to the accounts list.
+
 Anti-AFK (opt-in) uses `SendInput`, so it needs the client in front: it runs only after 5 s with no
 user input (`GetLastInputInfo`), wakes minimized clients as ghosts first (`window::wake_for_press`), and takes the focus with `SetForegroundWindow`,
 then `AttachThreadInput`, then after a zero-movement mouse input that lifts the foreground lock (not an

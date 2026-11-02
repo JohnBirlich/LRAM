@@ -198,6 +198,14 @@ same start time (not multi-instance survivors then: `Multi::adopt`); the rest ar
 can't be found again by a new process, so RoALT lifts the limits it set at exit (`Limiter::release_all`)
 and sets them anew after the restart.
 
+A running client is never called closed on one doubtful look. Liveness comes from the pid with its
+start time, and a refused read still counts when Windows lists the process as RobloxPlayerBeta.exe
+(`process::unreadable_client`) or when the process still owns a top-level window, shown or hidden
+(`process::has_any_window`). A client that never reached a game is given 120 s to appear; while
+Roblox's own installer runs, updating it, that wait is 15 minutes (`INSTALL_WAIT_MS`), so a first
+launch isn't reported as one that failed. A disconnect line in the client's log stops counting once
+the log shows it replicating again (`Replicator created`, `serverId:`).
+
 ### Core types (Rust, exported to TS)
 
 ```rust

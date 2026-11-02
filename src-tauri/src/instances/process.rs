@@ -240,6 +240,29 @@ pub fn main_window(pid: u32) -> Option<(HWND, bool)> {
     f.found.map(|h| (h, unsafe { IsIconic(h) }.as_bool()))
 }
 
+/// Whether the process has a top-level window, shown or hidden. A hidden client keeps its window,
+/// so this proves it runs even where reading the process is refused (`tracker` liveness).
+pub fn has_any_window(pid: u32) -> bool {
+    struct Find {
+        pid: u32,
+        found: bool,
+    }
+    unsafe extern "system" fn each(hwnd: HWND, data: LPARAM) -> BOOL {
+        // SAFETY: `data` is the `&mut Find` passed to EnumWindows below, alive for the whole call.
+        let f = unsafe { &mut *(data.0 as *mut Find) };
+        let mut owner = 0u32;
+        // SAFETY: `hwnd` comes from EnumWindows; this call only reads which process owns it.
+        let _ = unsafe { GetWindowThreadProcessId(hwnd, Some(&raw mut owner)) };
+        f.found = owner == f.pid;
+        (!f.found).into()
+    }
+    let mut f = Find { pid, found: false };
+    // SAFETY: `each` has the WNDENUMPROC signature; `f` outlives the call. Stopping early makes
+    // EnumWindows report an error, which says nothing here.
+    let _ = unsafe { EnumWindows(Some(each), LPARAM(&raw mut f as isize)) };
+    f.found
+}
+
 /// The process owning the window in front (window queries only), for the adaptive manager.
 pub fn foreground_pid() -> Option<u32> {
     let mut pid = 0u32;

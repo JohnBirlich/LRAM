@@ -17,6 +17,9 @@ use crate::model::{CrashKind, Instance, InstanceState, LaunchInfo, LaunchTarget,
 /// a new PID (Roblox's updater relaunches it, research M8/M9), or, behind a bootstrapper, may
 /// not have started yet.
 const REBIND_MS: i64 = 120_000;
+/// A client still loading while Roblox's installer runs may take this long: a first launch
+/// downloads and installs the client before starting it.
+const INSTALL_WAIT_MS: i64 = 900_000;
 const MAX_ENDED: usize = 30;
 /// How long a teleport may take to reach its next game; then it failed (`LogFacts::teleporting`).
 const TELEPORT_MS: i64 = 60_000;
@@ -166,6 +169,8 @@ struct Entry {
     window_seen: bool,
     /// A failure to read its log was already logged at warn (later ones go to debug).
     log_warned: bool,
+    /// Roblox's installer was seen updating it: its process going away is expected (`may_appear`).
+    installer: bool,
 }
 
 impl Entry {
@@ -199,6 +204,7 @@ impl Entry {
             mem_restart: false,
             window_seen: false,
             log_warned: false,
+            installer: false,
         }
     }
 
@@ -914,12 +920,13 @@ impl Tracker {
         }
         let mut taken: Vec<u32> = work.iter().filter(|e| e.adopted).map(|e| e.inst.pid).collect();
         let mut roblox = None;
+        let mut installer = None;
         for e in &mut work {
             if !e.user_checked {
                 e.expected_user = user_of(e.inst.account_id);
                 e.user_checked = true;
             }
-            observe(e, dir, procs, &mut roblox, &mut taken, now);
+            observe(e, dir, procs, &mut roblox, &mut installer, &mut taken, now);
         }
         let mut entries = self.entries();
         let mut moved = Vec::new();
@@ -1123,6 +1130,11 @@ trait Procs {
     fn hung(&self, pid: u32) -> bool;
     /// `start_time` said None, but this client hasn't exited.
     fn unreadable_client(&self, pid: u32) -> bool;
+    /// The process has a top-level window, shown or hidden: a client that kept its window is
+    /// running, whatever the process read said.
+    fn has_window(&self, pid: u32) -> bool;
+    /// Roblox's own installer runs, updating the client and starting it again.
+    fn installer_running(&self) -> bool;
 }
 
 struct Live;
@@ -1143,11 +1155,27 @@ impl Procs for Live {
     fn unreadable_client(&self, pid: u32) -> bool {
         process::unreadable_client(pid)
     }
+
+    fn has_window(&self, pid: u32) -> bool {
+        process::has_any_window(pid)
+    }
+
+    fn installer_running(&self) -> bool {
+        process::installer_running()
+    }
 }
 
 /// The blocking part of a poll for one entry: liveness, rebinding, log binding and reading.
 /// `roblox` lists the Roblox processes at most once per poll; `taken` holds the PIDs entries follow.
-fn observe(e: &mut Entry, dir: Option<&Path>, procs: &dyn Procs, roblox: &mut Option<Vec<ProcInfo>>, taken: &mut Vec<u32>, now: i64) {
+fn observe(
+    e: &mut Entry,
+    dir: Option<&Path>,
+    procs: &dyn Procs,
+    roblox: &mut Option<Vec<ProcInfo>>,
+    installer: &mut Option<bool>,
+    taken: &mut Vec<u32>,
+    now: i64,
+) {
     let seen = procs.start_time(e.inst.pid);
     // 0: unread so far. The first good read is its identity, else a client read late never matches.
     if e.start_time == Some(0) {
@@ -1157,8 +1185,11 @@ fn observe(e: &mut Entry, dir: Option<&Path>, procs: &dyn Procs, roblox: &mut Op
     // None isn't always gone: Windows can refuse the read of a client that runs on. Exited entries
     // are never looked at again, so this one call has to be right.
     let unreadable = seen.is_none() && procs.unreadable_client(e.inst.pid);
-    e.alive = seen == Some(first) || unreadable;
-    if unreadable && !e.unreadable_said {
+    // Its own window is the other proof: a failing process list or a refused read says nothing
+    // about a client that still shows its window.
+    let windowed = seen.is_none() && !unreadable && procs.has_window(e.inst.pid);
+    e.alive = seen == Some(first) || unreadable || windowed;
+    if (unreadable || windowed) && !e.unreadable_said {
         e.unreadable_said = true;
         log::warn!("instance {}: process {} can't be read but is still running: following it", e.inst.id, e.inst.pid);
     }
@@ -1169,6 +1200,10 @@ fn observe(e: &mut Entry, dir: Option<&Path>, procs: &dyn Procs, roblox: &mut Op
     }
     if !e.adopted && !e.alive {
         e.gone_at.get_or_insert(now);
+    }
+    // While it never reached a game and its process is gone, Roblox may be installing it.
+    if !e.alive && e.in_game_at.is_none() {
+        e.installer = *installer.get_or_insert_with(|| procs.installer_running());
     }
     // ponytail: one window enumeration per client per poll; batch them if clients number hundreds.
     // Kept once it is gone, so a hung client LRAM then closed still ends as hung.
@@ -1284,7 +1319,9 @@ fn created_secs(path: &Path) -> Option<u64> {
 /// 5 s for the client it may already have started to show up).
 fn may_appear(e: &Entry, now: i64) -> bool {
     let closed = e.closing && (e.adopted || e.gone_at.is_some_and(|g| now - g >= BOOTSTRAPPER_GRACE_MS));
-    e.in_game_at.is_none() && !closed && !e.facts.replaced && now - e.inst.started_at < REBIND_MS
+    // Roblox's installer takes the client away to update it, then starts it again.
+    let waiting = if e.installer { INSTALL_WAIT_MS } else { REBIND_MS };
+    e.in_game_at.is_none() && !closed && !e.facts.replaced && now - e.inst.started_at < waiting
 }
 
 const BOOTSTRAPPER_GRACE_MS: i64 = 5_000;
@@ -1396,13 +1433,22 @@ mod tests {
 
     /// Fake processes: what `roblox()` lists and `start_time` finds (bootstrappers included),
     /// and which of them don't respond.
-    struct Fake(Mutex<Vec<ProcInfo>>, Mutex<Vec<u32>>, Mutex<Vec<u32>>);
+    struct Fake(Mutex<Vec<ProcInfo>>, Mutex<Vec<u32>>, Mutex<Vec<u32>>, Mutex<Vec<u32>>, Mutex<bool>);
 
     impl Fake {
         fn new(procs: &[(u32, u64)]) -> Fake {
-            let f = Fake(Mutex::new(Vec::new()), Mutex::new(Vec::new()), Mutex::new(Vec::new()));
+            let f = Fake(Mutex::new(Vec::new()), Mutex::new(Vec::new()), Mutex::new(Vec::new()), Mutex::new(Vec::new()), Mutex::new(false));
             f.set(procs);
             f
+        }
+
+        /// Pids whose top-level window is there, whatever the process list says.
+        fn set_windows(&self, pids: &[u32]) {
+            *self.3.lock().unwrap() = pids.to_vec();
+        }
+
+        fn set_installer(&self, running: bool) {
+            *self.4.lock().unwrap() = running;
         }
 
         fn set(&self, procs: &[(u32, u64)]) {
@@ -1433,6 +1479,14 @@ mod tests {
 
         fn hung(&self, pid: u32) -> bool {
             self.1.lock().unwrap().contains(&pid)
+        }
+
+        fn has_window(&self, pid: u32) -> bool {
+            self.3.lock().unwrap().contains(&pid)
+        }
+
+        fn installer_running(&self) -> bool {
+            *self.4.lock().unwrap()
         }
     }
 
@@ -1888,6 +1942,53 @@ mod tests {
         procs.set(&[(100, 556)]);
         t.poll(None, &procs, &user_of, start + 301_000);
         assert_eq!(state(&t, &id).0, Exited);
+    }
+
+    #[test]
+    fn a_client_without_a_readable_process_but_with_its_window_isnt_closed() {
+        let dir = temp_dir();
+        let start = now_ms() - 600_000;
+        let (t, id, procs, _) = in_game_client(&dir, start);
+        // The process list says nothing and Windows doesn't call it unreadable either, but its
+        // window is there: a client that shows its window runs.
+        procs.set(&[]);
+        procs.set_windows(&[100]);
+        t.poll(Some(&dir), &procs, &user_of, start + 2_000);
+        t.poll(Some(&dir), &procs, &user_of, start + 40_000);
+        assert_eq!(state(&t, &id), (InGame, None, 100));
+        assert!(t.take_crashes().is_empty());
+        // The window goes with it: now it has ended.
+        procs.set_windows(&[]);
+        t.poll(Some(&dir), &procs, &user_of, start + 41_000);
+        assert_eq!(state(&t, &id), (Exited, note("Closed unexpectedly"), 100));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_client_the_installer_took_away_keeps_waiting() {
+        let dir = temp_dir();
+        let t = Tracker::new();
+        let start = now_ms();
+        let secs = (start / 1000) as u64;
+        let id = t.register(&info(100, start, false), target()).id;
+        let log = dir.join("0.744.0.7441080_20261024T120000Z_Player_ABCDE_last.log");
+        append(&log, &[btid_line(BTID)]);
+        let procs = Fake::new(&[(100, secs)]);
+        t.poll(Some(&dir), &procs, &user_of, start + 1_000);
+        // Roblox's installer takes the client away to update it, then starts it again: a first
+        // launch can take minutes, far past the plain rebind window.
+        procs.set(&[]);
+        procs.set_installer(true);
+        let late = start + REBIND_MS + 60_000;
+        t.poll(Some(&dir), &procs, &user_of, start + 2_000);
+        t.poll(Some(&dir), &procs, &user_of, late);
+        assert_ne!(state(&t, &id).0, Exited, "the installer is still at it");
+        assert!(t.take_crashes().is_empty());
+        // The installer is gone and no client came up: the wait is over.
+        procs.set_installer(false);
+        t.poll(Some(&dir), &procs, &user_of, late + 2_000);
+        assert_eq!(state(&t, &id).0, Exited);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

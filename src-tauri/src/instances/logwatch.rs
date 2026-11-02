@@ -255,7 +255,12 @@ pub fn parse_line(line: &str, facts: &mut LogFacts) {
             facts.reason = None;
         }
     } else if line.contains("[FLog::Network] Replicator created") || line.contains("[FLog::Network] serverId:") {
+        // Replicating again: whatever disconnect came before is over (a reconnection, or a kick the
+        // client came back from), so it is in a game and not disconnected.
         facts.in_game = true;
+        facts.disconnected = false;
+        facts.left = false;
+        facts.reason = None;
     } else if facts.in_game && line.contains(TELEPORT) {
         facts.teleporting = true;
     } else if let Some(m) = DISCONNECTS.iter().find(|m| line.contains(*m)) {
@@ -616,6 +621,19 @@ mod tests {
         // A 285 in the timestamp, seconds or thread id is not the reason.
         let prefixed = parsed(&["2026-10-17T18:16:31.285Z,285.100000,a285,6,Info [FLog::Network] Sending disconnect with reason: 267"]);
         assert!(prefixed.disconnected && !prefixed.left);
+    }
+
+    #[test]
+    fn replicating_again_ends_a_disconnect() {
+        let mut f = parsed(&[
+            &line("[FLog::Network] Sending disconnect with reason: 267"),
+            &line("[FLog::Network] Disconnection Notification. Reason: 285"),
+        ]);
+        assert!(f.disconnected && f.left && f.reason.is_some());
+        // The client came back to the same server without a new join line: it is in a game, not
+        // disconnected, and it didn't leave.
+        parse_line(&line("[FLog::Network] Replicator created"), &mut f);
+        assert!(f.in_game && !f.disconnected && !f.left && f.reason.is_none());
     }
 
     #[test]

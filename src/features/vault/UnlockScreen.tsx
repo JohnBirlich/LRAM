@@ -20,6 +20,18 @@ export function UnlockScreen({ status, reason, onRecovered }: { status: VaultSta
   const [error, setError] = useState<string | null>(null);
   const [shakes, setShakes] = useState(0);
   const [busy, setBusy] = useState(false);
+  // Seconds a wrong password keeps the next one waiting; counted down here, so the button and the
+  // field wake up by themselves.
+  const [wait, setWait] = useState(status.retryIn ?? 0);
+
+  useEffect(() => {
+    const total = status.retryIn ?? 0;
+    setWait(total);
+    if (!total) return;
+    const from = Date.now();
+    const id = setInterval(() => setWait(Math.max(0, total - Math.floor((Date.now() - from) / 1000))), 250);
+    return () => clearInterval(id);
+  }, [status.retryIn]);
 
   useEffect(() => input.current?.focus(), [recovering]);
 
@@ -53,6 +65,8 @@ export function UnlockScreen({ status, reason, onRecovered }: { status: VaultSta
       const e2 = asError(err);
       if (e2.kind !== "wrongPassword") fail(friendly(e2));
       else fail(t(recovering ? "vault.recovery.wrongCode" : "ui.error.wrongPassword"));
+      // A refused attempt comes back as a wait: take it from the status rather than guess it.
+      qc.invalidateQueries({ queryKey: qk.vault });
       input.current?.select();
     } finally {
       setBusy(false);
@@ -158,9 +172,14 @@ export function UnlockScreen({ status, reason, onRecovered }: { status: VaultSta
         )}
 
         {error && <div id="unlock-err" role="alert" className="alert">{error}</div>}
+        {wait > 0 && !recovering && (
+          <div id="unlock-wait" role="status" className="alert">
+            {t("vault.retryIn", { count: wait })}
+          </div>
+        )}
         {error && !recovering && !status.hasRecovery && <p className="text-[13px] text-dim -mt-3">{t("vault.forgot")}</p>}
 
-        <button type="submit" className="btn btn-primary" disabled={busy}>
+        <button type="submit" className="btn btn-primary" disabled={busy || (wait > 0 && !recovering)}>
           {recovering
             ? busy ? t("vault.working") : t("vault.recovery.forgotSubmit")
             : busy ? t("vault.unlocking") : t("vault.unlock")}

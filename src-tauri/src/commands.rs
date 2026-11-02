@@ -32,6 +32,7 @@ pub fn vault_status(s: State<'_, App>) -> Result<VaultStatus> {
         accounts: s.db.accounts()?.len() as u32,
         auto_lock_minutes: s.db.settings()?.auto_lock_minutes,
         has_recovery: s.db.recovery_record()?.is_some(),
+        retry_in: s.vault.retry_in(),
     })
 }
 
@@ -56,7 +57,7 @@ pub async fn vault_recover(app: AppHandle, s: State<'_, App>, code: String, new_
     let recovery = s.db.recovery_record()?.ok_or(AppError::WrongPassword)?;
     let (rec, new_code, new_recovery) = crate::vault::recover(&recovery, &code, &new_password)?;
     s.db.save_vault_and_recovery(&rec, &new_recovery)?;
-    s.vault.unlock(&rec, &new_password)?;
+    s.vault.unlock_after_recovery(&rec, &new_password)?;
     after_unlock(&app, &s);
     Ok(new_code.expose().to_owned())
 }
@@ -982,7 +983,13 @@ pub fn debug_log(level: String, message: String) {
         "info" => log::Level::Info,
         _ => log::Level::Debug,
     };
-    let mut message = message;
+    log::log!(target: "ui", level, "{}", ui_log_text(message));
+}
+
+/// What the UI put in a log line: one line (a message from the webview can't pass for a log entry
+/// of its own) and at most 4 KiB.
+fn ui_log_text(message: String) -> String {
+    let mut message = message.replace(['\r', '\n'], " ");
     if message.len() > 4096 {
         let mut end = 4096;
         while !message.is_char_boundary(end) {
@@ -990,7 +997,7 @@ pub fn debug_log(level: String, message: String) {
         }
         message.truncate(end);
     }
-    log::log!(target: "ui", level, "{message}");
+    message
 }
 
 /// Deletes Roblox client logs over a day old or 50 MB now (`logwatch::clean`), never a running
@@ -2535,6 +2542,14 @@ mod tests {
         assert_eq!(crate::commands::tail(&path, 2).unwrap(), ["c", "d"]);
         assert_eq!(crate::commands::tail(&path, 10).unwrap(), ["a", "b", "c", "d"]);
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn a_ui_message_cannot_forge_a_log_line() {
+        assert_eq!(super::ui_log_text("two\nlines\r\nmore".into()), "two lines  more");
+        // A cut never lands inside a character.
+        let long = super::ui_log_text("я".repeat(3000));
+        assert_eq!(long.chars().count(), 2048);
     }
 
     #[test]

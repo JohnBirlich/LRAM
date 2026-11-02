@@ -15,6 +15,9 @@ pub enum AppError {
     Challenge,
     #[error("Roblox is limiting requests. Try again in {0} s.")]
     RateLimited(u64),
+    /// Too many wrong passwords in a row (`vault::Attempts`).
+    #[error("Too many wrong passwords. Try again in {0} s.")]
+    TooManyAttempts(u64),
     #[error("Roblox now requires a bound session for this account.")]
     BoundSessionRequired,
     #[error("Roblox answered unexpectedly ({0}).")]
@@ -90,6 +93,7 @@ impl AppError {
             Self::CookieInvalid => "cookieInvalid",
             Self::Challenge => "challenge",
             Self::RateLimited(_) => "rateLimited",
+            Self::TooManyAttempts(_) => "tooManyAttempts",
             Self::BoundSessionRequired => "boundSessionRequired",
             Self::Roblox(_) => "roblox",
             Self::Network(_) => "network",
@@ -106,7 +110,7 @@ impl AppError {
     /// again later. A bad cookie or a refused target (Roblox's 4xx) stays until someone acts.
     pub fn temporary(&self) -> bool {
         match self {
-            Self::Locked | Self::RateLimited(_) | Self::Network(_) | Self::Wait(_) => true,
+            Self::Locked | Self::RateLimited(_) | Self::TooManyAttempts(_) | Self::Network(_) | Self::Wait(_) => true,
             Self::Roblox(why) => !why.starts_with("HTTP 4"),
             _ => false,
         }
@@ -138,6 +142,7 @@ impl AppError {
                 tr!("Roblox wants a human check for this account. Sign in to it again with Add account > Sign in with Roblox.")
             }
             Self::RateLimited(s) => tr!("Roblox is limiting requests. Try again in {seconds} s.", seconds = s),
+            Self::TooManyAttempts(s) => tr!("Too many wrong passwords. Try again in {seconds} s.", seconds = s),
             Self::BoundSessionRequired => tr!("Roblox now requires a bound session for this account."),
             Self::Roblox(why) => tr!("Roblox answered unexpectedly ({why}).", why = why),
             Self::Network(why) => tr!("Network error: {why}", why = why),

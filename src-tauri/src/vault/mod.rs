@@ -90,6 +90,72 @@ pub struct Vault {
 /// Shortest master password accepted.
 pub const MIN_MASTER_PASSWORD: usize = 8;
 
+/// Wrong master-password attempts: the first two are free (an Argon2 unwrap already costs about a
+/// second), and each one after that costs a wait that doubles up to five minutes. It lives in
+/// memory, so it slows guessing through the app, not a copy of the database — for that the master
+/// password itself is the answer.
+#[derive(Clone, Copy, Debug, Default)]
+struct Attempts {
+    fails: u32,
+    until: Option<Instant>,
+}
+
+impl Attempts {
+    /// Seconds the n-th wrong attempt costs.
+    fn wait(fails: u32) -> u64 {
+        match fails {
+            0..=2 => 0,
+            n => (5u64 << (n - 3).min(6)).min(300),
+        }
+    }
+
+    /// Whole seconds still to wait, rounded up.
+    fn left(&self) -> u64 {
+        self.until.map_or(0, |until| {
+            let left = until.saturating_duration_since(Instant::now());
+            left.as_millis().div_ceil(1000) as u64
+        })
+    }
+
+    fn refused(&self) -> Result<()> {
+        match self.left() {
+            0 => Ok(()),
+            s => Err(AppError::TooManyAttempts(s)),
+        }
+    }
+
+    fn failed(&mut self) {
+        self.fails = self.fails.saturating_add(1);
+        self.until = Some(Instant::now() + Duration::from_secs(Self::wait(self.fails)));
+    }
+
+    fn passed(&mut self) {
+        *self = Attempts::default();
+    }
+}
+
+static ATTEMPTS: Mutex<Attempts> = Mutex::new(Attempts { fails: 0, until: None });
+
+fn attempts() -> MutexGuard<'static, Attempts> {
+    ATTEMPTS.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// A wrong password costs a wait, a right one drops every wait before it.
+fn counted<T>(r: Result<T>) -> Result<T> {
+    match r {
+        Ok(v) => {
+            attempts().passed();
+            Ok(v)
+        }
+        Err(e) => {
+            if matches!(e, AppError::WrongPassword) {
+                attempts().failed();
+            }
+            Err(e)
+        }
+    }
+}
+
 /// AAD for the sealed data key in master mode.
 const KEY_AAD: &[u8] = b"roalt.vault.key";
 /// AAD for the sealed data key in a recovery record.
@@ -140,16 +206,40 @@ impl Vault {
         self.guard().key.is_none()
     }
 
-    /// Master mode: derive, unwrap and keep the data key. `WrongPassword` on failure.
+    /// Master mode: derive, unwrap and keep the data key. `WrongPassword` on failure, and
+    /// `TooManyAttempts` while a wait from earlier wrong ones lasts.
     pub fn unlock(&self, rec: &VaultRecord, password: &str) -> Result<()> {
         let key = match rec.mode {
             VaultMode::Dpapi => unwrap_dpapi(rec)?,
-            VaultMode::Master => unwrap_master(rec, password)?,
+            VaultMode::Master => {
+                attempts().refused()?;
+                counted(unwrap_master(rec, password))?
+            }
         };
+        self.keep(key);
+        Ok(())
+    }
+
+    /// The same after a recovery code: the owner proved it is theirs another way, so a wait from
+    /// earlier wrong passwords is dropped rather than kept.
+    pub fn unlock_after_recovery(&self, rec: &VaultRecord, password: &str) -> Result<()> {
+        attempts().passed();
+        self.keep(unwrap_master(rec, password)?);
+        Ok(())
+    }
+
+    fn keep(&self, key: Key) {
         let mut g = self.guard();
         g.key = Some(key);
         g.last_activity = Instant::now();
-        Ok(())
+    }
+
+    /// Seconds left before another attempt is taken, `None` when it is taken now.
+    pub fn retry_in(&self) -> Option<u64> {
+        match attempts().left() {
+            0 => None,
+            s => Some(s),
+        }
     }
 
     /// Drops (zeroes) the data key. No-op in DPAPI mode, which cannot be locked.
@@ -160,9 +250,11 @@ impl Vault {
         }
     }
 
-    /// Re-authentication in master mode (reveal / copy cookie). `WrongPassword` on mismatch.
+    /// Re-authentication in master mode (reveal / copy cookie). `WrongPassword` on mismatch,
+    /// counted like an unlock so the two can't be used to double the guesses.
     pub fn check_password(&self, rec: &VaultRecord, password: &str) -> Result<()> {
-        unwrap_master(rec, password).map(drop)
+        attempts().refused()?;
+        counted(unwrap_master(rec, password).map(drop))
     }
 
     /// Re-wraps the (unlocked) data key for `mode` and returns the new record.
@@ -408,6 +500,33 @@ mod tests {
     fn a_locked_vault_cannot_seal_a_code() {
         let (rec, ..) = locked_with_code();
         assert!(matches!(Vault::open(&rec).unwrap().seal_recovery(), Err(AppError::Locked)));
+    }
+
+    #[test]
+    fn wrong_attempts_cost_a_wait_that_grows_to_a_cap() {
+        assert_eq!((0..=2).map(Attempts::wait).collect::<Vec<_>>(), [0, 0, 0]);
+        assert_eq!((3..=9).map(Attempts::wait).collect::<Vec<_>>(), [5, 10, 20, 40, 80, 160, 300]);
+        // The cap holds however many times it is missed.
+        assert_eq!(Attempts::wait(40), 300);
+        assert_eq!(Attempts::wait(u32::MAX), 300);
+    }
+
+    #[test]
+    fn a_wait_only_holds_while_it_lasts() {
+        let mut a = Attempts::default();
+        assert_eq!(a.left(), 0);
+        assert!(a.refused().is_ok());
+        // Two are free, the third costs five seconds.
+        a.failed();
+        a.failed();
+        assert_eq!(a.left(), 0, "two wrong tries are free");
+        a.failed();
+        assert!((4..=5).contains(&a.left()), "{} s left", a.left());
+        assert!(matches!(a.refused(), Err(AppError::TooManyAttempts(s)) if s > 0));
+        // A right one drops everything, including a wait still running.
+        a.passed();
+        assert_eq!(a.left(), 0);
+        assert!(a.refused().is_ok());
     }
 
     #[test]

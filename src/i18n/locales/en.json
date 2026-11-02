@@ -412,6 +412,8 @@
   "vault.prompt_other": "Enter your master password to reach your {count} accounts.",
   "vault.hidePassword": "Hide password",
   "vault.showPassword": "Show password",
+  "vault.retryIn_one": "Wrong password. Try again in {count} second.",
+  "vault.retryIn_other": "Wrong password. Try again in {count} seconds.",
   "vault.unlocking": "Unlocking…",
   "vault.unlock": "Unlock",
   "vault.local": "Nothing leaves this PC.",

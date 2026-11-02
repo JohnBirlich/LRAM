@@ -5,4 +5,8 @@ export type VaultStatus = { mode: VaultMode, locked: boolean, accounts: number, 
 /**
  * A recovery code exists for the master password.
  */
-hasRecovery: boolean, };
+hasRecovery: boolean, 
+/**
+ * Seconds before a wrong password is taken again, `None` when it is taken now.
+ */
+retryIn?: number | null, };

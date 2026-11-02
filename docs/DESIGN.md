@@ -123,6 +123,12 @@ session windows, deleted after use, swept on start). A moved data folder is reco
 - Switching mode only re-wraps the data key. No cookie is re-encrypted.
 - Reveal / copy cookie: master mode re-asks the password; DPAPI mode asks Windows Hello. Copy clears the
   clipboard after 30 s. Cookies, tickets, link codes and process command lines never reach logs.
+- Wrong-password attempts are counted (`vault::Attempts`): the first two are free (an Argon2 unwrap
+  already costs about a second), then each one costs a wait that doubles from 5 s up to 5 minutes, and
+  the status carries the seconds left so the unlock screen counts them down. Any right password drops
+  the count. A used recovery code skips the wait, since the owner proved it is theirs another way. The
+  count lives in memory: it stops guessing through the app, not a copied database — for that the master
+  password itself, under Argon2id, is the defence.
 
 ### SQLite schema v1
 
@@ -228,11 +234,12 @@ enum BulkStage { Queued, Resolving, Ticket, Starting, Joining, InGame, Failed(St
 
 All return `Result<T, AppError>`; `AppError` reaches the UI as `{kind, message}` with kinds such as
 `Locked`, `CookieInvalid`, `Challenge` (needs a human in the browser), `RateLimited{retry_at}`,
+`TooManyAttempts(seconds)`,
 `BoundSessionRequired`, `RobloxRunning`, `NotFound`, `Network`, `Internal`.
 
 | Area | Command | Returns |
 |---|---|---|
-| Vault | `vault_status()` | `{mode, locked, accounts}` |
+| Vault | `vault_status()` | `{mode, locked, accounts, retryIn}` |
 | | `vault_unlock(password)` / `vault_lock()` | — |
 | | `vault_set_mode(mode, current_password?, new_password?)` | — |
 | | `app_activity()` (throttled, resets the idle timer) | — |

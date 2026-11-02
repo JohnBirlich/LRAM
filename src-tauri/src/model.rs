@@ -24,6 +24,9 @@ pub struct VaultStatus {
     pub auto_lock_minutes: u32,
     /// A recovery code exists for the master password.
     pub has_recovery: bool,
+    /// Seconds before a wrong password is taken again, `None` when it is taken now.
+    #[ts(optional)]
+    pub retry_in: Option<u64>,
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]

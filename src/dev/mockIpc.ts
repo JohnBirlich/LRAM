@@ -76,7 +76,7 @@ let settings: Settings = {
   adaptive: { enabled: false, background: { cpuCap: 25, eco: true, trimEveryMin: null, affinity: null } }, bandwidthKbps: 0,
   antiAfk: { enabled: false, intervalMin: 15, mode: "focus" },
   discord: { crash: true, hang: true, memRestart: true, disconnect: true, restart: true, breaker: true, batchDone: true, launch: false, statusEveryMin: 0 },
-  autoUpdate: false, selfUpdate: true, tabLayout: "top", discordPresence: true, minimizeOnLaunch: false, liveHiddenPreviews: true, microWidth: 320, microHeight: 240, tinyOnLaunch: false, panicHotkey: "", cleanLogs: false, fpsCap: 0, lowGraphics: true, skipSplash: false, lighterRendering: true, renderFlags: { msaa: "x1", texture: "lowest", mode: "default", graySky: false, noGrass: true, lowestFrm: true, pauseVoxelizer: false },
+  autoUpdate: false, selfUpdate: true, tabLayout: "top", discordPresence: true, minimizeOnLaunch: false, liveHiddenPreviews: true, microWidth: 320, microHeight: 240, tinyOnLaunch: false, autoTile: false, panicHotkey: "", cleanLogs: false, fpsCap: 0, lowGraphics: true, skipSplash: false, lighterRendering: true, renderFlags: { msaa: "x1", texture: "lowest", mode: "default", graySky: false, noGrass: true, lowestFrm: true, pauseVoxelizer: false },
   allowPublicNetworks: true,
 };
 
@@ -201,7 +201,7 @@ function endInstance(id: string, note: string) {
 }
 /** The last performance profile "saved" in the preview (performance_export). */
 let lastProfile: string | null = null;
-const PERF_KEYS = ["fpsCap", "lowGraphics", "lighterRendering", "renderFlags", "minimizeOnLaunch", "liveHiddenPreviews", "microWidth", "microHeight", "tinyOnLaunch", "memRestartMb", "memThrottle", "trimEveryMin", "autoSpread", "fairCap", "adaptive"] as const;
+const PERF_KEYS = ["fpsCap", "lowGraphics", "lighterRendering", "renderFlags", "minimizeOnLaunch", "liveHiddenPreviews", "microWidth", "microHeight", "tinyOnLaunch", "autoTile", "memRestartMb", "memThrottle", "trimEveryMin", "autoSpread", "fairCap", "adaptive"] as const;
 
 function perfProfile(previewFps: number) {
   const s: Record<string, unknown> = {};

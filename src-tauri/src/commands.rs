@@ -2250,6 +2250,7 @@ pub(crate) fn apply_performance(v: &mut Settings, patch: &SettingsPatch) -> Resu
     if let Some(r) = patch.render_flags { v.render_flags = r }
     if let Some(m) = patch.minimize_on_launch { v.minimize_on_launch = m }
     if let Some(t) = patch.tiny_on_launch { v.tiny_on_launch = t }
+    if let Some(a) = patch.auto_tile { v.auto_tile = a }
     if let Some(l) = patch.live_hidden_previews { v.live_hidden_previews = l }
     if patch.micro_width.is_some() || patch.micro_height.is_some() {
         let size = (patch.micro_width.unwrap_or(v.micro_width), patch.micro_height.unwrap_or(v.micro_height));

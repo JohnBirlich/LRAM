@@ -55,6 +55,10 @@ const POST_HOLD: Duration = Duration::from_millis(300);
 /// After waking a client, before its press: it has to be taking input again.
 // ponytail: a guess; tune from real clients if pressed clients still get kicked.
 const AFTER_WAKE: Duration = Duration::from_millis(300);
+/// How long Windows may take to make the window it was asked for the front one, and how often
+/// that is looked at.
+const FRONT_WAIT: Duration = Duration::from_millis(300);
+const FRONT_STEP: Duration = Duration::from_millis(20);
 /// A press is under way: a hidden client in front is this, not something to get away from (`resize`).
 pub(super) static PRESSING: AtomicBool = AtomicBool::new(false);
 
@@ -288,10 +292,9 @@ fn post_press(hwnd: HWND) -> bool {
 /// this process the last input source and so lifts Windows' foreground lock without any window
 /// reacting (an ALT tap would open menus).
 pub(super) fn to_front(hwnd: HWND) -> bool {
-    // SAFETY: reads which window is in front.
-    let front = || unsafe { GetForegroundWindow() } == hwnd;
     // SAFETY: a window-manager call on a top-level window handle; one that is gone just fails.
-    if unsafe { SetForegroundWindow(hwnd) }.as_bool() && front() {
+    let _ = unsafe { SetForegroundWindow(hwnd) };
+    if front_soon(hwnd) {
         return true;
     }
     // SAFETY: attaches this thread's input to the foreground window's thread only for these
@@ -305,7 +308,7 @@ pub(super) fn to_front(hwnd: HWND) -> bool {
             let _ = AttachThreadInput(me, fg_thread, false);
         }
     }
-    if front() {
+    if front_soon(hwnd) {
         return true;
     }
     let nudge = INPUT {
@@ -318,6 +321,21 @@ pub(super) fn to_front(hwnd: HWND) -> bool {
     }
     // SAFETY: as the first SetForegroundWindow.
     let _ = unsafe { SetForegroundWindow(hwnd) };
+    front_soon(hwnd)
+}
+
+/// Whether `hwnd` is the front window, waiting a moment for it: Windows activates a window after
+/// the call that asked for it returns, so asking straight away says no while it already worked.
+fn front_soon(hwnd: HWND) -> bool {
+    // SAFETY: reads which window is in front.
+    let front = || unsafe { GetForegroundWindow() } == hwnd;
+    let steps = FRONT_WAIT.as_millis() / FRONT_STEP.as_millis();
+    for _ in 0..steps {
+        if front() {
+            return true;
+        }
+        sleep(FRONT_STEP);
+    }
     front()
 }
 

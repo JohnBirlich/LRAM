@@ -163,6 +163,11 @@ microWidth: number, microHeight: number,
  */
 tinyOnLaunch: boolean, 
 /**
+ * Each client that reaches a game is laid out in a grid with the others, so windows don't
+ * stack on top of each other.
+ */
+autoTile: boolean, 
+/**
  * Launch on a Public network too (`network`); off: refused. On by default.
  */
 allowPublicNetworks: boolean, 

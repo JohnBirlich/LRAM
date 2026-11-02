@@ -533,7 +533,7 @@ impl Run {
                 }
                 if pace.refused() {
                     self.set_stage(i, BulkStage::Failed { message: auth_failed() });
-                    return Some(tr!("Roblox keeps refusing sign-ins (error 403). Wait a few minutes."));
+                    return Some(tr!("Roblox keeps refusing sign-ins (error 403). Wait a few minutes, or verify the account on roblox.com."));
                 }
                 self.set_stage(i, BulkStage::Queued);
                 self.note(tr!("Roblox refused {name} (error 403). Trying it once more, with more time between launches.", name = a.name));
@@ -963,8 +963,8 @@ mod tests {
     fn a_refused_client_fails_its_item_without_stopping_the_batch() {
         let a = accounts(&[1]).remove(0);
         let mut it = item(BulkStage::Joining, true);
-        assert_eq!(mirror_item(&mut it, &instance(InstanceState::Joining, Some("Roblox refused the sign-in (error 403)")), &a), None);
-        assert_eq!(it.stage, failed("Roblox refused the sign-in (error 403)"));
+        assert_eq!(mirror_item(&mut it, &instance(InstanceState::Joining, Some("Roblox refused the sign-in (403): verify this account on roblox.com")), &a), None);
+        assert_eq!(it.stage, failed("Roblox refused the sign-in (403): verify this account on roblox.com"));
     }
 
     #[test]

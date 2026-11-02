@@ -275,6 +275,9 @@ pub struct Settings {
     pub micro_height: u32,
     /// Each new client goes tiny as soon as it has a window, unless its account is Full quality.
     pub tiny_on_launch: bool,
+    /// Each client that reaches a game is laid out in a grid with the others, so windows don't
+    /// stack on top of each other.
+    pub auto_tile: bool,
     /// Launch on a Public network too (`network`); off: refused. On by default.
     pub allow_public_networks: bool,
 }
@@ -496,6 +499,7 @@ impl Default for Settings {
             micro_width: 320,
             micro_height: 240,
             tiny_on_launch: false,
+            auto_tile: false,
             allow_public_networks: true,
         }
     }
@@ -585,6 +589,8 @@ pub struct SettingsPatch {
     pub micro_height: Option<u32>,
     #[ts(optional)]
     pub tiny_on_launch: Option<bool>,
+    #[ts(optional)]
+    pub auto_tile: Option<bool>,
     #[ts(optional)]
     pub allow_public_networks: Option<bool>,
 }
@@ -887,7 +893,7 @@ pub struct Instance {
     #[serde(default, skip_deserializing)]
     pub relaunch_problem: Option<String>,
     /// Its note is "Signed in as another account", "Roblox wants a human check" or "Roblox refused
-    /// the sign-in (error 403)" (the note itself is translated, so the UI can't match its text).
+    /// the sign-in (403) …" (the UI gets this flag, never the note's text).
     #[serde(default)]
     pub sign_in_problem: bool,
     /// What it really has now, settings' limits included (`limits` is only what was set on it).

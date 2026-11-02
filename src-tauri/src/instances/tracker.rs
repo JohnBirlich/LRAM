@@ -33,7 +33,7 @@ pub fn challenged() -> String {
 }
 /// The note of a client Roblox refused at sign-in (its error 403 dialog).
 pub fn auth_failed() -> String {
-    tr!("Roblox refused the sign-in (error 403)")
+    tr!("Roblox refused the sign-in (403): verify this account on roblox.com")
 }
 /// The note of a client that ended without LRAM closing it and with nothing else to blame.
 pub fn unexpected() -> String {
@@ -774,12 +774,17 @@ impl Tracker {
                     let throttle_moved = s.tracker.set_in_force(&s.limiter.in_force()) || throttle_moved;
                     super::window::set_live_hidden_previews(v.live_hidden_previews);
                     // Once per client, without taking the focus.
+                    let mut arrange = false;
                     for pid in s.tracker.first_in_game(&|pid| process::main_window(pid).is_some()) {
                         let id = clients.iter().find(|c| c.1 == pid).map(|c| c.0.clone());
-                        let full_quality = id.as_deref().and_then(|id| s.tracker.get(id)).and_then(|i| s.db.account(i.account_id).ok()).is_some_and(|a| a.full_quality);
+                        let instance = id.as_deref().and_then(|id| s.tracker.get(id));
+                        let full_quality = instance.as_ref().and_then(|i| s.db.account(i.account_id).ok()).is_some_and(|a| a.full_quality);
+                        // A rejoin puts back what the user had, not a fresh cell.
+                        let launched = instance.is_none_or(|i| i.rejoins == 0);
                         let tiny = id.filter(|id| v.tiny_on_launch && !full_quality && s.tracker.set_micro(id, true));
                         let (size, minimize) = ((v.micro_width, v.micro_height), v.minimize_on_launch && !full_quality);
                         log::info!("client {pid}: in a game; making it tiny: {}, hiding it: {minimize}", tiny.is_some());
+                        arrange |= arranges(v.auto_tile, launched, minimize);
                         // Not on this thread: a busy client's ShowWindow would stop every poll.
                         tauri::async_runtime::spawn_blocking(move || {
                             if let Some(id) = tiny
@@ -790,6 +795,23 @@ impl Tracker {
                             if minimize {
                                 super::window::hide_on_launch(pid);
                             }
+                        });
+                    }
+                    // Arrange on launch: the new client takes a cell next to the ones already up.
+                    if arrange {
+                        let list: Vec<(String, u32)> = clients.iter().map(|c| (c.0.clone(), c.1)).collect();
+                        // As a number: a window handle can't cross threads.
+                        let win = handle.get_webview_window("main").and_then(|w| w.hwnd().ok()).map_or(0, |h| h.0 as isize);
+                        let size = v.tiny_on_launch.then_some((v.micro_width, v.micro_height));
+                        let arranged = handle.clone();
+                        tauri::async_runtime::spawn_blocking(move || {
+                            let tiled = super::window::tile(&list, windows::Win32::Foundation::HWND(win as *mut _), size);
+                            let s = arranged.state::<crate::App>();
+                            for id in &tiled {
+                                s.tracker.set_micro(id, size.is_some());
+                            }
+                            log::info!("arranged {} client window(s) in a grid", tiled.len());
+                            crate::commands::instances_changed(&arranged);
                         });
                     }
                     // Hidden clients nobody watches go to sleep. One round at a time, off this thread.
@@ -1223,6 +1245,12 @@ fn observe(e: &mut Entry, dir: Option<&Path>, procs: &dyn Procs, roblox: &mut Op
     }
 }
 
+/// Whether a client that just reached a game makes LRAM lay the windows out: arranging is on, it
+/// was launched rather than rejoined, and it isn't about to be hidden (pure).
+fn arranges(auto_tile: bool, launched: bool, hide: bool) -> bool {
+    auto_tile && launched && !hide
+}
+
 fn adopt(e: &mut Entry, p: ProcInfo, taken: &mut Vec<u32>) {
     e.inst.pid = p.pid;
     e.start_time = Some(p.start_time);
@@ -1577,8 +1605,8 @@ mod tests {
         assert_eq!(state_of(&challenged, true, false, false, Some(USER)), (Joining, note("Roblox wants a human check")));
         let mut refused = LogFacts::default();
         refused.auth_failed = true;
-        assert_eq!(state_of(&refused, true, false, false, Some(USER)), (Joining, note("Roblox refused the sign-in (error 403)")));
-        assert_eq!(state_of(&refused, true, true, false, Some(USER)), (Exited, note("Roblox refused the sign-in (error 403)")));
+        assert_eq!(state_of(&refused, true, false, false, Some(USER)), (Joining, note("Roblox refused the sign-in (403): verify this account on roblox.com")));
+        assert_eq!(state_of(&refused, true, true, false, Some(USER)), (Exited, note("Roblox refused the sign-in (403): verify this account on roblox.com")));
         assert_eq!(state_of(&refused, true, true, true, Some(USER)), (Exited, note("Closed")));
 
         let teleport = f(|f| (f.in_game, f.teleporting, f.disconnected) = (true, true, true));
@@ -2411,5 +2439,13 @@ mod tests {
         t.poll(Some(&dir), &procs, &user_of, start + 2_000);
         assert_eq!(state(&t, &id), (Exited, note("Replaced by another Roblox client"), 100));
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn arranging_is_for_fresh_launches_that_stay_visible() {
+        assert!(arranges(true, true, false));
+        assert!(!arranges(false, true, false), "the setting is off");
+        assert!(!arranges(true, false, false), "a rejoin keeps its place");
+        assert!(!arranges(true, true, true), "a client about to be hidden has no cell");
     }
 }

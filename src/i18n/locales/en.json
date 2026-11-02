@@ -1141,6 +1141,8 @@
   "performance.tinyHeight": "Tiny window height",
   "performance.hintTinySize": "Fewer pixels to draw means less GPU work.",
   "performance.tinyOnLaunch": "Start clients tiny",
+  "performance.autoTile": "Arrange windows on launch",
+  "performance.hintAutoTile": "Each client that reaches a game takes a cell of the grid on the monitor LRAM is on, next to the ones already up, instead of stacking on top of them. Rejoined clients keep their place.",
   "performance.hintTinyOnLaunch": "Each new client goes to the tiny size once it reaches a game. Full quality accounts keep their size.",
   "launch.limits.windowSize": "Window size",
   "vault.recovery.code": "Recovery code",

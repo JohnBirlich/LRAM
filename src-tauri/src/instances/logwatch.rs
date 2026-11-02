@@ -43,8 +43,10 @@ pub struct LogFacts {
 
 /// Mtime slack for `find_log` (clocks and file-time granularity).
 const SINCE_SLACK: Duration = Duration::from_secs(5);
-/// The tracker id is logged within the first second; this is far more than that.
+/// The tracker id is logged when the client starts joining, which a slow client does minutes in
+/// (it waits in the tray first): the start and the end of the log are searched.
 const HEAD_BYTES: u64 = 256 * 1024;
+const TAIL_BYTES: u64 = 256 * 1024;
 
 const JOINING: &str = "! Joining game '";
 /// A log line holding one of these (lowercase) is never reported or shared.
@@ -153,11 +155,45 @@ pub fn clean(dir: &Path, keep: &[PathBuf]) -> crate::model::LogsCleaned {
 }
 
 fn names_tracker(path: &Path, browser_tracker_id: i64) -> bool {
-    let mut head = Vec::new();
-    if open_shared(path).and_then(|f| f.take(HEAD_BYTES).read_to_end(&mut head)).is_err() {
-        return false;
+    let Ok(mut f) = open_shared(path) else { return false };
+    let len = f.metadata().map(|m| m.len()).unwrap_or(0);
+    let mut chunks = vec![(0u64, len.min(HEAD_BYTES))];
+    if len > HEAD_BYTES {
+        let size = len.min(TAIL_BYTES);
+        chunks.push((len - size, size));
     }
-    String::from_utf8_lossy(&head).lines().any(|l| tracker_id(l) == Some(browser_tracker_id))
+    chunks.into_iter().any(|(from, size)| {
+        let mut buf = Vec::new();
+        let read = f.seek(SeekFrom::Start(from)).and_then(|_| f.by_ref().take(size).read_to_end(&mut buf));
+        if read.is_err() {
+            return false;
+        }
+        let text = String::from_utf8_lossy(&buf).into_owned();
+        // Past the start of the file, the first line is half of one.
+        let text = if from == 0 {
+            text
+        } else {
+            text.split_once('\n').map_or_else(String::new, |(_, rest)| rest.to_owned())
+        };
+        text.lines().any(|l| tracker_id(l) == Some(browser_tracker_id))
+    })
+}
+
+/// Whether a client log was written after `since` (unix seconds): a launch of that time did start
+/// a client, even if it hasn't logged its tracker id yet.
+pub fn started_log(dir: &Path, since: u64) -> bool {
+    let Ok(entries) = std::fs::read_dir(dir) else { return false };
+    entries.filter_map(|e| e.ok()).any(|e| {
+        let name = e.file_name();
+        let name = name.to_string_lossy();
+        name.contains("_Player_")
+            && !name.contains("_CrashHandler_")
+            && e.metadata()
+                .and_then(|m| m.created())
+                .ok()
+                .and_then(|c| c.duration_since(UNIX_EPOCH).ok())
+                .is_some_and(|c| c.as_secs() + SINCE_SLACK.as_secs() >= since)
+    })
 }
 
 /// Reads lines appended since `offset` (opened shared, so Roblox keeps writing), updates
@@ -566,6 +602,37 @@ mod tests {
         // Modified a little before `since`: within the slack.
         assert!(find_log(&dir, BTID + 1, now + Duration::from_secs(3)).is_some());
         assert_eq!(find_log(&dir.join("missing"), BTID, since), None);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn finds_a_log_whose_tracker_id_comes_late() {
+        let dir = temp_dir();
+        let p = dir.join("0.745.0.7451137_20261103T220008Z_Player_0A5C5_last.log");
+        // Roblox waits in the tray before it joins and logs the tracker id: well past the head.
+        let mut body = String::new();
+        while body.len() < (HEAD_BYTES + 1024) as usize {
+            body.push_str(&line("[FLog::Output] Roblox stage ReadyForFlagFetch"));
+        }
+        body.push_str(&line(&format!("[FLog::LogWin32BTId] LogWin32BTId, App, web launch, websiteBTId is {BTID}")));
+        std::fs::write(&p, body).unwrap();
+        assert_eq!(find_log(&dir, BTID, SystemTime::now() - Duration::from_secs(60)), Some(p));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_fresh_client_log_says_a_client_is_starting() {
+        let dir = temp_dir();
+        let p = dir.join("0.745.0.7451137_20261103T220008Z_Player_0A5C5_last.log");
+        std::fs::write(&p, line("[FLog::Output] Settings")).unwrap();
+        std::fs::write(dir.join("RobloxPlayerInstaller_EA24F.log"), "x").unwrap();
+        // Creation times are not everywhere readable; `started_log` says nothing then.
+        let created = std::fs::metadata(&p).unwrap().created().ok().and_then(|c| c.duration_since(UNIX_EPOCH).ok()).map(|c| c.as_secs());
+        if let Some(created) = created {
+            assert!(started_log(&dir, created), "its own launch");
+            assert!(!started_log(&dir, created + 3600), "an hour after it");
+        }
+        assert!(!started_log(&dir, u64::MAX), "never was there");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

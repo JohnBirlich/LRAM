@@ -936,17 +936,23 @@ pub fn grid(n: usize, area: (i32, i32, i32, i32), cell: Option<(i32, i32)>) -> V
     if n == 0 || aw <= 0 || ah <= 0 {
         return Vec::new();
     }
+    // Every window in a cell of its own: `n` cells over as many columns as give the biggest 4:3
+    // picture, fewer columns on a tie.
+    let fit = || {
+        let picture = |c: usize| (aw / c as i32).min(ah / n.div_ceil(c) as i32 * 4 / 3);
+        let cols = (1..=n).fold(1, |best, c| if picture(c) > picture(best) { c } else { best });
+        (cols, aw / cols as i32, ah / n.div_ceil(cols) as i32, n)
+    };
     let (cols, cw, ch, per) = match cell {
         Some((cw, ch)) => {
             let (cw, ch) = (cw.max(1), ch.max(1));
             let cols = (aw / cw).max(1) as usize;
-            (cols, cw, ch, cols * (ah / ch).max(1) as usize)
+            let per = cols * (ah / ch).max(1) as usize;
+            // More windows than the area holds at that size: starting over on the first cells
+            // would cover them, so they are sized to fit instead.
+            if per >= n { (cols, cw, ch, per) } else { fit() }
         }
-        None => {
-            let picture = |c: usize| (aw / c as i32).min(ah / n.div_ceil(c) as i32 * 4 / 3);
-            let cols = (1..=n).fold(1, |best, c| if picture(c) > picture(best) { c } else { best });
-            (cols, aw / cols as i32, ah / n.div_ceil(cols) as i32, n)
-        }
+        None => fit(),
     };
     (0..n)
         .map(|i| {
@@ -1306,12 +1312,45 @@ mod tests {
         assert_eq!(grid(2, area, None), [(0, 40, 960, 1000), (960, 40, 960, 1000)]);
         assert_eq!(grid(4, area, None)[3], (960, 540, 960, 500), "2 x 2");
         assert!(grid(12, area, None).iter().all(|&(x, y, w, h)| x >= 0 && x + w <= 1920 && y >= 40 && y + h <= 1040));
-        // Fixed cells: 5 across, 3 down; the 16th starts over at the top left.
-        let micro = grid(16, area, Some((336, 279)));
+        // Fixed cells: 5 across, 3 down, and the ones past that are sized to fit (15 cells hold it).
+        let micro = grid(15, area, Some((336, 279)));
         assert_eq!(micro[4], (1344, 40, 336, 279));
         assert_eq!(micro[5], (0, 319, 336, 279));
-        assert_eq!(micro[15], (0, 40, 336, 279));
-        assert_eq!(grid(2, (0, 0, 100, 100), Some((300, 300))), [(0, 0, 300, 300), (0, 0, 300, 300)]);
+        assert_eq!(micro[14], (1344, 598, 336, 279));
+        // A 16th window would cover the first at that size: all of them are sized to fit instead.
+        let full = grid(16, area, Some((336, 279)));
+        assert_eq!((full[0], full[15]), ((0, 40, 480, 250), (1440, 790, 480, 250)), "4 x 4 of the work area");
+        assert_no_overlap(&full);
+        assert_no_overlap(&grid(2, (0, 0, 100, 100), Some((300, 300))));
+    }
+
+    /// No two cells share a pixel.
+    fn assert_no_overlap(cells: &[(i32, i32, i32, i32)]) {
+        for (i, &(ax, ay, aw, ah)) in cells.iter().enumerate() {
+            for &(bx, by, bw, bh) in &cells[i + 1..] {
+                let apart = ax + aw <= bx || bx + bw <= ax || ay + ah <= by || by + bh <= ay;
+                assert!(apart, "({ax},{ay},{aw},{ah}) covers ({bx},{by},{bw},{bh})");
+            }
+        }
+    }
+
+    #[test]
+    fn every_window_gets_a_cell_of_its_own() {
+        let areas = [(0, 40, 1920, 1000), (0, 0, 2560, 1040), (0, 0, 1024, 768), (-1280, 0, 1280, 720)];
+        for area in areas {
+            for n in 1..=40 {
+                let cells = grid(n, area, None);
+                assert_eq!(cells.len(), n);
+                assert_no_overlap(&cells);
+            }
+            for size in [(320, 240), (336, 279), (800, 600)] {
+                for n in 1..=40 {
+                    let cells = grid(n, area, Some(size));
+                    assert_eq!(cells.len(), n, "{area:?} {size:?} x {n}");
+                    assert_no_overlap(&cells);
+                }
+            }
+        }
     }
 
     #[test]

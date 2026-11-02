@@ -22,6 +22,9 @@ const DEAD_POLLS: u32 = 2;
 /// A client still loading while Roblox's installer runs may take this long: a first launch
 /// downloads and installs the client before starting it.
 const INSTALL_WAIT_MS: i64 = 900_000;
+/// How long a launch whose client started (`slow_start`) is given to show up. A client sits in the
+/// tray until it joins, and ten of them starting at once take minutes to get there.
+const SLOW_START_MS: i64 = 600_000;
 const MAX_ENDED: usize = 30;
 /// How long a teleport may take to reach its next game; then it failed (`LogFacts::teleporting`).
 const TELEPORT_MS: i64 = 60_000;
@@ -176,6 +179,9 @@ struct Entry {
     log_warned: bool,
     /// Roblox's installer was seen updating it: its process going away is expected (`may_appear`).
     installer: bool,
+    /// A client log appeared after the launch while this one was still unfollowed: it is starting
+    /// slowly (a client waits in the tray first) and is given `SLOW_START_MS` to show up.
+    slow_start: bool,
 }
 
 impl Entry {
@@ -211,6 +217,7 @@ impl Entry {
             window_seen: false,
             log_warned: false,
             installer: false,
+            slow_start: false,
         }
     }
 
@@ -1276,6 +1283,12 @@ fn observe(
     // A client starts after the launch (whole seconds: one of slack) and after the process it
     // replaces or that started it.
     let after = first.max(u64::try_from(e.inst.started_at / 1000 - 1).unwrap_or(0));
+    // Not followed yet while a client log of this launch exists: Roblox did start one, it just
+    // hasn't logged its tracker id or reached a game. Roblox's launcher is gone by then, so this
+    // is the only proof that it is still on its way.
+    if !e.alive && !e.adopted && e.in_game_at.is_none() && !e.slow_start {
+        e.slow_start = logwatch::started_log(dir, after);
+    }
 
     // Roblox's updater relaunched it: a log created after the dead client's own (which is
     // created within seconds of its start) names the same tracker id. Judged by creation time,
@@ -1375,13 +1388,19 @@ fn created_secs(path: &Path) -> Option<u64> {
     Some(created.duration_since(UNIX_EPOCH).ok()?.as_secs())
 }
 
-/// Too early to call a vanished client gone: it never reached a game, was not replaced, was
-/// launched under 120 s ago, and wasn't closed (a close that reached only a bootstrapper gets
-/// 5 s for the client it may already have started to show up).
+/// Too early to call a vanished client gone: it never reached a game, was not replaced, its launch
+/// was recent enough (`REBIND_MS`, or `SLOW_START_MS` when its client is starting), and it wasn't
+/// closed (a close that reached only a bootstrapper gets 5 s for the client to show up).
 fn may_appear(e: &Entry, now: i64) -> bool {
     let closed = e.closing && (e.adopted || e.gone_at.is_some_and(|g| now - g >= BOOTSTRAPPER_GRACE_MS));
     // Roblox's installer takes the client away to update it, then starts it again.
-    let waiting = if e.installer { INSTALL_WAIT_MS } else { REBIND_MS };
+    let waiting = if e.installer {
+        INSTALL_WAIT_MS
+    } else if e.slow_start && !e.adopted {
+        SLOW_START_MS
+    } else {
+        REBIND_MS
+    };
     e.in_game_at.is_none() && !closed && !e.facts.replaced && now - e.inst.started_at < waiting
 }
 
@@ -2215,6 +2234,29 @@ mod tests {
         assert!(t.get(&id).unwrap().via_bootstrapper);
         poll(start + 121_000);
         assert_eq!(state(&t, &id), (Exited, note("Closed unexpectedly"), 901));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_slow_client_is_not_given_up_on_before_it_joins() {
+        let dir = temp_dir();
+        let t = Tracker::new();
+        let start = now_ms();
+        let secs = (start / 1000) as u64;
+        let id = t.register(&info(900, start, true), target()).id;
+        let procs = Fake::new(&[]);
+        let poll = |now: i64| t.poll(Some(&dir), &procs, &user_of, now);
+        // Roblox's launcher is gone and its client waits in the tray: no tracker id yet, but its
+        // log is there, which under ten launches takes minutes.
+        let log = dir.join("0.745.0.7451137_20261103T220008Z_Player_AAAAA_last.log");
+        append(&log, &["[FLog::Output] Roblox stage ReadyForFlagFetch".into()]);
+        poll(start + 1_000);
+        poll(start + 121_000);
+        assert_eq!(state(&t, &id).0, Starting, "its log says a client of this launch started");
+        procs.set(&[(901, secs + 1)]);
+        append(&log, &[btid_line(BTID)]);
+        poll(start + 300_000);
+        assert_eq!(state(&t, &id), (Joining, None, 901));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

@@ -233,14 +233,14 @@ enum BulkStage { Queued, Resolving, Ticket, Starting, Joining, InGame, Failed(St
 ## 5. IPC commands
 
 All return `Result<T, AppError>`; `AppError` reaches the UI as `{kind, message}` with kinds such as
-`Locked`, `CookieInvalid`, `Challenge` (needs a human in the browser), `RateLimited{retry_at}`,
-`TooManyAttempts(seconds)`,
-`BoundSessionRequired`, `RobloxRunning`, `NotFound`, `Network`, `Internal`.
+`Locked`, `CookieInvalid`, `Challenge` (needs a human in the browser), `RateLimited(seconds)`,
+`TooManyAttempts(seconds)`, `BoundSessionRequired`, `RobloxRunning`, `NotFound`, `Network`,
+`Internal`.
 
 | Area | Command | Returns |
 |---|---|---|
 | Vault | `vault_status()` | `{mode, locked, accounts, retryIn}` |
-| | `vault_unlock(password)` / `vault_lock()` | — |
+| | `vault_unlock(password)` / `vault_lock()` | — (wrong tries are counted, see the vault) |
 | | `vault_set_mode(mode, current_password?, new_password?)` | — |
 | | `app_activity()` (throttled, resets the idle timer) | — |
 | Accounts | `accounts_list()` | `AccountSummary[]` |
@@ -374,6 +374,16 @@ and sinks the ghost after it. The state is read from the window, so it survives 
 panics clear it: alpha first, which needs no answer from the client, then the bits, each client on its own thread. A
 hard kill with RoALT not reopened leaves the client invisible until the next start, which clears ghosts it doesn't
 follow again (half-made ones too, by the bits alone).
+
+A client that reaches a game is laid out once per client (`first_in_game`): made tiny, hidden, and
+put in the grid. The grid is laid out before any hiding, since `tile` leaves hidden windows out;
+hiding first would drop the client from it, and it would come back wherever Roblox left it. A
+resize that the window didn't take (a maximized client, Roblox's own fullscreen) is retried once
+after leaving that state, and says so in the log when it still fails.
+
+A client that has shown its window needs `DEAD_POLLS` (two) polls without a readable process or a
+window before it counts as ended: Roblox guards its process, and one failed read must not turn a
+running client into "Closed unexpectedly". Every such end is logged with what was seen.
 
 A client's size survives its own fullscreen: `window::sweep` keeps the client area it last had outside
 fullscreen (no title bar and a client area covering the monitor; maximized and tiled windows don't

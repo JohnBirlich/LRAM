@@ -822,11 +822,22 @@ pub fn free_resize(hwnd: HWND, (x, y, w, h): (i32, i32, i32, i32), keep_place: b
         std::thread::sleep(RESIZE_GAP);
     }
     let style = style_of(hwnd);
-    set_style(hwnd, borderless(style as u32) as isize);
     let place = if keep_place { SWP_NOMOVE } else { Default::default() };
+    set_style(hwnd, borderless(style as u32) as isize);
     // SAFETY: window-manager calls on a top-level window.
     if let Err(e) = unsafe { SetWindowPos(hwnd, None, x, y, w, h, SWP_NOZORDER | SWP_NOACTIVATE | place) } {
         log::debug!("resize failed: {e}");
+    }
+    // A client that went maximized (or to its own fullscreen) under us keeps that size: out of
+    // that state first, then once more, or the window stays where Roblox put it.
+    if ask_not_met(hwnd, w, h) {
+        log::info!("client at {} px won't take {w}x{h}: restoring it and asking again", hwnd.0 as isize);
+        normal(hwnd, false);
+        // SAFETY: as above.
+        let _ = unsafe { SetWindowPos(hwnd, None, x, y, w, h, SWP_NOZORDER | SWP_NOACTIVATE | place) };
+        if ask_not_met(hwnd, w, h) {
+            log::warn!("client at {} still won't take {w}x{h}: Roblox keeps its own size", hwnd.0 as isize);
+        }
     }
     set_style(hwnd, style);
     // SAFETY: as above; only makes the frame follow the style again.
@@ -979,6 +990,17 @@ fn normal(hwnd: HWND, queued: bool) {
 }
 
 /// How much bigger the window is than its client area (its borders and title bar).
+/// Whether the window's own rectangle is still not the one asked for (2 px of slack for the
+/// window manager's rounding).
+fn ask_not_met(hwnd: HWND, w: i32, h: i32) -> bool {
+    let mut r = RECT::default();
+    // SAFETY: reads one window's rectangle into a local.
+    if unsafe { GetWindowRect(hwnd, &mut r) }.is_err() {
+        return false;
+    }
+    ((r.right - r.left) - w).abs() > 2 || ((r.bottom - r.top) - h).abs() > 2
+}
+
 fn frame(hwnd: HWND) -> Option<(i32, i32)> {
     let (mut w, mut c) = (RECT::default(), RECT::default());
     // SAFETY: reads one window's rectangles into locals.

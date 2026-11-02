@@ -426,7 +426,13 @@ pub async fn accounts_validate(app: AppHandle, s: State<'_, App>, ids: Option<Ve
             Err(AppError::Challenge) => s.db.set_status(id, AccountStatus::Challenged, now, None, None),
             Err(e) => {
                 log::warn!("could not validate account {id}: {e}");
+                // Roblox is limiting requests: every account after this one would only wait for
+                // the same window, so the pass ends here and the next one starts from the rest.
+                let limited = matches!(e, AppError::RateLimited(_));
                 last_err = Some(e);
+                if limited {
+                    break;
+                }
                 continue;
             }
         };
@@ -435,6 +441,9 @@ pub async fn accounts_validate(app: AppHandle, s: State<'_, App>, ids: Option<Ve
             r => r?,
         }
         answered += 1;
+        // Each account as it is checked: a long list fills in row by row instead of all at once
+        // when the last one is done.
+        accounts_changed(&app);
     }
     accounts_changed(&app);
     match last_err {

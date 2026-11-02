@@ -17,6 +17,8 @@ use crate::model::{CrashKind, Instance, InstanceState, LaunchInfo, LaunchTarget,
 /// a new PID (Roblox's updater relaunches it, research M8/M9), or, behind a bootstrapper, may
 /// not have started yet.
 const REBIND_MS: i64 = 120_000;
+/// Polls in a row a client that showed its window must be gone for before it counts as ended.
+const DEAD_POLLS: u32 = 2;
 /// A client still loading while Roblox's installer runs may take this long: a first launch
 /// downloads and installs the client before starting it.
 const INSTALL_WAIT_MS: i64 = 900_000;
@@ -151,6 +153,9 @@ struct Entry {
     writer_at: Option<i64>,
     /// "Can't be read but still running" was logged.
     unreadable_said: bool,
+    /// Polls in a row with no readable process and no window, once the client has shown its window:
+    /// Roblox guards its process, so one bad read is not proof that the client is gone.
+    dead_polls: u32,
     /// Handed out by `take_rejoins` (or ended): not again until it is back in a game.
     rejoin_seen: bool,
     /// Unix ms a teleport was first seen under way.
@@ -195,6 +200,7 @@ impl Entry {
             died_at: None,
             writer_at: None,
             unreadable_said: false,
+            dead_polls: 0,
             rejoin_seen: false,
             teleport_at: None,
             loading_since: None,
@@ -816,43 +822,54 @@ impl Tracker {
                     super::window::set_live_hidden_previews(v.live_hidden_previews);
                     // Once per client, without taking the focus.
                     let mut arrange = false;
+                    let mut tiny: Vec<(String, u32)> = Vec::new();
+                    let mut hide: Vec<u32> = Vec::new();
                     for pid in s.tracker.first_in_game(&|pid| process::main_window(pid).is_some()) {
                         let id = clients.iter().find(|c| c.1 == pid).map(|c| c.0.clone());
                         let instance = id.as_deref().and_then(|id| s.tracker.get(id));
                         let full_quality = instance.as_ref().and_then(|i| s.db.account(i.account_id).ok()).is_some_and(|a| a.full_quality);
                         // A rejoin puts back what the user had, not a fresh cell.
                         let launched = instance.is_none_or(|i| i.rejoins == 0);
-                        let tiny = id.filter(|id| v.tiny_on_launch && !full_quality && s.tracker.set_micro(id, true));
-                        let (size, minimize) = ((v.micro_width, v.micro_height), v.minimize_on_launch && !full_quality);
-                        log::info!("client {pid}: in a game; making it tiny: {}, hiding it: {minimize}", tiny.is_some());
-                        arrange |= arranges(v.auto_tile, launched, minimize);
-                        // Not on this thread: a busy client's ShowWindow would stop every poll.
-                        tauri::async_runtime::spawn_blocking(move || {
-                            if let Some(id) = tiny
-                                && let Err(e) = super::window::micro(&id, pid, true, size)
-                            {
-                                log::debug!("instance {id}: not made tiny at launch: {e}");
-                            }
-                            if minimize {
-                                super::window::hide_on_launch(pid);
-                            }
-                        });
+                        let make_tiny = id.filter(|id| v.tiny_on_launch && !full_quality && s.tracker.set_micro(id, true));
+                        let minimize = v.minimize_on_launch && !full_quality;
+                        log::info!("client {pid}: in a game; making it tiny: {}, hiding it: {minimize}", make_tiny.is_some());
+                        // The grid is laid out for clients that are then hidden too: hiding them
+                        // first leaves them out of it, and they come back wherever Roblox put them.
+                        arrange |= arranges(v.auto_tile, launched);
+                        if let Some(id) = make_tiny {
+                            tiny.push((id, pid));
+                        }
+                        if minimize {
+                            hide.push(pid);
+                        }
                     }
-                    // Arrange on launch: the new client takes a cell next to the ones already up.
-                    if arrange {
+                    if arrange || !tiny.is_empty() || !hide.is_empty() {
                         let list: Vec<(String, u32)> = clients.iter().map(|c| (c.0.clone(), c.1)).collect();
                         // As a number: a window handle can't cross threads.
                         let win = handle.get_webview_window("main").and_then(|w| w.hwnd().ok()).map_or(0, |h| h.0 as isize);
                         let size = v.tiny_on_launch.then_some((v.micro_width, v.micro_height));
+                        let micro = (v.micro_width, v.micro_height);
                         let arranged = handle.clone();
+                        // Not on this thread: a busy client's ShowWindow would stop every poll.
                         tauri::async_runtime::spawn_blocking(move || {
-                            let tiled = super::window::tile(&list, windows::Win32::Foundation::HWND(win as *mut _), size);
-                            let s = arranged.state::<crate::App>();
-                            for id in &tiled {
-                                s.tracker.set_micro(id, size.is_some());
+                            for (id, pid) in &tiny {
+                                if let Err(e) = super::window::micro(id, *pid, true, micro) {
+                                    log::debug!("instance {id}: not made tiny at launch: {e}");
+                                }
                             }
-                            log::info!("arranged {} client window(s) in a grid", tiled.len());
-                            crate::commands::instances_changed(&arranged);
+                            if arrange {
+                                let tiled = super::window::tile(&list, windows::Win32::Foundation::HWND(win as *mut _), size);
+                                let s = arranged.state::<crate::App>();
+                                for id in &tiled {
+                                    s.tracker.set_micro(id, size.is_some());
+                                }
+                                log::info!("arranged {} client window(s) in a grid", tiled.len());
+                                crate::commands::instances_changed(&arranged);
+                            }
+                            // Last: `tile` leaves hidden clients out of the grid.
+                            for pid in hide {
+                                super::window::hide_on_launch(pid);
+                            }
                         });
                     }
                     // Hidden clients nobody watches go to sleep. One round at a time, off this thread.
@@ -984,7 +1001,11 @@ impl Tracker {
             let had_game = old.in_game_at.is_some();
             (e.mem_strikes, e.mem_mb, e.mem_restart) = (old.mem_strikes, old.mem_mb, old.mem_restart);
             if let Some(kind) = settle(e, now) {
-                self.crashes.lock().unwrap_or_else(|e| e.into_inner()).push(ended(e, kind, now));
+                let record = ended(e, kind, now);
+                // What LRAM saw when it decided the client was gone: a report of a wrong
+                // "Closed unexpectedly" needs it.
+                log::warn!("instance {} ended as {kind:?} after {} ms: {}", record.instance_id, record.uptime_ms, record.clues);
+                self.crashes.lock().unwrap_or_else(|e| e.into_inner()).push(record);
             }
             if e.inst != old.inst {
                 moved.push(Transition { before: old.inst, after: e.inst.clone(), first_game: !had_game && e.in_game_at.is_some() });
@@ -1134,10 +1155,11 @@ fn ended(e: &Entry, kind: CrashKind, now: i64) -> Ended {
         started_at: e.inst.started_at,
         died_after_ms: e.died_at.map(|d| (d - e.inst.started_at).max(0)),
         clues: format!(
-            "pid {}, reached a game: {}, tiny and hide done: {}, hung polls {}, followed directly: {}, last job known: {}, disconnected: {}, left: {}, human check: {}, refused sign-in: {}, replaced: {}, teleporting: {}, closing: {}, relaunches: {}",
+            "pid {}, reached a game: {}, window work done: {}, polls without it: {}, hung polls {}, followed directly: {}, last job known: {}, disconnected: {}, left: {}, human check: {}, refused sign-in: {}, replaced: {}, teleporting: {}, closing: {}, relaunches: {}",
             e.inst.pid,
             e.in_game_at.is_some(),
             e.window_seen,
+            e.dead_polls,
             e.hung_polls,
             e.adopted,
             e.facts.job_id.is_some(),
@@ -1231,8 +1253,10 @@ fn observe(
     }
     if e.alive {
         e.died_at = None;
+        e.dead_polls = 0;
     } else {
         e.died_at.get_or_insert(now);
+        e.dead_polls = e.dead_polls.saturating_add(1);
     }
     if !e.adopted && !e.alive {
         e.gone_at.get_or_insert(now);
@@ -1316,10 +1340,11 @@ fn observe(
     }
 }
 
-/// Whether a client that just reached a game makes LRAM lay the windows out: arranging is on, it
-/// was launched rather than rejoined, and it isn't about to be hidden (pure).
-fn arranges(auto_tile: bool, launched: bool, hide: bool) -> bool {
-    auto_tile && launched && !hide
+/// Whether a client that just reached a game makes LRAM lay the windows out: arranging is on and it
+/// was launched rather than rejoined (pure). Clients that are then hidden are laid out too, so they
+/// come back to a cell of their own instead of wherever Roblox left them.
+fn arranges(auto_tile: bool, launched: bool) -> bool {
+    auto_tile && launched
 }
 
 fn adopt(e: &mut Entry, p: ProcInfo, taken: &mut Vec<u32>) {
@@ -1376,7 +1401,10 @@ fn settle(e: &mut Entry, now: i64) -> Option<CrashKind> {
         e.teleport_at = None;
     }
     let written = !e.closing && e.writer_at.is_some_and(|w| now - w < WRITER_PROOF_MS);
-    let ended = !e.alive && !may_appear(e, now) && !written;
+    // A client that showed its window is given `DEAD_POLLS` polls of silence: a read that fails
+    // once (Roblox guards its process, a window query can miss a busy one) must not end it.
+    let silent = !e.window_seen || e.dead_polls >= DEAD_POLLS;
+    let ended = !e.alive && silent && !may_appear(e, now) && !written;
     let (state, mut note) = state_of(&e.facts, e.log.is_some(), ended, e.closing, e.expected_user);
     // A client LRAM closed for its memory ends as `Mem` (its note: "Closed").
     let crash = match ended {
@@ -1816,6 +1844,32 @@ mod tests {
         assert_eq!(state(&t, &id), (Exited, note("Closed unexpectedly"), 100));
         assert_eq!(t.get(&id).unwrap().ended_at, Some(start + 6_000));
         assert!(poll(start + 7_000).is_empty());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_client_that_showed_its_window_is_not_ended_by_one_bad_poll() {
+        let dir = temp_dir();
+        let t = Tracker::new();
+        let start = now_ms();
+        let id = t.register(&info(700, start, false), target()).id;
+        let procs = Fake::new(&[(700, (start / 1000) as u64)]);
+        let log = dir.join("0.744.0.7441080_20261024T120000Z_Player_WINDOW_last.log");
+        append(&log, &[btid_line(BTID)]);
+        append(&log, &join_lines(USER));
+        append(&log, &[replicator()]);
+        t.poll(Some(&dir), &procs, &user_of, start + 1_000);
+        assert_eq!(state(&t, &id).0, InGame);
+        // The tiny and hide on launch ran, so its window has been seen.
+        assert_eq!(t.first_in_game(&|pid| pid == 700), [700]);
+
+        // Roblox guards its process and a window query can miss a busy client: one poll without
+        // either does not end it.
+        procs.set(&[]);
+        t.poll(Some(&dir), &procs, &user_of, start + 2_000);
+        assert_eq!(state(&t, &id).0, InGame, "one bad read is not proof");
+        t.poll(Some(&dir), &procs, &user_of, start + 3_000);
+        assert_eq!(state(&t, &id), (Exited, note("Closed unexpectedly"), 700));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -2612,9 +2666,8 @@ mod tests {
 
     #[test]
     fn arranging_is_for_fresh_launches_that_stay_visible() {
-        assert!(arranges(true, true, false));
-        assert!(!arranges(false, true, false), "the setting is off");
-        assert!(!arranges(true, false, false), "a rejoin keeps its place");
-        assert!(!arranges(true, true, true), "a client about to be hidden has no cell");
+        assert!(arranges(true, true));
+        assert!(!arranges(false, true), "the setting is off");
+        assert!(!arranges(true, false), "a rejoin keeps its place");
     }
 }

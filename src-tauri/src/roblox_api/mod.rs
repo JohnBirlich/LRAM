@@ -67,6 +67,8 @@ pub struct Client {
     base: Option<String>,
     csrf: Mutex<HashMap<i64, String>>,
     windows: Mutex<HashMap<&'static str, Window>>,
+    /// When the next authentication ticket may be asked for (`TICKET_GAP`).
+    ticket_at: Mutex<Option<Instant>>,
 }
 
 impl Client {
@@ -85,7 +87,7 @@ impl Client {
             .build()
             .map_err(|e| e.without_url().to_string())
             .inspect_err(|e| log::error!("Roblox http client unavailable: {e}"));
-        Client { http, on_rotate, base, csrf: Mutex::default(), windows: Mutex::default() }
+        Client { http, on_rotate, base, csrf: Mutex::default(), windows: Mutex::default(), ticket_at: Mutex::default() }
     }
 
     /// `GET users.roblox.com/v1/users/authenticated`, the only reliable cookie check.
@@ -226,6 +228,7 @@ impl Client {
     /// with Referer/Origin www.roblox.com; the ticket is the `rbx-authentication-ticket`
     /// response header (missing → `Roblox("no ticket")`). Fetched right before each launch.
     pub async fn authentication_ticket(&self, account_id: i64, cookie: &Secret, assertion: Option<&Value>) -> Result<Secret> {
+        self.ticket_gap().await;
         let (url, empty) = (endpoints::AUTH_TICKET, Value::Object(Default::default()));
         let body = assertion.unwrap_or(&empty);
         let (headers, _, _) = self.request(Method::POST, url, url, Some(body), account_id, Some(cookie)).await?;
@@ -669,6 +672,25 @@ impl Client {
         }
     }
 
+    /// Waits until this ticket is at least `TICKET_GAP` after the last one: Roblox's ticket
+    /// endpoint minds bursts more than anything else a launch does, and a batch of clients asks
+    /// for one ticket each within seconds of the others.
+    async fn ticket_gap(&self) {
+        // Each caller takes the next free slot, so several launches queue up rather than wake
+        // together and ask for their tickets in one burst.
+        let wait = {
+            let now = Instant::now();
+            let mut next = lock(&self.ticket_at);
+            let at = next.unwrap_or(now).max(now);
+            *next = Some(at + TICKET_GAP);
+            at.saturating_duration_since(now)
+        };
+        if !wait.is_zero() {
+            log::debug!("another ticket is due first: waiting {wait:?}");
+            tokio::time::sleep(wait).await;
+        }
+    }
+
     fn set_window(&self, route: &'static str, remaining: u64, reset_secs: u64) {
         // The value is whatever the header says; the longest real window is an hour.
         let reset_at = Instant::now() + Duration::from_secs(reset_secs.min(3600));
@@ -678,6 +700,8 @@ impl Client {
 
 /// The most a call waits for its rate-limit window before failing with `RateLimited`.
 const MAX_WAIT_SECS: u64 = 60;
+/// At least this long between two authentication tickets, however many launches run at once.
+const TICKET_GAP: Duration = Duration::from_secs(2);
 /// The largest answer read. Real ones are far smaller; a failed allocation would end the app.
 const MAX_BODY: usize = 16 << 20;
 const COOKIE_MARK: &str = "_|WARNING:-DO-NOT-SHARE-THIS.";

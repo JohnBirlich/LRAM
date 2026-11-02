@@ -1985,6 +1985,87 @@ pub async fn join_candidates(app: AppHandle, s: State<'_, App>, account_id: i64)
     Ok(out)
 }
 
+// ---------- friend requests ----------
+
+/// Marks the account if the failure was its cookie's fault, and returns the error either way.
+fn failed(app: &AppHandle, s: &App, account_id: i64, e: AppError) -> AppError {
+    if let Err(db) = record_cookie_error(app, s, account_id, &e) {
+        log::warn!("account {account_id}: could not record its cookie error: {db}");
+    }
+    e
+}
+
+/// Pending incoming friend requests of one account, asked with its own cookie (the website's list).
+#[tauri::command]
+pub async fn friends_requests(app: AppHandle, s: State<'_, App>, account_id: i64) -> Result<Vec<UserRef>> {
+    let me = s.db.account(account_id)?;
+    let cookie = stored_cookie(&s, account_id)?;
+    let rows = s.api.friend_requests(account_id, &cookie, me.user_id).await.map_err(|e| failed(&app, &s, account_id, e))?;
+    let mut out: Vec<UserRef> = Vec::new();
+    for row in rows {
+        let Some(id) = row.user_id().filter(|&id| id > 0) else { continue };
+        if out.iter().any(|u| u.user_id == id) {
+            continue;
+        }
+        let name = row.name.clone().unwrap_or_default();
+        out.push(UserRef { user_id: id, username: name.clone(), display_name: row.display_name.clone().unwrap_or(name) });
+    }
+    let unnamed: Vec<i64> = out.iter().filter(|u| u.username.is_empty()).map(|u| u.user_id).collect();
+    if !unnamed.is_empty() {
+        match s.api.users_by_ids(&unnamed).await {
+            Ok(users) => {
+                for u in users {
+                    if let Some(row) = out.iter_mut().find(|r| r.user_id == u.id) {
+                        *row = UserRef { user_id: u.id, username: u.name.clone(), display_name: u.display_name };
+                    }
+                }
+            }
+            Err(e) => log::info!("names for account {account_id}'s friend requests: {e}"),
+        }
+    }
+    Ok(out)
+}
+
+/// Sends a friend request to a Roblox username, as the account would on roblox.com.
+#[tauri::command]
+pub async fn friend_request_send(app: AppHandle, s: State<'_, App>, account_id: i64, name: String) -> Result<UserRef> {
+    let me = s.db.account(account_id)?;
+    let cookie = stored_cookie(&s, account_id)?;
+    let name = name.trim().trim_start_matches('@').to_owned();
+    if name.is_empty() {
+        return Err(AppError::Invalid(tr!("Type a Roblox username.")));
+    }
+    let target = s
+        .api
+        .users_by_name(std::slice::from_ref(&name))
+        .await?
+        .into_iter()
+        .next()
+        .ok_or_else(|| AppError::Invalid(tr!("No Roblox user is called \"{name}\".", name = name)))?;
+    if target.id == me.user_id {
+        return Err(AppError::Invalid(tr!("That is this account itself.")));
+    }
+    s.api.friend_request_send(account_id, &cookie, target.id).await.map_err(|e| failed(&app, &s, account_id, e))?;
+    Ok(UserRef { user_id: target.id, username: target.name, display_name: target.display_name })
+}
+
+/// Accepts or declines one incoming request; `requester_id` is the user who sent it.
+#[tauri::command]
+pub async fn friend_request_answer(
+    app: AppHandle,
+    s: State<'_, App>,
+    account_id: i64,
+    requester_id: i64,
+    accept: bool,
+) -> Result<()> {
+    if requester_id <= 0 {
+        return Err(AppError::Invalid(tr!("That friend request is gone.")));
+    }
+    s.db.account(account_id)?;
+    let cookie = stored_cookie(&s, account_id)?;
+    s.api.friend_request_answer(account_id, &cookie, requester_id, accept).await.map_err(|e| failed(&app, &s, account_id, e))
+}
+
 /// Locks the vault; open session windows close first (they hold a live roblox.com session).
 pub fn lock_vault(app: &AppHandle) {
     for (label, w) in app.webview_windows() {

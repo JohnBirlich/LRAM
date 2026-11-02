@@ -197,6 +197,28 @@ pub struct FriendOnline {
     pub presence: Option<FriendPresence>,
 }
 
+/// A row of `friends/v1/users/{id}/friends/requests`. The website's own tab sends `id`, `name` and
+/// `displayName`; the `sender`/`requester` forms are accepted too so a rename only costs names.
+#[derive(Deserialize, Debug, Clone, Default, PartialEq)]
+pub struct FriendRequestRow {
+    #[serde(default)]
+    pub id: Option<i64>,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default, rename = "displayName")]
+    pub display_name: Option<String>,
+    #[serde(default, rename = "senderUserId")]
+    pub sender_user_id: Option<i64>,
+    #[serde(default, rename = "requesterUserId")]
+    pub requester_user_id: Option<i64>,
+}
+
+impl FriendRequestRow {
+    pub fn user_id(&self) -> Option<i64> {
+        self.id.or(self.sender_user_id).or(self.requester_user_id)
+    }
+}
+
 #[derive(Deserialize, Debug, Clone, Default, PartialEq)]
 #[serde(rename_all = "PascalCase")]
 pub struct FriendPresence {

@@ -1183,3 +1183,69 @@ fn a_huge_rate_limit_window_neither_panics_nor_stalls() {
     let rt = tokio::runtime::Builder::new_current_thread().enable_time().build().unwrap();
     assert!(matches!(rt.block_on(c.wait_turn("r")), Err(AppError::RateLimited(_))));
 }
+
+#[tokio::test]
+async fn friend_requests_asks_with_the_cookie_and_drops_rows_without_an_id() {
+    let answer = r#"{"previousPageCursor":null,"nextPageCursor":null,"data":[
+        {"id":11,"name":"alice","displayName":"Alice","created":"2026-10-30T10:00:00Z"},
+        {"senderUserId":12},
+        {"name":"nameless"}]}"#;
+    let (base, reqs) = serve(vec![ok(answer)]);
+    let (c, _) = client(&base);
+    let rows = c.friend_requests(5, &Secret::new("OLD"), 1).await.unwrap();
+    assert_eq!(rows.iter().filter_map(|r| r.user_id()).collect::<Vec<_>>(), vec![11, 12]);
+
+    let req = reqs.recv().unwrap();
+    assert_eq!(first_line(&req), "GET /v1/users/1/friends/requests?limit=100&sortOrder=Asc HTTP/1.1");
+    assert!(has(&req, "\r\ncookie: .ROBLOSECURITY=OLD\r\n"));
+}
+
+#[tokio::test]
+async fn a_friend_request_is_sent_with_the_website_body_after_a_csrf_retry() {
+    let (base, reqs) = serve(vec![csrf_403(), ok(r#"{"success":true,"isCaptchaRequired":false}"#)]);
+    let (c, _) = client(&base);
+    c.friend_request_send(5, &Secret::new("OLD"), 42).await.unwrap();
+
+    let (first, retry) = (reqs.recv().unwrap(), reqs.recv().unwrap());
+    assert_eq!(first_line(&retry), "POST /v1/users/42/request-friendship HTTP/1.1");
+    assert!(has(&retry, "\r\nx-csrf-token: TOK\r\n"));
+    for r in [&first, &retry] {
+        assert_eq!(body_of(r), serde_json::json!({ "friendshipOriginSourceType": 0 }));
+        assert!(has(r, "\r\ncookie: .ROBLOSECURITY=OLD\r\n"));
+    }
+}
+
+#[tokio::test]
+async fn answering_a_request_puts_the_requester_in_the_path() {
+    for (accept, tail) in [(true, "accept-friend-request"), (false, "decline-friend-request")] {
+        let (base, reqs) = serve(vec![csrf_403(), ok(r#"{"success":true}"#)]);
+        let (c, _) = client(&base);
+        c.friend_request_answer(5, &Secret::new("OLD"), 77, accept).await.unwrap();
+        let _ = reqs.recv().unwrap();
+        let retry = reqs.recv().unwrap();
+        assert_eq!(first_line(&retry), format!("POST /v1/users/77/{tail} HTTP/1.1"));
+        assert!(has(&retry, "\r\nx-csrf-token: TOK\r\n") && has(&retry, "\r\ncookie: .ROBLOSECURITY=OLD\r\n"));
+    }
+}
+
+#[tokio::test]
+async fn a_friend_request_that_wants_a_captcha_says_so() {
+    let (base, _) = serve(vec![csrf_403(), ok(r#"{"success":false,"isCaptchaRequired":true}"#)]);
+    let (c, _) = client(&base);
+    let r = c.friend_request_send(5, &Secret::new("OLD"), 42).await;
+    assert!(matches!(r, Err(AppError::Invalid(m)) if m.starts_with("Roblox wants a captcha")));
+    // A quiet refusal is a plain error too, and an empty answer is a success.
+    assert!(no_captcha(br#"{"success":false}"#).is_err() && no_captcha(b"").is_ok());
+}
+
+#[tokio::test]
+async fn users_by_ids_asks_without_a_cookie() {
+    let (base, reqs) = serve(vec![ok(r#"{"data":[{"id":11,"name":"alice","displayName":"Alice"}]}"#)]);
+    let (c, _) = client(&base);
+    let users = c.users_by_ids(&[11, 12]).await.unwrap();
+    assert_eq!(users, vec![AuthenticatedUser { id: 11, name: "alice".into(), display_name: "Alice".into() }]);
+
+    let req = reqs.recv().unwrap();
+    assert_eq!(first_line(&req), "GET /v1/users?userIds=11,12 HTTP/1.1");
+    assert!(!has(&req, "\r\ncookie:"));
+}

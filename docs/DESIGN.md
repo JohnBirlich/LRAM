@@ -34,6 +34,7 @@ window-state, dialog. Tray via the `tray-icon` feature.
 | Plain cookie works anywhere | Hardware-backed auth (HBA / `x-bound-auth-token`) is live on the website. Roblox staff (2026-05-27): cookie workflows are "unaffected"; Account Session Protection is now a background risk signal and its opt-out was removed. Expect challenges, not hard rejections. | Send unsigned; map `401 9002/2` to "Roblox requires a bound session" and `rblx-challenge-*` 403s to "verify in the browser" (opens the account's session window). |
 | Login is username + password | Enhanced Protection (2026-04) forces passkeys / security keys on opted-in accounts; the web Account Switcher can swap accounts inside one browser profile. | Login only through the real roblox.com page in WebView2 (WebAuthn works there). After any session window closes, re-check the cookie still belongs to the same user ID. |
 | Premium via premiumfeatures | Premium stopped selling 2026-04-30 and its profile badge ended 2026-05-30 (Roblox Plus replaced it). `validate-membership` is marked for deprecation. | One "Subscription" field: Plus from `user-profile-api get-profiles` (`hasRobloxSubscription`), "Premium (legacy)" only if the old endpoint still says so. |
+| Friend requests (verified 2026-11-02) | The website's tab asks `GET friends.roblox.com/v1/users/{id}/friends/requests?limit=100&sortOrder=Asc` with cookie; sending is `POST .../users/{targetUserId}/request-friendship {"friendshipOriginSourceType":0}`, answering is `POST .../users/{requesterUserId}/accept-friend-request` or `.../decline-friend-request`. All need cookie + CSRF. | Mirror the website; answers that carry `isCaptchaRequired` become a plain English hint instead of a silent failure. |
 | Robux at `/v1/users/{id}/currency` | Documented endpoint is `GET economy.roblox.com/v1/user/currency`. | Use the documented one. |
 | Presence gives last online | `lastOnline` and `/presence/last-online` are gone. Job ID only visible to permitted viewers. | Same-server detection reads the client's own log first, presence second. |
 | Server list freely pageable | `limit` must be 10/25/50/100; **3 requests per minute per IP** without a cookie, on a window aligned to the clock minute; website uses `/v2/.../servers/Public?orderBy=OccupancyDesc\|OccupancyAsc\|Recommended\|BestLatency&excludeFullGames=true` (the last two need a cookie). Pages repeat servers. Staff have announced a logged-in-only server list. | Use the selected account's cookie, page on demand, de-duplicate by job ID, wait on `x-ratelimit-reset` (Retry-After understates it). |
@@ -248,6 +249,9 @@ All return `Result<T, AppError>`; `AppError` reaches the UI as `{kind, message}`
 | Info | `account_info(id, refresh)` | `AccountInfo` |
 | | `presence(ids)` | `Presence[]` |
 | | `friends_joinable(account_id)` (Join-user picker) | `FriendPresence[]` |
+| | `friends_requests(account_id)` — pending incoming requests, the website's own list | `UserRef[]` |
+| | `friend_request_send(account_id, name)` → `POST friends/v1/users/{targetUserId}/request-friendship` `{friendshipOriginSourceType: 0}` | `UserRef` |
+| | `friend_request_answer(account_id, requester_id, accept)` → `.../accept-friend-request` / `.../decline-friend-request` (both take the requester's id) | — |
 | Launch | `target_parse(input)` (local, no network) | `ParsedInput` |
 | | `launch(account_id, target)` | `Instance` |
 | | `bulk_launch({account_ids, target, delay_ms, same_server: off\|pick_first\|follow_first, auto_rejoin})` | `batch_id` |

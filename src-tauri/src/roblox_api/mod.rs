@@ -28,7 +28,7 @@ use zeroize::Zeroizing;
 use crate::error::{AppError, Result};
 use crate::vault::Secret;
 use types::{
-    AuthenticatedUser, Data, FriendOnline, Game, GameDetails, Presences, PrivateServerList, Profiles, ServerList,
+    AuthenticatedUser, Data, FriendOnline, FriendRequestRow, Game, GameDetails, Presences, PrivateServerList, Profiles, ServerList,
     ShareLinkResolution, ShareLinkV2, SocialCounts, Thumbnails, TwoStepConfig, UserDetails, UserPresence,
 };
 
@@ -275,6 +275,48 @@ impl Client {
     pub async fn friends_online(&self, account_id: i64, cookie: &Secret, user_id: i64) -> Result<Vec<FriendOnline>> {
         let url = endpoints::fill(endpoints::FRIENDS_ONLINE, user_id);
         Ok(self.get::<Data<FriendOnline>>(endpoints::FRIENDS_ONLINE, &url, account_id, Some(cookie)).await?.data)
+    }
+
+    /// `GET friends.roblox.com/v1/users/{id}/friends/requests?limit=100&sortOrder=Asc` with the
+    /// account's cookie: the pending incoming requests of the website's own tab (first page).
+    /// Rows without an id are dropped; a row without a name is left for `users_by_ids`.
+    pub async fn friend_requests(&self, account_id: i64, cookie: &Secret, user_id: i64) -> Result<Vec<FriendRequestRow>> {
+        let url = endpoints::fill(endpoints::FRIEND_REQUESTS, user_id);
+        let rows = self.get::<Data<FriendRequestRow>>(endpoints::FRIEND_REQUESTS, &url, account_id, Some(cookie)).await?.data;
+        Ok(rows.into_iter().filter(|r| r.user_id().is_some()).collect())
+    }
+
+    /// `GET users.roblox.com/v1/users?userIds=<csv ≤200>` (no cookie) → the users it knows.
+    pub async fn users_by_ids(&self, ids: &[i64]) -> Result<Vec<AuthenticatedUser>> {
+        let (route, mut out) = (endpoints::USERS_BY_IDS, Vec::new());
+        for chunk in ids.chunks(200) {
+            let csv = chunk.iter().map(i64::to_string).collect::<Vec<_>>().join(",");
+            let url = endpoints::fill(route, &csv);
+            let (_, bytes, _) = self.request(Method::GET, route, &url, None, 0, None).await?;
+            out.extend(json::<Data<AuthenticatedUser>>(&bytes)?.data);
+        }
+        Ok(out)
+    }
+
+    /// `POST friends.roblox.com/v1/users/{targetUserId}/request-friendship` with the account's
+    /// cookie and `{"friendshipOriginSourceType":0}`, as the website sends it. Roblox answers
+    /// `{"success":false,"isCaptchaRequired":true}` when it wants a captcha → `Invalid`.
+    pub async fn friend_request_send(&self, account_id: i64, cookie: &Secret, user_id: i64) -> Result<()> {
+        let url = endpoints::fill(endpoints::FRIEND_REQUEST_SEND, user_id);
+        let body = serde_json::json!({ "friendshipOriginSourceType": 0 });
+        let (_, bytes, _) = self
+            .request(Method::POST, endpoints::FRIEND_REQUEST_SEND, &url, Some(&body), account_id, Some(cookie))
+            .await?;
+        no_captcha(&bytes)
+    }
+
+    /// `POST friends.roblox.com/v1/users/{requesterUserId}/accept-friend-request` or
+    /// `.../decline-friend-request` with the account's cookie: answers one incoming request.
+    pub async fn friend_request_answer(&self, account_id: i64, cookie: &Secret, requester_id: i64, accept: bool) -> Result<()> {
+        let route = if accept { endpoints::FRIEND_REQUEST_ACCEPT } else { endpoints::FRIEND_REQUEST_DECLINE };
+        let url = endpoints::fill(route, requester_id);
+        let (_, bytes, _) = self.request(Method::POST, route, &url, None, account_id, Some(cookie)).await?;
+        no_captcha(&bytes)
     }
 
     /// `GET games.roblox.com/v2/games/{placeId}/servers/Public?orderBy=..&excludeFullGames=..&limit=..&cursor=..`
@@ -778,6 +820,23 @@ fn field<T: DeserializeOwned>(mut v: Value, name: &str) -> Result<T> {
 
 fn unreadable() -> AppError {
     AppError::Roblox("unreadable response".into())
+}
+
+/// A friend-request answer that wants a captcha (`{"success":false,"isCaptchaRequired":true}`) or
+/// refuses quietly (`{"success":false}`) is a plain `Invalid`; an empty or extra answer is fine.
+fn no_captcha(body: &[u8]) -> Result<()> {
+    let Ok(Value::Object(map)) = serde_json::from_slice::<Value>(body) else {
+        return Ok(());
+    };
+    if map.get("isCaptchaRequired").and_then(Value::as_bool) == Some(true) {
+        return Err(AppError::Invalid(tr!(
+            "Roblox wants a captcha for this friend request: open roblox.com with this account, send or accept one request there, then try again."
+        )));
+    }
+    match map.get("success").and_then(Value::as_bool) {
+        Some(false) => Err(AppError::Invalid(tr!("Roblox refused that friend request."))),
+        _ => Ok(()),
+    }
 }
 
 /// Positive ids, each once (Roblox fails a whole presence batch on one id ≤ 0).

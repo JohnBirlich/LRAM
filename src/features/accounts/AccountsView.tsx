@@ -9,6 +9,7 @@ import { toast } from "../../ui/Toast";
 import { AccountMenu, type MenuAt } from "./AccountMenu";
 import { isLive } from "../launch/Running";
 import { DetailPanel } from "./DetailPanel";
+import { FriendsDialog } from "./FriendsDialog";
 import { GroupChips } from "./GroupsNav";
 import { accountName, ago, Avatar, Status } from "./shared";
 import { t, tx, type Key } from "../../i18n";
@@ -74,6 +75,7 @@ export function AccountsView({ accounts, groups, density, vaultMode, clipboardSe
   const [checked, setChecked] = useState<Set<number>>(new Set());
   const [removeIds, setRemoveIds] = useState<number[]>([]);
   const [removeOpen, setRemoveOpen] = useState(false);
+  const [friends, setFriends] = useState<AccountSummary | null>(null);
   const [drag, setDrag] = useState<{ id: number; over: number } | null>(null);
   const [order, setOrder] = useState<number[] | null>(null);
   const [moved, setMoved] = useState("");
@@ -687,7 +689,9 @@ export function AccountsView({ accounts, groups, density, vaultMode, clipboardSe
         onLaunch={onLaunch}
         onValidate={(ids) => validate.mutate(ids)}
         onRemove={askRemove}
+        onFriends={setFriends}
       />
+      <FriendsDialog open={friends !== null} onClose={() => setFriends(null)} account={friends} />
       <ConfirmDialog
         open={removeOpen}
         onClose={() => setRemoveOpen(false)}

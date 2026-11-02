@@ -28,6 +28,14 @@ pub const SHARE_LINK_V2: &str = "https://apis.roblox.com/deeplinks/v2/resolve";
 pub const GAMES: &str = "https://games.roblox.com/v1/games?universeIds={}";
 pub const USERS_BY_NAME: &str = "https://users.roblox.com/v1/usernames/users";
 pub const FRIENDS_ONLINE: &str = "https://friends.roblox.com/v1/users/{}/friends/online";
+pub const USERS_BY_IDS: &str = "https://users.roblox.com/v1/users?userIds={}";
+
+// Friend requests (verified 2026-11-02, see docs/DESIGN.md). The path id is the *requester's*
+// for accept / decline and the target's for request-friendship.
+pub const FRIEND_REQUESTS: &str = "https://friends.roblox.com/v1/users/{}/friends/requests?limit=100&sortOrder=Asc";
+pub const FRIEND_REQUEST_SEND: &str = "https://friends.roblox.com/v1/users/{}/request-friendship";
+pub const FRIEND_REQUEST_ACCEPT: &str = "https://friends.roblox.com/v1/users/{}/accept-friend-request";
+pub const FRIEND_REQUEST_DECLINE: &str = "https://friends.roblox.com/v1/users/{}/decline-friend-request";
 
 // Servers (query string appended by the caller).
 pub const SERVERS_PUBLIC: &str = "https://games.roblox.com/v2/games/{}/servers/Public";

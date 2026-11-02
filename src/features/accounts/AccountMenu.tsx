@@ -13,7 +13,7 @@ export type MenuAt = { account: AccountSummary; x: number; y: number };
 
 /** Right-click menu of an account row. With several rows ticked and this one among them,
  * Launch, Validate and Remove apply to all of them. */
-export function AccountMenu({ at, onClose, selection, canLaunch, onLaunch, onValidate, onRemove }: {
+export function AccountMenu({ at, onClose, selection, canLaunch, onLaunch, onValidate, onRemove, onFriends }: {
   at: MenuAt | null;
   onClose: () => void;
   /** Ticked account ids. */
@@ -22,6 +22,7 @@ export function AccountMenu({ at, onClose, selection, canLaunch, onLaunch, onVal
   onLaunch: (ids: number[]) => void;
   onValidate: (ids: number[]) => void;
   onRemove: (ids: number[]) => void;
+  onFriends: (account: AccountSummary) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ left: 0, top: 0 });
@@ -60,6 +61,7 @@ export function AccountMenu({ at, onClose, selection, canLaunch, onLaunch, onVal
         ["play", many ? t("launch.launchMany", { count: ids.length }) : t("common.launch"), () => onLaunch(ids), !anyValid],
         ["signin", t("accounts.menu.openSession"), () => session.mutateAsync(a.id).catch(toastError)],
         ["external", t("accounts.menu.openProfile"), () => openUrl(`https://www.roblox.com/users/${a.userId}/profile`).catch(toastError)],
+        ["friends", t("accounts.menu.friends"), () => onFriends(a)],
         null,
         ["copy", t("accounts.menu.copyUsername"), () => clip(a.username, t("accounts.menu.usernameCopied"))],
         ["copy", t("accounts.menu.copyUserId"), () => clip(String(a.userId), t("accounts.menu.userIdCopied"))],

@@ -14,6 +14,7 @@ export const qk = {
   info: (id: number) => ["info", id],
   favourites: ["favourites"],
   join: ["join"],
+  friendRequests: (id: number) => ["friendRequests", id] as const,
   instances: ["instances"],
   multi: ["multi"],
   crashes: ["crashes"],

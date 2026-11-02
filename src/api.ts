@@ -156,6 +156,13 @@ export const api = {
   favouritesReorder: (ids: number[]) => invoke<void>("favourites_reorder", { ids }),
   /** Friends online plus the other stored accounts, for "Join user". */
   joinCandidates: (accountId: number) => invoke<JoinCandidate[]>("join_candidates", { accountId }),
+  /** Pending incoming friend requests of this account, asked with its own cookie. */
+  friendsRequests: (accountId: number) => invoke<UserRef[]>("friends_requests", { accountId }),
+  /** Sends a friend request to a Roblox username; resolves to the user it went to. */
+  friendRequestSend: (accountId: number, name: string) => invoke<UserRef>("friend_request_send", { accountId, name }),
+  /** Accepts or declines one incoming request; `requesterId` is the user who sent it. */
+  friendRequestAnswer: (accountId: number, requesterId: number, accept: boolean) =>
+    invoke<void>("friend_request_answer", { accountId, requesterId, accept }),
 
   instancesList: () => invoke<Instance[]>("instances_list"),
   /** Graceful unless `force`; not counted as an unexpected exit. */

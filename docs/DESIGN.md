@@ -368,6 +368,12 @@ panics clear it: alpha first, which needs no answer from the client, then the bi
 hard kill with RoALT not reopened leaves the client invisible until the next start, which clears ghosts it doesn't
 follow again (half-made ones too, by the bits alone).
 
+A client's size survives its own fullscreen: `window::sweep` keeps the client area it last had outside
+fullscreen (no title bar and a client area covering the monitor; maximized and tiled windows don't
+count) and puts that size back when it comes out of fullscreen at another one (`note_size`,
+`restore_size`). A window the user resized itself wins: `resize::on_event` reports the end of a drag to
+`window::user_sized`, which makes that the size to keep. Tiny clients are `keep_tiny`'s.
+
 Anti-AFK (opt-in) uses `SendInput`, so it needs the client in front: it runs only after 5 s with no
 user input (`GetLastInputInfo`), wakes minimized clients as ghosts first (`window::wake_for_press`), and takes the focus with `SetForegroundWindow`,
 then `AttachThreadInput`, then after a zero-movement mouse input that lifts the foreground lock (not an

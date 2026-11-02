@@ -338,16 +338,21 @@ fn un_iconify(hwnd: HWND, landing: bool) {
     }
 }
 
-/// The user sized a tiny client by hand: that is its tiny size now, so coming back doesn't undo it.
+/// The user sized a client by hand: that is its size now, so a size from before a fullscreen trip
+/// or a wake doesn't undo it.
 pub fn user_sized(pid: u32, hwnd: HWND) {
     // SAFETY: reads one window's state.
     if unsafe { IsIconic(hwnd).as_bool() || IsZoomed(hwnd).as_bool() } {
         return;
     }
-    if let Some(size) = client_size(hwnd)
-        && let Some(e) = tiny().iter_mut().find(|e| e.0 == pid)
-    {
+    let Some(size) = client_size(hwnd) else { return };
+    if let Some(e) = tiny().iter_mut().find(|e| e.0 == pid) {
         e.1 = size;
+    }
+    // The one that counts: whatever comes next, this is the size to keep.
+    if let Some(e) = normal_size().iter_mut().find(|e| e.pid == pid) {
+        e.size = size;
+        e.full = false;
     }
 }
 
@@ -482,9 +487,11 @@ pub fn sweep(clients: &[(u32, Option<(u32, u32)>)]) {
     // SAFETY: only asks whether a handle still is a window.
     wanted().retain(|h, _| unsafe { IsWindow(Some(HWND(*h as *mut _))) }.as_bool());
     TINY_TRIED.lock().unwrap_or_else(|e| e.into_inner()).retain(|pid, _| clients.iter().any(|c| c.0 == *pid));
+    normal_size().retain(|e| clients.iter().any(|c| c.0 == e.pid));
     for &(pid, _) in clients {
         if let Some((hwnd, false)) = process::main_window(pid) {
             keep_tiny(pid, hwnd);
+            note_size(pid, hwnd);
         }
         if let Some((hwnd, iconic)) = process::main_window(pid)
             && !iconic
@@ -642,6 +649,118 @@ static SAVED: Mutex<Vec<(String, u32, WINDOWPLACEMENT)>> = Mutex::new(Vec::new()
 
 fn saved() -> MutexGuard<'static, Vec<(String, u32, WINDOWPLACEMENT)>> {
     SAVED.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Per pid: the client area a client last had outside fullscreen, and whether it has been
+/// fullscreen since. Roblox comes out of its own F11 fullscreen with the layout it had before LRAM
+/// sized the window, so the size from before is put back; a size the user gives the window after
+/// that (a drag, an edge) is the one that counts from then on.
+static NORMAL_SIZE: Mutex<Vec<Normal>> = Mutex::new(Vec::new());
+
+/// A client's size outside fullscreen: its client area, and whether it has been fullscreen since.
+struct Normal {
+    pid: u32,
+    size: (u32, u32),
+    full: bool,
+}
+
+fn normal_size() -> MutexGuard<'static, Vec<Normal>> {
+    NORMAL_SIZE.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Windows `restore_size` is working on, so a second sweep leaves them alone.
+static RESTORING: Mutex<Vec<isize>> = Mutex::new(Vec::new());
+
+fn restoring() -> MutexGuard<'static, Vec<isize>> {
+    RESTORING.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Sizes below this are a window mid-transition, not a size anybody chose.
+const SANE: u32 = 64;
+/// A client area this close to the monitor's is the monitor's (fullscreen rounds by a pixel).
+const FULL: i32 = 2;
+
+/// The borderless fullscreen a client's F11 gives it: no title bar and a client area covering the
+/// monitor it is on. A maximized window also covers its monitor but keeps its title bar, and a
+/// tiled or sized one is smaller, so neither counts.
+fn fullscreen(hwnd: HWND) -> bool {
+    if (style_of(hwnd) as u32) & WS_CAPTION.0 != 0 {
+        return false;
+    }
+    let Some((w, h)) = client_size(hwnd) else { return false };
+    let mut mi = MONITORINFO { cbSize: size_of::<MONITORINFO>() as u32, ..Default::default() };
+    // SAFETY: reads the monitor nearest to a window into a local with cbSize set; with
+    // MONITOR_DEFAULTTONEAREST there always is one.
+    if !unsafe { GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &mut mi) }.as_bool() {
+        return false;
+    }
+    let (mw, mh) = (mi.rcMonitor.right - mi.rcMonitor.left, mi.rcMonitor.bottom - mi.rcMonitor.top);
+    (w as i32 - mw).abs() <= FULL && (h as i32 - mh).abs() <= FULL
+}
+
+/// Keeps a client's size while it is normal, and gives it back after a fullscreen trip. A tiny
+/// client is `keep_tiny`'s (it has a size of its own), and a hidden one has no size worth reading.
+fn note_size(pid: u32, hwnd: HWND) {
+    // SAFETY: reads one window's state.
+    if unsafe { IsZoomed(hwnd) }.as_bool() || is_hidden(hwnd) || process::hung(pid) || waking().contains(&(hwnd.0 as isize)) {
+        return;
+    }
+    let Some(size) = client_size(hwnd).filter(|s| s.0 >= SANE && s.1 >= SANE) else { return };
+    let full = fullscreen(hwnd);
+    let mut all = normal_size();
+    let Some(at) = all.iter().position(|e| e.pid == pid) else {
+        all.push(Normal { pid, size, full });
+        return;
+    };
+    if full {
+        all[at].full = true;
+        return;
+    }
+    let (want, was_full) = (all[at].size, all[at].full);
+    if !was_full {
+        all[at].size = size;
+        return;
+    }
+    all[at].full = false;
+    if !needs_restore(was_full, want, size) {
+        return;
+    }
+    // A size nobody asked for (the client's own, on the way out of fullscreen): put ours back.
+    log::info!("client {pid}: out of fullscreen at {size:?}, putting its {want:?} back");
+    drop(all);
+    restore_size(pid, hwnd, want);
+}
+
+/// Whether a window that has just left fullscreen is at a size it wasn't at before it went in
+/// (pure): only then does anything have to be put back.
+fn needs_restore(was_full: bool, before: (u32, u32), now: (u32, u32)) -> bool {
+    was_full && before != now
+}
+
+/// Sets a client's window back to `size` (a client area) where it is, on a thread of its own: a
+/// slow client would hold up the sweep. Roblox may keep its minimum: that is its size then.
+fn restore_size(pid: u32, hwnd: HWND, size: (u32, u32)) {
+    let h = hwnd.0 as isize;
+    {
+        let mut r = restoring();
+        if r.contains(&h) {
+            return;
+        }
+        r.push(h);
+    }
+    std::thread::spawn(move || {
+        let hwnd = HWND(h as *mut _);
+        let (fw, fh) = frame(hwnd).unwrap_or((0, 0));
+        // SAFETY: a window-manager call on a top-level window: only its size changes.
+        let _ = unsafe {
+            SetWindowPos(hwnd, None, 0, 0, size.0 as i32 + fw, size.1 as i32 + fh, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE)
+        };
+        match client_size(hwnd) {
+            Some(now) => log::info!("client {pid}: asked for {size:?}, it has {now:?}"),
+            None => log::debug!("client {pid}: window went away before its size came back"),
+        }
+        restoring().retain(|x| *x != h);
+    });
 }
 
 /// Hides the client without taking the focus (Minimize on launch); nothing if it has no window or
@@ -1181,5 +1300,15 @@ mod tests {
         assert_eq!(restore_cmd(min, true), max);
         assert_eq!(restore_cmd(min, false), quiet);
         assert_eq!(restore_cmd(normal, false), quiet);
+    }
+
+    #[test]
+    fn only_a_fullscreen_trip_puts_a_size_back() {
+        // Out of fullscreen at Roblox's own size: ours goes back.
+        assert!(needs_restore(true, (1280, 720), (1024, 768)));
+        // The same size as before: nothing to do.
+        assert!(!needs_restore(true, (1280, 720), (1280, 720)));
+        // Not a fullscreen trip (a plain resize): the user's size is the size.
+        assert!(!needs_restore(false, (1280, 720), (1024, 768)));
     }
 }

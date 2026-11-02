@@ -369,7 +369,7 @@ impl Default for RenderFlags {
 }
 
 /// Anti-AFK: every `interval_min` (1..=19) minutes each client in a game that hasn't opted out
-/// gets a key press (`instances::afk`), the way `mode` says.
+/// gets a press (`instances::afk`), the way `mode` and `press` say.
 #[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", default)]
 #[ts(export)]
@@ -377,12 +377,29 @@ pub struct AntiAfk {
     pub enabled: bool,
     pub interval_min: u32,
     pub mode: AfkMode,
+    /// Focus mode only; background mode posts Tab, which the game can't see.
+    pub press: AfkPress,
 }
 
 impl Default for AntiAfk {
     fn default() -> Self {
-        Self { enabled: false, interval_min: 15, mode: AfkMode::Focus }
+        Self { enabled: false, interval_min: 15, mode: AfkMode::Focus, press: AfkPress::Space }
     }
+}
+
+/// What a focus-mode press is: the jump key, a camera drag, or the mouse alone. Space is what
+/// resets a treadmill's counter and is also what knocks the character off it.
+#[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+#[ts(export)]
+pub enum AfkPress {
+    /// Space through `SendInput`, as a keyboard sends it: the character jumps.
+    #[default]
+    Space,
+    /// The right button held for a few pixels: the camera turns a hair, nothing moves.
+    Camera,
+    /// The cursor goes into the client and back: no button, no camera, no step.
+    Mouse,
 }
 
 /// How anti-AFK presses a key.

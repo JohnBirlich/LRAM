@@ -12,6 +12,11 @@
 //!   window; the focus never moves, so it runs while the user is at the PC and in minimized
 //!   clients too. Roblox may not count posted input as activity in every game.
 //!
+//! In focus mode what the press does is `Settings.anti_afk.press`: Space (the jump, which resets a
+//! treadmill's counter and also knocks the character off it), a right-button camera drag of a few
+//! pixels, or the cursor moved into the client and back with no button at all. Both gentle kinds
+//! put the cursor and the focus back where they were.
+//!
 //! Nothing is injected into or read from the client; auto-rejoin on the 267 kick stays the
 //! fallback.
 
@@ -20,22 +25,25 @@ use std::thread::sleep;
 use std::time::Duration;
 
 use tauri::{AppHandle, Manager};
-use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
+use windows::Win32::Foundation::{HWND, LPARAM, POINT, RECT, WPARAM};
 use windows::Win32::System::SystemInformation::GetTickCount;
 use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetLastInputInfo, INPUT, INPUT_0, INPUT_KEYBOARD, INPUT_MOUSE, KEYBD_EVENT_FLAGS, KEYBDINPUT, KEYEVENTF_KEYUP,
-    KEYEVENTF_SCANCODE, LASTINPUTINFO, MOUSEEVENTF_MOVE, MOUSEINPUT, SendInput, VIRTUAL_KEY,
+    KEYEVENTF_SCANCODE, LASTINPUTINFO, MOUSE_EVENT_FLAGS, MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_MOVE, MOUSEEVENTF_RIGHTDOWN,
+    MOUSEEVENTF_RIGHTUP, MOUSEEVENTF_VIRTUALDESK, MOUSEINPUT, SendInput, VIRTUAL_KEY,
 };
+use windows::Win32::Graphics::Gdi::ClientToScreen;
 use windows::Win32::UI::WindowsAndMessaging::{
-    BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, PostMessageW, SetForegroundWindow, WA_ACTIVE, WA_INACTIVE,
-    WM_ACTIVATE, WM_KEYDOWN, WM_KEYUP,
+    BringWindowToTop, GetClientRect, GetCursorPos, GetForegroundWindow, GetSystemMetrics, GetWindowThreadProcessId,
+    PostMessageW, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SetCursorPos,
+    SetForegroundWindow, WA_ACTIVE, WA_INACTIVE, WM_ACTIVATE, WM_KEYDOWN, WM_KEYUP,
 };
 
 use super::{process, window};
 use crate::App;
 use crate::commands::{instances_changed, now_ms};
-use crate::model::AfkMode;
+use crate::model::{AfkMode, AfkPress};
 
 /// No keyboard or mouse input for this long counts as the user being away.
 const IDLE_MS: u32 = 5_000;
@@ -144,6 +152,7 @@ fn tick(app: &AppHandle) -> Duration {
         instances_changed(app);
         return TICK;
     }
+    let what = v.anti_afk.press;
     let mut failed = false;
     // Our own SendInput moves GetLastInputInfo too, so "the user came back" is any input newer
     // than our last injection.
@@ -170,7 +179,7 @@ fn tick(app: &AppHandle) -> Duration {
                 break;
             }
         }
-        let r = press(hwnd);
+        let r = press(hwnd, what);
         ours = last_input();
         match r {
             Pressed::Yes => s.tracker.mark_afk(&c.id, now_ms()),
@@ -215,13 +224,111 @@ enum Pressed {
     Interrupted,
 }
 
-/// Space in `hwnd`, then the focus back where it was, and a hidden client back down.
-fn press(hwnd: HWND) -> Pressed {
+/// The press in `hwnd`, then the focus back where it was, and a hidden client back down.
+fn press(hwnd: HWND, what: AfkPress) -> Pressed {
     PRESSING.store(true, Ordering::Relaxed);
-    let pressed = press_key(hwnd);
+    let pressed = match what {
+        AfkPress::Space => press_key(hwnd),
+        AfkPress::Camera => mouse_press(hwnd, true),
+        AfkPress::Mouse => mouse_press(hwnd, false),
+    };
     window::back_down(hwnd);
     PRESSING.store(false, Ordering::Relaxed);
     pressed
+}
+
+/// The gentle press: the cursor goes into the middle of the client and a few pixels to the right
+/// (with the right button held, which turns the camera a hair), then the cursor and the focus go
+/// back where they were. The character neither jumps nor steps, so a treadmill keeps its counter.
+fn mouse_press(hwnd: HWND, camera: bool) -> Pressed {
+    // SAFETY: reads which window is in front.
+    let prev = unsafe { GetForegroundWindow() };
+    // Roblox takes input only in the window it has, and only under the cursor.
+    let mut ok = prev == hwnd || to_front(hwnd);
+    let back = cursor();
+    if ok {
+        match inside(hwnd) {
+            Some((x, y)) => {
+                // Into the client first: that move must not be a camera drag.
+                ok = move_to(x, y);
+                let held = camera && ok && button(true);
+                ok = ok && move_to(x + 3, y) && move_to(x, y);
+                // Let go even when a move failed, or the button would stay down.
+                if held {
+                    ok = button(false) && ok;
+                }
+            }
+            None => ok = false,
+        }
+    }
+    if let Some((x, y)) = back {
+        // SAFETY: puts the cursor back; a failure only leaves it where the press left it.
+        let _ = unsafe { SetCursorPos(x, y) };
+    }
+    if !prev.is_invalid() && prev != hwnd && !to_front(prev) {
+        log::warn!("anti-AFK: couldn't give the focus back to the previous window; stopping this round");
+        return Pressed::Interrupted;
+    }
+    if ok { Pressed::Yes } else { Pressed::No }
+}
+
+/// The middle of a window's client area, in screen coordinates.
+fn inside(hwnd: HWND) -> Option<(i32, i32)> {
+    let mut r = RECT::default();
+    // SAFETY: reads one window's client rectangle into a local.
+    unsafe { GetClientRect(hwnd, &mut r) }.ok()?;
+    let mut at = POINT { x: (r.right - r.left) / 2, y: (r.bottom - r.top) / 2 };
+    // SAFETY: converts that client point to a screen point in place; no pointer escapes.
+    if !unsafe { ClientToScreen(hwnd, &mut at) }.as_bool() {
+        return None;
+    }
+    Some((at.x, at.y))
+}
+
+/// Where the cursor is now, so the press can put it back.
+fn cursor() -> Option<(i32, i32)> {
+    let mut at = POINT::default();
+    // SAFETY: reads the cursor position into a local.
+    unsafe { GetCursorPos(&mut at) }.ok()?;
+    Some((at.x, at.y))
+}
+
+/// Moves the cursor through `SendInput` (absolute, over all monitors), which the window under it
+/// counts as input; `SetCursorPos` may move it without any input event.
+fn move_to(x: i32, y: i32) -> bool {
+    // SAFETY: no arguments; metrics of the whole desktop.
+    let (w, h) = unsafe { (GetSystemMetrics(SM_CXVIRTUALSCREEN), GetSystemMetrics(SM_CYVIRTUALSCREEN)) };
+    // SAFETY: as above.
+    let (x0, y0) = unsafe { (GetSystemMetrics(SM_XVIRTUALSCREEN), GetSystemMetrics(SM_YVIRTUALSCREEN)) };
+    if w < 2 || h < 2 {
+        return false;
+    }
+    let nx = ((x - x0) as i64 * 65_535 / (w - 1) as i64).clamp(0, 65_535) as i32;
+    let ny = ((y - y0) as i64 * 65_535 / (h - 1) as i64).clamp(0, 65_535) as i32;
+    // SAFETY: one fully initialised mouse INPUT and its size, as SendInput requires.
+    let sent = unsafe {
+        let input = mouse_input(nx, ny, MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK);
+        SendInput(&[input], size_of::<INPUT>() as i32)
+    };
+    sent == 1
+}
+
+/// The right button down or up, where the cursor already is.
+fn button(down: bool) -> bool {
+    let flags = if down { MOUSEEVENTF_RIGHTDOWN } else { MOUSEEVENTF_RIGHTUP };
+    // SAFETY: one fully initialised mouse INPUT and its size, as SendInput requires.
+    let sent = unsafe {
+        let input = mouse_input(0, 0, flags);
+        SendInput(&[input], size_of::<INPUT>() as i32)
+    };
+    sent == 1
+}
+
+fn mouse_input(dx: i32, dy: i32, flags: MOUSE_EVENT_FLAGS) -> INPUT {
+    INPUT {
+        r#type: INPUT_MOUSE,
+        Anonymous: INPUT_0 { mi: MOUSEINPUT { dx, dy, mouseData: 0, dwFlags: flags, time: 0, dwExtraInfo: 0 } },
+    }
 }
 
 fn press_key(hwnd: HWND) -> Pressed {
@@ -379,5 +486,15 @@ mod tests {
         // Background mode doesn't wait for the user to be away; nobody due is still nothing.
         assert_eq!(plan(&clients, 25 * min, 15, 0, AfkMode::Background), ids(&["a", "b"]));
         assert_eq!(plan(&clients, 5 * min, 15, 0, AfkMode::Background), Plan::Wait);
+    }
+
+    #[test]
+    fn settings_stored_before_the_press_setting_keep_the_jump() {
+        let old: crate::model::AntiAfk =
+            serde_json::from_str(r#"{"enabled":true,"intervalMin":15,"mode":"focus"}"#).unwrap();
+        assert_eq!(old.press, AfkPress::Space);
+        let camera: crate::model::AntiAfk =
+            serde_json::from_str(r#"{"enabled":true,"intervalMin":10,"mode":"focus","press":"camera"}"#).unwrap();
+        assert_eq!((camera.press, camera.interval_min), (AfkPress::Camera, 10));
     }
 }

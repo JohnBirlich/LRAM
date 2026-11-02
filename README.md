@@ -7,8 +7,9 @@
 A fast, local-only account manager and multi-client launcher for Windows.<br>
 Your cookies stay encrypted on your PC. Nothing is sent anywhere except Roblox.
 
-<sub>**LRAM** — Local Roblox Account Manager. A personal build: the built-in updater is off (no
-release key ships with it), donations and the community Discord server of the original project are
+<sub>**LRAM** — Local Roblox Account Manager, a fork of **[RoALT](https://github.com/inspectsoftware/RoALT)**
+by **[inspectsoftware](https://github.com/inspectsoftware)**. A personal build: the built-in updater is off
+(no release key ships with it), donations and the community Discord server of the original project are
 not part of it, and releases are installed by hand.</sub>
 
 [![Latest release](https://img.shields.io/github/v/release/JohnBirlich/RAM?style=for-the-badge&color=b4f000&labelColor=1a1a1a&label=release)](https://github.com/JohnBirlich/RAM/releases/latest)
@@ -41,13 +42,14 @@ not part of it, and releases are installed by hand.</sub>
 
 | For everyone | For developers |
 |---|---|
-| [What is LRAM?](#-what-is-roalt) | [Architecture](#-architecture) |
+| [What is LRAM?](#-what-is-lram) | [Architecture](#-architecture) |
 | [Features](#-features) | [Tech stack](#-tech-stack) |
 | [Install](#-install) | [Build from source](#-build-from-source) |
 | [Quick start](#-quick-start) | [Project layout](#-project-layout) |
 | [Safety and privacy](#-safety-and-privacy) | [Testing](#-testing) |
 | [FAQ](#-faq) | [Contributing](#-contributing) |
 | [Community](#-community) | [Cut a release](#-cut-a-release) |
+| [A fork of RoALT](#-a-fork-of-roalt) | |
 
 <br>
 
@@ -62,6 +64,9 @@ and only ever one client open at a time. LRAM removes all of that.
 - **Run several Roblox windows side by side**, and let LRAM bring back any that crash or get kicked.
 
 It runs entirely on your PC. There is no LRAM account, no LRAM server and no tracking.
+
+LRAM is a fork of **[RoALT](https://github.com/inspectsoftware/RoALT)**, the local-only Roblox account
+manager by **[inspectsoftware](https://github.com/inspectsoftware)** — see [A fork of RoALT](#-a-fork-of-roalt).
 
 | | |
 |---|---|
@@ -671,10 +676,33 @@ Bug reports, ideas and pull requests are welcome.
 
 <br>
 
+## 🧬 A fork of RoALT
+
+LRAM is a fork of **[RoALT](https://github.com/inspectsoftware/RoALT)**, the local-only Roblox account
+manager written by **[inspectsoftware](https://github.com/inspectsoftware)**. The architecture, the
+encrypted vault, the launcher, the instance tracker and the whole original feature set are that
+project's work, and the credit for them belongs to its author.
+
+What this fork changes:
+
+- **Name and identity**: LRAM instead of RoALT, its own icon, window title and installer.
+- **No updater, no donations, no community Discord**: releases are downloaded and installed by hand,
+  and nothing in the app asks for money.
+- **English only**: one language, no translations to keep in sync.
+- **Its own releases**: fixes and features after the fork point (0.10.x and 0.11.x) come from the
+  reports and suggestions in `docs/REQUESTS-ru.md` — false "Disconnected" and "Closed unexpectedly"
+  states, the first-launch "failed" report, the 403 hint, window tiling, friend requests and the
+  anti-AFK press modes.
+
+The rest of the credit is Roblox's own API and client, which do the actual work.
+
+<br>
+
 ## 📜 Disclaimer
 
-LRAM is an independent project, not affiliated with or endorsed by Roblox Corporation. Use it only
-with accounts you own. Roblox doesn't officially support running several clients at once and may
+LRAM is a fork of RoALT by [inspectsoftware](https://github.com/inspectsoftware) and is an independent
+project: not affiliated with or endorsed by Roblox Corporation, and not the original author's build.
+Use it only with accounts you own. Roblox doesn't officially support running several clients at once and may
 change how its client behaves at any time.
 
 <div align="center">

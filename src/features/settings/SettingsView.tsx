@@ -386,6 +386,20 @@ export function SettingsView({ vault, settings, onPerformance, onRecoveryCode }:
             />
           </Row>
         )}
+        {settings.antiAfk.enabled && settings.antiAfk.mode === "focus" && (
+          <Row title={t("settings.antiAfkPress")} hint={t("settings.antiAfkPressHint")}>
+            <Segmented
+              label={t("settings.antiAfkPress")}
+              value={settings.antiAfk.press}
+              options={[
+                { value: "space", label: t("settings.antiAfkPressSpace"), title: t("settings.antiAfkPressSpaceHint") },
+                { value: "camera", label: t("settings.antiAfkPressCamera"), title: t("settings.antiAfkPressCameraHint") },
+                { value: "mouse", label: t("settings.antiAfkPressMouse"), title: t("settings.antiAfkPressMouseHint") },
+              ]}
+              onChange={(press) => set.mutate({ antiAfk: { ...settings.antiAfk, press } })}
+            />
+          </Row>
+        )}
         {settings.antiAfk.enabled && (
           <Row title={t("settings.antiAfkEvery")} hint={t("settings.antiAfkEveryHint")}>
             <NumberField

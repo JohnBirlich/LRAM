@@ -370,9 +370,12 @@ follow again (half-made ones too, by the bits alone).
 Anti-AFK (opt-in) uses `SendInput`, so it needs the client in front: it runs only after 5 s with no
 user input (`GetLastInputInfo`), wakes minimized clients as ghosts first (`window::wake_for_press`), and takes the focus with `SetForegroundWindow`,
 then `AttachThreadInput`, then after a zero-movement mouse input that lifts the foreground lock (not an
-ALT tap, which opens menus). Space goes out by scan code only while the client is confirmed in front,
-then the previous window gets the focus back. Our own injection also moves `GetLastInputInfo`, so any
-newer input mid-round means the user is back and the round stops. This is input automation: it moves the
+ALT tap, which opens menus). The press itself is `Settings.anti_afk.press`: Space goes out by scan code
+only while the client is confirmed in front (a jump, which resets a treadmill's counter and also knocks
+the character off it); Camera holds the right button for a 3 px move and back; Mouse only walks the cursor
+into the middle of the client and back, which leaves the game untouched. Both gentle kinds put the cursor
+where it was. Then the previous window gets the focus back. Our own injection also moves
+`GetLastInputInfo`, so any newer input mid-round means the user is back and the round stops. This is input automation: it moves the
 focus for a moment and Roblox may treat injected input as it sees fit, so it is off by default and each
 client can opt out.
 

@@ -259,6 +259,7 @@ All return `Result<T, AppError>`; `AppError` reaches the UI as `{kind, message}`
 | | `favourites_list()` / `favourite_save(input)` / `favourite_remove(id)` / `favourites_reorder(ids)` | |
 | Instances | `instances_list()` | `Instance[]` |
 | | `instance_close(id, force)` / `instances_close_all(force)` | — |
+| | `instance_set_muted(id, muted)` — the Windows mixer's mute for that client (`instances::audio`) | — |
 | | `multi_instance_status()` | `{enabled, held, blocking_pid?}` |
 | Servers | `game_info(place_id)` | `GameInfo` |
 | | `servers_list(place_id, {order, exclude_full, cursor?, account_id?})` | `ServerPage` |
@@ -378,6 +379,13 @@ where it was. Then the previous window gets the focus back. Our own injection al
 `GetLastInputInfo`, so any newer input mid-round means the user is back and the round stops. This is input automation: it moves the
 focus for a moment and Roblox may treat injected input as it sees fit, so it is off by default and each
 client can opt out.
+
+Client sound (opt-in via `Settings.mute_clients`, per client with `instance_set_muted`): Core Audio on
+its own thread (`instances/audio.rs`), `IAudioSessionManager2` → `IAudioSessionControl2::GetProcessId`
+→ `ISimpleAudioVolume::SetMute` on the default render endpoint. Roblox makes the session a few seconds
+after the window and may replace it, so muted clients are re-muted every 5 s; an unmuted one is touched
+only when this worker muted it before, so the Windows mixer stays the user's. Nothing in the game's own
+volume or memory is read.
 
 Discord alerts (opt-in): the webhook URL is encrypted with its own AAD (`roalt.discord.webhook`) and
 accepted only for the Discord hosts, https, `/api/webhooks/<id>/<token>`; redirects are off. Events are

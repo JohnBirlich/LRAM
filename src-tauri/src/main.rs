@@ -492,6 +492,7 @@ fn init(app: &TauriApp, data_dir: &Path, moved_from: Option<&Path>) -> std::resu
     spawn_auto_lock(app.handle().clone());
     instances::Tracker::spawn(app.handle().clone());
     instances::afk::spawn(app.handle().clone());
+    instances::audio::spawn(app.handle().clone());
     network::spawn(app.handle().clone());
     launcher::flags::restore();
     launcher::client_settings::spawn(app.handle().clone());
@@ -630,6 +631,7 @@ fn main() {
             commands::instance_set_limits,
             commands::instance_trim,
             commands::instance_set_anti_afk,
+            commands::instance_set_muted,
             commands::instances_metrics,
             commands::system_usage,
             commands::instance_stop_relaunch,

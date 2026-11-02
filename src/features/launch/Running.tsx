@@ -141,6 +141,13 @@ function LimitsBody({ inst }: { inst: Instance }) {
       </fieldset>
       <div className="flex items-center justify-between gap-2">
         <span className="flex flex-col">
+          <span>{t("launch.limits.mute")}</span>
+          <span className="mono text-xs text-dim">{inst.muted ? t("launch.limits.muted") : t("launch.limits.notMuted")}</span>
+        </span>
+        <Switch label={t("launch.limits.mute")} checked={inst.muted} onChange={(muted) => api.instanceSetMuted(inst.id, muted).catch(toastError)} />
+      </div>
+      <div className="flex items-center justify-between gap-2">
+        <span className="flex flex-col">
           <span>{t("launch.limits.antiAfk")}</span>
           <span className="mono text-xs text-dim">
             {!afk?.enabled ? t("launch.limits.afkOff") : inst.afkAt !== null ? t("launch.limits.lastKey", { ago: uptime(inst.afkAt, Date.now()) }) : t("launch.limits.noKey")}

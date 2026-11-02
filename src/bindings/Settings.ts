@@ -104,6 +104,10 @@ fairCap: boolean, adaptive: Adaptive,
  */
 bandwidthKbps: number, antiAfk: AntiAfk, 
 /**
+ * New clients start muted (`instances::audio`); each client can be unmuted on its own.
+ */
+muteClients: boolean, 
+/**
  * Which events go to the Discord webhook (the webhook itself is in the vault).
  */
 discord: DiscordEvents, 

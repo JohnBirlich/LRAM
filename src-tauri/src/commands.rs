@@ -844,6 +844,10 @@ pub(crate) async fn launch_tracked(
         }
     };
     let instance = s.tracker.register(&info, target);
+    if v.mute_clients {
+        s.tracker.set_muted(&instance.id, true);
+        crate::instances::audio::wake();
+    }
     drop(launching);
     instances_changed(app);
     // Kill all pressed while the ticket was fetched: this client goes too.
@@ -1476,6 +1480,17 @@ pub fn instance_set_anti_afk(app: AppHandle, s: State<'_, App>, id: String, enab
     if !s.tracker.set_anti_afk(&id, enabled) {
         return Err(AppError::NotFound);
     }
+    instances_changed(&app);
+    Ok(())
+}
+
+/// Mutes or unmutes one running client through Core Audio (`instances::audio` applies it).
+#[tauri::command]
+pub fn instance_set_muted(app: AppHandle, s: State<'_, App>, id: String, muted: bool) -> Result<()> {
+    if !s.tracker.set_muted(&id, muted) {
+        return Err(AppError::NotFound);
+    }
+    crate::instances::audio::wake();
     instances_changed(&app);
     Ok(())
 }
@@ -2440,6 +2455,12 @@ pub fn settings_set(app: AppHandle, s: State<'_, App>, patch: SettingsPatch) -> 
             return Err(AppError::Invalid(tr!("Anti-AFK must press a key every 1 to 19 minutes.")));
         }
         v.anti_afk = a;
+    }
+    if let Some(m) = patch.mute_clients {
+        v.mute_clients = m;
+        // New clients take it at launch; the running ones take it now.
+        s.tracker.set_all_muted(m);
+        crate::instances::audio::wake();
     }
     if let Some(d) = patch.discord {
         if d.status_every_min != 0 && !(5..=24 * 60).contains(&d.status_every_min) {

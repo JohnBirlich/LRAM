@@ -270,6 +270,7 @@ impl Tracker {
             rejoins: 0,
             limits: Default::default(),
             anti_afk: true,
+            muted: false,
             afk_at: None,
             throttled: false,
             micro: false,
@@ -485,6 +486,40 @@ impl Tracker {
         let Some(e) = entries.iter_mut().find(|e| e.inst.id == id && e.inst.state != InstanceState::Exited) else { return false };
         e.inst.anti_afk = on;
         true
+    }
+
+    /// Mutes or unmutes a running client (`instances::audio` applies it); false when there is
+    /// no such client.
+    pub fn set_muted(&self, id: &str, on: bool) -> bool {
+        let mut entries = self.entries();
+        let Some(e) = entries.iter_mut().find(|e| e.inst.id == id && e.inst.state != InstanceState::Exited) else {
+            return false;
+        };
+        e.inst.muted = on;
+        true
+    }
+
+    /// Mutes or unmutes every running client; how many there were.
+    pub fn set_all_muted(&self, on: bool) -> usize {
+        let mut entries = self.entries();
+        let mut n = 0;
+        for e in entries.iter_mut().filter(|e| e.inst.state != InstanceState::Exited) {
+            e.inst.muted = on;
+            n += 1;
+        }
+        n
+    }
+
+    /// Every running client with a known process, and whether its sound should be off.
+    pub fn mute_targets(&self) -> Vec<super::audio::MuteTarget> {
+        self.entries()
+            .iter()
+            .filter(|e| e.inst.state != InstanceState::Exited && !e.closing)
+            .filter_map(|e| {
+                let (pid, _) = client_of(e)?;
+                Some(super::audio::MuteTarget { pid, muted: e.inst.muted })
+            })
+            .collect()
     }
 
     /// Clients anti-AFK may press keys in: in a game, opted in, not being closed, the client
@@ -937,11 +972,12 @@ impl Tracker {
             let closing = e.closing && (e.adopted || !w.adopted);
             let old = std::mem::replace(e, w);
             e.closing = closing;
-            // set_rejoins / set_limits / give_up / set_anti_afk / mark_afk may have run since the
+            // set_rejoins / set_limits / give_up / set_anti_afk / set_muted / mark_afk may have run since the
             // copy was taken.
             e.inst.rejoins = old.inst.rejoins;
             (e.inst.limits, e.inst.applied_limits) = (old.inst.limits, old.inst.applied_limits);
             (e.inst.anti_afk, e.inst.afk_at) = (old.inst.anti_afk, old.inst.afk_at);
+            e.inst.muted = old.inst.muted;
             (e.inst.throttled, e.inst.micro, e.window_seen) = (old.inst.throttled, old.inst.micro, old.window_seen);
             (e.gave_up, e.relaunching) = (old.gave_up, old.relaunching);
             (e.inst.relaunching, e.inst.relaunch_problem) = (old.inst.relaunching, old.inst.relaunch_problem.clone());
@@ -1702,6 +1738,38 @@ mod tests {
         assert!(!t.entries().iter().any(|e| e.closing));
         t.clear_ended();
         assert_eq!(t.list().len(), 5);
+    }
+
+    #[test]
+    fn the_mute_toggle_belongs_to_one_client_and_the_switch_to_all() {
+        let t = Tracker::new();
+        let a = t.register(&LaunchInfo { pid_start: Some(50), ..info(900, 1_000, false) }, target()).id;
+        let b = t.register(&LaunchInfo { pid_start: Some(60), ..info(901, 1_000, true) }, target()).id;
+        let muted = |id: &str| t.get(id).map(|i| i.muted);
+        // A new client is not muted on its own: the launch takes `Settings.mute_clients`.
+        assert_eq!((muted(&a), muted(&b)), (Some(false), Some(false)));
+        assert!(!t.set_muted("no such client", true));
+        assert!(t.set_muted(&a, true));
+        assert_eq!((muted(&a), muted(&b)), (Some(true), Some(false)));
+        // The switch takes the running ones with it.
+        assert_eq!(t.set_all_muted(true), 2);
+        assert_eq!((muted(&a), muted(&b)), (Some(true), Some(true)));
+        assert_eq!(t.set_all_muted(false), 2);
+        assert_eq!((muted(&a), muted(&b)), (Some(false), Some(false)));
+
+        // Only clients LRAM follows and whose process it knows are muted; an ended one is not.
+        {
+            let mut v = t.entries();
+            for e in v.iter_mut() {
+                e.adopted = true;
+                e.alive = true;
+                e.start_time = Some(50);
+            }
+        }
+        t.set_all_muted(true);
+        assert_eq!(t.mute_targets(), [(900, true), (901, true)].map(|(pid, muted)| super::super::audio::MuteTarget { pid, muted }));
+        t.entries().iter_mut().find(|e| e.inst.id == b).unwrap().inst.state = Exited;
+        assert_eq!(t.mute_targets(), [super::super::audio::MuteTarget { pid: 900, muted: true }]);
     }
 
     #[test]

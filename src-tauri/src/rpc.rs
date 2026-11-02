@@ -210,6 +210,7 @@ mod tests {
             rejoins: 0,
             limits: Limits::default(),
             anti_afk: true,
+            muted: false,
             afk_at: None,
             throttled: false,
             micro: false,

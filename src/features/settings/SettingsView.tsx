@@ -412,6 +412,9 @@ export function SettingsView({ vault, settings, onPerformance, onRecoveryCode }:
             />
           </Row>
         )}
+        <Row title={t("settings.muteClients")} hint={t("settings.muteClientsHint")}>
+          <Switch label={t("settings.muteClients")} checked={settings.muteClients} onChange={(muteClients) => set.mutate({ muteClients })} />
+        </Row>
         <Row
           title={t("settings.breaker")}
           hint={t("settings.breakerHint")}

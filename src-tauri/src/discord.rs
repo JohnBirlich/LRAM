@@ -620,6 +620,7 @@ mod tests {
             rejoins: 0,
             limits: Default::default(),
             anti_afk: true,
+            muted: false,
             afk_at: None,
             throttled: false,
             micro: false,

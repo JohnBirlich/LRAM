@@ -25,6 +25,10 @@ rejoins: number, limits: Limits,
  */
 antiAfk: boolean, 
 /**
+ * Its sound is muted through Core Audio, as the Windows mixer's mute would (`audio`).
+ */
+muted: boolean, 
+/**
  * Unix ms of its last anti-AFK key press.
  */
 afkAt: number | null, 

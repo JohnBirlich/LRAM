@@ -3,6 +3,7 @@
 //! (`afk`) presses a key the way a keyboard does.
 
 pub mod afk;
+pub mod audio;
 mod autopsy;
 mod capture;
 mod gpu;

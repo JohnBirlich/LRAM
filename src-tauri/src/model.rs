@@ -240,6 +240,8 @@ pub struct Settings {
     /// rights by `bandwidth_apply`, which alone changes this); 0: none.
     pub bandwidth_kbps: u32,
     pub anti_afk: AntiAfk,
+    /// New clients start muted (`instances::audio`); each client can be unmuted on its own.
+    pub mute_clients: bool,
     /// Which events go to the Discord webhook (the webhook itself is in the vault).
     pub discord: DiscordEvents,
     /// Install a new Roblox version on its own once no client runs and no launch or batch does
@@ -498,6 +500,7 @@ impl Default for Settings {
             adaptive: Adaptive::default(),
             bandwidth_kbps: 0,
             anti_afk: AntiAfk::default(),
+            mute_clients: false,
             discord: DiscordEvents::default(),
             auto_update: false,
             // Off in this build: it carries no release key, so nothing could be verified and run.
@@ -576,6 +579,8 @@ pub struct SettingsPatch {
     pub adaptive: Option<Adaptive>,
     #[ts(optional)]
     pub anti_afk: Option<AntiAfk>,
+    #[ts(optional)]
+    pub mute_clients: Option<bool>,
     #[ts(optional)]
     pub discord: Option<DiscordEvents>,
     #[ts(optional)]
@@ -894,6 +899,9 @@ pub struct Instance {
     pub limits: Limits,
     /// Anti-AFK presses keys in it (when on in Settings); false: opted out.
     pub anti_afk: bool,
+    /// Its sound is muted through Core Audio, as the Windows mixer's mute would (`audio`).
+    #[serde(default)]
+    pub muted: bool,
     /// Unix ms of its last anti-AFK key press.
     pub afk_at: Option<i64>,
     /// Held to `Settings.mem_throttle`'s CPU cap: its memory is over that limit.

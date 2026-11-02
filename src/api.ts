@@ -177,6 +177,8 @@ export const api = {
   instanceTrim: (id: string) => invoke<[number, number]>("instance_trim", { id }),
   /** Opts one running client in or out of anti-AFK. */
   instanceSetAntiAfk: (id: string, enabled: boolean) => invoke<void>("instance_set_anti_afk", { id, enabled }),
+  /** Mutes or unmutes one running client through Windows Core Audio (its own mixer channel). */
+  instanceSetMuted: (id: string, muted: boolean) => invoke<void>("instance_set_muted", { id, muted }),
   /** The client's preview at most maxW wide: always a 24-byte header, then RGBA unless its picture number is `known` or it has no picture (`window::Preview::to_bytes`). */
   instanceThumbnail: (id: string, maxW: number, known: number) => invoke<ArrayBuffer>("instance_thumbnail", { id, maxW, known }),
   /** Brings the client's window to the front, minimizes or restores it. */

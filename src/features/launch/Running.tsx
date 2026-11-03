@@ -39,7 +39,9 @@ export function useNow(ms: number) {
   return now;
 }
 
-const CAPS = [0, 50, 25, 10, 5];
+const CAPS = [0, 50, 25, 10, 5, 2, 1];
+/** Below 5 % of the whole CPU a client in a game starts to lag. */
+const tight = (cap: number | null | undefined) => !!cap && cap < 5;
 /** -1: the default from Settings; 0: never. */
 const TRIMS = [-1, 0, 5, 15, 30, 60];
 /** Logical processors a mask can name (JS numbers hold 53 bits exactly). */
@@ -95,6 +97,7 @@ function LimitsBody({ inst }: { inst: Instance }) {
           onChange={(c) => set({ cpuCap: c || null })}
         />
       </div>
+      {tight(inst.limits.cpuCap) && <p className="state text-orange">{t("settings.cpuTinyHint")}</p>}
       <div className="flex items-center justify-between gap-2">
         <span>{t("launch.limits.eco")}</span>
         <Switch label={t("launch.limits.eco")} checked={inst.limits.eco} onChange={(eco) => set({ eco })} />

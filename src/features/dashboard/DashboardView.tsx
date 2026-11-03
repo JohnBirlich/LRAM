@@ -17,7 +17,9 @@ import { homeSorted, reordered, useHomeDetailed, useHomeSizes, type HomeTabs } f
 import { usePreviewFps, type PreviewFps } from "./previewFps";
 import { useGridDrag } from "./useGridDrag";
 
-const CAPS = [0, 50, 25, 10, 5];
+const CAPS = [0, 50, 25, 10, 5, 2, 1];
+/** Below 5 % of the whole CPU a client in a game starts to lag. */
+const tight = (cap: number | null | undefined) => !!cap && cap < 5;
 /** How often a hidden LRAM window looks again whether it is shown. */
 const HIDDEN_MS = 500;
 
@@ -457,7 +459,7 @@ function ClientMenu({ at, account, onClose, afkOn, closing, onLimits, onCloseCli
         it === null ? (
           <div key={n} role="separator" className="h-px my-1 bg-line" />
         ) : "caps" in it ? (
-          <div key="caps" role="group" aria-label={t("dashboard.cpuLimit")} className="flex items-center gap-1 min-h-10 px-2.5">
+          <div key="caps" role="group" aria-label={t("dashboard.cpuLimit")} className="flex flex-wrap items-center gap-1 min-h-10 px-2.5 pb-1">
             <span className="flex-1 text-dim">{t("dashboard.cpuLimit")}</span>
             {CAPS.map((c) => (
               <button
@@ -471,6 +473,7 @@ function ClientMenu({ at, account, onClose, afkOn, closing, onLimits, onCloseCli
                 {c ? `${c}` : t("common.off")}
               </button>
             ))}
+            {tight(i?.limits.cpuCap) && <p className="basis-full text-xs text-orange">{t("settings.cpuTinyHint")}</p>}
           </div>
         ) : (
           <button

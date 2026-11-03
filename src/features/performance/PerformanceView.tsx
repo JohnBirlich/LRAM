@@ -195,9 +195,10 @@ export function PerformanceView({ settings }: { settings: Settings }) {
                   mono
                   label={t("settings.adaptiveBgCpu")}
                   value={settings.adaptive.background.cpuCap ?? 0}
-                  options={[0, 50, 25, 10, 5].map((c) => ({ value: c, label: c ? t("settings.percent", { n: c }) : t("common.off") }))}
+                  options={[0, 50, 25, 10, 5, 2, 1].map((c) => ({ value: c, label: c ? t("settings.percent", { n: c }) : t("common.off") }))}
                   onChange={(c) => set.mutate({ adaptive: { ...settings.adaptive, background: { ...settings.adaptive.background, cpuCap: c || null } } })}
                 />
+                {tight(settings.adaptive.background.cpuCap) && <p className="basis-full state text-orange">{t("settings.cpuTinyHint")}</p>}
                 <label className="flex items-center gap-2">
                   <span className="text-xs text-dim">{t("settings.efficiency")}</span>
                   <Switch
@@ -287,6 +288,8 @@ export function PerformanceView({ settings }: { settings: Settings }) {
 
 /** What a preset's card lists, so the settings below it stay in reach. */
 const FACTS_SHOWN = 3;
+/** Below 5 % of the whole CPU a client in a game starts to lag. */
+const tight = (cap: number | null | undefined) => !!cap && cap < 5;
 /** Only Roblox defaults names these: the others leave a user's own memory limits alone. */
 const noThrottle = { mb: 0, cpuCap: 10 };
 const lightest: RenderFlags = { msaa: "x1", texture: "lowest", mode: "default", graySky: false, noGrass: true, lowestFrm: true, pauseVoxelizer: false };

@@ -327,6 +327,7 @@
   "settings.fairCap": "Fair CPU cap",
   "settings.fairCapHint": "Divides the CPU among the clients, so each gets a smaller cap as more run. The client in front, clients loading or not responding and Full quality accounts run free. A client's own limit on Home wins.",
   "settings.adaptiveBgCpu": "Background CPU limit",
+  "settings.cpuTinyHint": "Below 5% a client in a game starts to lag and can be dropped from it. The cap is a hard Windows limit, not a target.",
   "settings.adaptiveBgEco": "Background efficiency mode",
   "settings.adaptiveBgTrim": "Background trim",
   "settings.panic": "Panic hotkey",

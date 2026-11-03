@@ -1103,16 +1103,6 @@ pub fn bulk_current(s: State<'_, App>) -> Option<BulkProgress> {
     s.bulk.current()
 }
 
-pub(crate) fn cached_game_name(s: &App, place_id: i64) -> Option<String> {
-    s.db.cache_get(&format!("game:{place_id}"), i64::MAX / 2, now_ms())
-        .ok()
-        .flatten()
-        .and_then(|(json, _)| {
-            serde_json::from_str::<GameInfo>(&json).inspect_err(|e| log::debug!("cached game {place_id} unreadable: {e}")).ok()
-        })
-        .map(|g| g.name)
-}
-
 #[tauri::command]
 pub async fn game_info(s: State<'_, App>, place_id: i64) -> Result<GameInfo> {
     let key = format!("game:{place_id}");

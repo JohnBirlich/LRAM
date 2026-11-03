@@ -92,10 +92,10 @@ If it ever needs to come back:
   mark is in `Logo` (`src/ui/Icon.tsx`), in the splash and in `docs/images/banner*.png`.
 - **Screenshots** — taken from the old look and deleted, so as not to show something untrue. New ones
   are taken from the running app (`Win+Shift+S` or any screenshot tool) and put in `docs/images/`.
-- **Discord rich presence** is off: `CLIENT_ID` is empty. Register your own application at
-  https://discord.com/developers/applications (Rich Presence → Assets: a picture with the key
-  `lram`) and pass its id at build time:
-  `$env:LRAM_DISCORD_APP_ID="1234567890"; powershell -File scripts\build-installer.ps1`.
+- **Discord rich presence** — off in 0.12.1 (`CLIENT_ID` was empty, so no build carried a Discord
+  application id), and the whole pipe client was deleted in 0.12.3: `src-tauri/src/rpc.rs`, the
+  `LRAM_DISCORD_APP_ID` wiring and the **Settings → Show on Discord** switch are gone. Only the
+  webhook alerts in `discord.rs` remain.
 - **SignPath signing** — not done: it needs an account and an approved project, which is not possible
   from the sandbox. The workflow is ready; see below.
 

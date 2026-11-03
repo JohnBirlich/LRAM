@@ -16,6 +16,7 @@ import { AccountTabs } from "./AccountTabs";
 import { homeSorted, reordered, useHomeDetailed, useHomeSizes, type HomeTabs } from "./homeLayout";
 import { usePreviewFps, type PreviewFps } from "./previewFps";
 import { useGridDrag } from "./useGridDrag";
+import { saveReport } from "../debug/report";
 
 const CAPS = [0, 50, 25, 10, 5, 2, 1];
 /** Below 5 % of the whole CPU a client in a game starts to lag. */
@@ -595,6 +596,7 @@ function Trouble({ inst: i, account: a }: { inst: Instance; account: AccountSumm
       <div className="flex gap-2.5">
         <button className="btn" onClick={() => api.instancesRetryRelaunch().catch(toastError)}>{t("home.tryNow")}</button>
         <button className="btn btn-ghost" onClick={() => api.instanceStopRelaunch(i.id).catch(toastError)}>{t("home.stopTrying")}</button>
+        <button className="btn btn-ghost" title={t("dashboard.reportHint")} onClick={() => void saveReport()}>{t("dashboard.report")}</button>
       </div>
     </section>
   );
@@ -757,6 +759,9 @@ export function DashboardView({ accounts, groups, home, onLaunch, onAdd, onImpor
                       }}
                     >
                       {t("dashboard.refresh")}
+                    </button>
+                    <button className="menu-item" popoverTarget="home-more" popoverTargetAction="hide" title={t("dashboard.reportHint")} onClick={() => void saveReport()}>
+                      {t("dashboard.report")}
                     </button>
                     <div role="separator" className="h-px my-1 bg-line" />
                     <button className="menu-item text-orange" popoverTarget="home-more" popoverTargetAction="hide" onClick={() => setConfirmClose(true)}>{t("launch.running.closeAll")}</button>

@@ -4,7 +4,8 @@
 //! `settings.mem_restart_mb` (memory) on, each still open is closed and the account launched again into the same target after a backoff
 //! (`launcher::bulk::jittered(backoff(settings.launch_delay_ms, recent))`), within the crash
 //! breaker: at most `settings.breaker_max` relaunches of one account per
-//! `settings.breaker_window_min` minutes. A client stays open until the launch looks possible, and
+//! `settings.breaker_window_min` minutes (a client Roblox keeps kicking off sits in a corner of the
+//! grid and is restarted, not left dead; the note says what happened and "Retry now" forgets it). A client stays open until the launch looks possible, and
 //! what may pass by itself (no network, Roblox down, a batch, a locked vault) is tried again for
 //! `RETRY_FOR`: a short outage disconnects every client at once, and must not end them all.
 

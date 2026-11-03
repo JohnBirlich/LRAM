@@ -495,7 +495,14 @@ pub struct Adaptive {
 
 impl Default for Adaptive {
     fn default() -> Self {
-        Self { enabled: false, background: Limits { cpu_cap: Some(25), eco: true, ..Limits::default() } }
+        Self { enabled: true, background: Limits { eco: true, ..Limits::default() } }
+    }
+}
+
+impl Adaptive {
+    /// What 0.11 and earlier wrote when nobody touched the manager: off, and a 25 % cap for later.
+    fn untouched(&self) -> bool {
+        !self.enabled && self.background == Limits { cpu_cap: Some(25), eco: true, ..Limits::default() }
     }
 }
 
@@ -515,7 +522,7 @@ impl Default for Settings {
             launch_delay_ms: 6_000,
             auto_rejoin: false,
             auto_restart_on_crash: false,
-            breaker_max: 3,
+            breaker_max: 5,
             breaker_window_min: 10,
             close_grace_s: 5,
             launch_args: String::new(),
@@ -551,6 +558,19 @@ impl Default for Settings {
             auto_tile: false,
             allow_public_networks: true,
         }
+    }
+}
+
+impl Settings {
+    /// Brings settings stored by an older LRAM up to this one's defaults; true when they changed.
+    /// 0.12.0 lowers the priority of clients in the background by default (`Adaptive`), and an
+    /// install that never touched the manager has the old default stored, not the new one.
+    pub fn upgrade(&mut self) -> bool {
+        if self.adaptive.untouched() {
+            self.adaptive = Adaptive::default();
+            return true;
+        }
+        false
     }
 }
 
@@ -1367,6 +1387,18 @@ mod tests {
         all.sort_by(group_order);
         let names: Vec<&str> = all.iter().map(|g| g.name.as_str()).collect();
         assert_eq!(names, ["1Main", "007 Bank", "12 trade", "Farm", "PvP"]);
+    }
+
+    #[test]
+    fn the_old_untouched_manager_is_taken_along_and_a_choice_is_left_alone() {
+        let mut old = Settings { adaptive: Adaptive { enabled: false, background: Limits { cpu_cap: Some(25), eco: true, ..Limits::default() } }, ..Settings::default() };
+        assert!(old.upgrade());
+        assert_eq!(old.adaptive, Adaptive::default());
+        assert!(!old.upgrade(), "nothing left to do");
+        let mut off = Settings { adaptive: Adaptive { enabled: false, background: Adaptive::default().background }, ..Settings::default() };
+        assert!(!off.upgrade(), "turned off by hand");
+        assert!(!off.adaptive.enabled);
+        assert!(Adaptive::default().enabled && Adaptive::default().background.cpu_cap.is_none(), "on, and no cap out of the box");
     }
 
     #[test]

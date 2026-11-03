@@ -116,6 +116,28 @@ pub fn of(v: &Settings, preview_fps: Option<u32>, now_ms: i64) -> String {
     serde_json::to_string_pretty(&file).expect("plain data serializes")
 }
 
+/// A client's limits in one line, for the diagnostics report.
+pub fn limits_line(l: &crate::model::Limits) -> String {
+    let mut out = Vec::new();
+    if let Some(c) = l.cpu_cap {
+        out.push(format!("cpu {c}%"));
+    }
+    if l.eco {
+        out.push("eco".to_owned());
+    }
+    if let Some(m) = l.trim_every_min.filter(|m| *m > 0) {
+        out.push(format!("trim {m} min"));
+    }
+    if let Some(mask) = l.affinity {
+        out.push(format!("cores {mask:#x}"));
+    }
+    if out.is_empty() {
+        "none".to_owned()
+    } else {
+        out.join(", ")
+    }
+}
+
 /// Which cores are this PC's business: a mask from another one could pin clients to a single core.
 fn without_cores(mut a: Adaptive) -> Adaptive {
     a.background.affinity = None;

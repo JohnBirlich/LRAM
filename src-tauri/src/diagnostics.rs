@@ -162,6 +162,9 @@ fn compose(head: &str, sections: &[(String, Vec<String>)], max: usize) -> String
 /// Everything the report is made of: read once on a background thread.
 pub struct Sources {
     pub head: String,
+    /// What the clients are doing right now (`commands::diagnostics_sources`): the states, pids and
+    /// windows that answer "why did it open full screen" and "why is it not counted".
+    pub clients: String,
     pub lram_log: std::path::PathBuf,
     pub roblox_logs: Vec<std::path::PathBuf>,
     /// Account and favourite names, kept out of the logs' text.
@@ -169,11 +172,12 @@ pub struct Sources {
 }
 
 pub fn report(src: &Sources, max: usize) -> String {
+    let head = format!("{}\n{}\n", src.head.trim_end(), src.clients.trim_end());
     let mut sections = vec![("LRAM log".to_owned(), clean_tail(&src.lram_log, LRAM_LINES, &src.names))];
     for (n, log) in src.roblox_logs.iter().enumerate() {
         sections.push((format!("Roblox log {}", n + 1), clean_tail(log, ROBLOX_LINES, &src.names)));
     }
-    compose(&src.head, &sections, max)
+    compose(&head, &sections, max)
 }
 
 #[cfg(test)]

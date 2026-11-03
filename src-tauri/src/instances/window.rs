@@ -962,6 +962,30 @@ fn back_to_cell(pid: u32, hwnd: HWND) {
     free_resize(hwnd, cell, false);
 }
 
+/// The cell the grid gave a client, if it has one (`tile`).
+pub fn cell_of(pid: u32) -> Option<Cell> {
+    placed().iter().find(|(p, _)| *p == pid).map(|(_, c)| *c)
+}
+
+/// One line about a client's window, for the diagnostics report: where it is, how big, and whether
+/// it is on screen. Nothing when it has no window.
+pub fn report_state(pid: u32) -> Option<String> {
+    let (hwnd, iconic) = process::main_window(pid)?;
+    let mut r = RECT::default();
+    // SAFETY: reads one window's rectangle into a local.
+    let (w, h, x, y) = match unsafe { GetWindowRect(hwnd, &mut r) } {
+        Ok(()) => (r.right - r.left, r.bottom - r.top, r.left, r.top),
+        Err(_) => (0, 0, 0, 0),
+    };
+    let how = match (iconic, is_hidden(hwnd)) {
+        (true, _) => "minimized",
+        (_, true) => "ghost",
+        _ if process::hung(pid) => "not responding",
+        _ => "visible",
+    };
+    Some(format!("{w}x{h} at {x},{y} {how}"))
+}
+
 /// Whether a window is no longer where the grid put it (2 px of slack).
 fn left_cell(hwnd: HWND, (x, y, w, h): Cell) -> bool {
     let mut r = RECT::default();

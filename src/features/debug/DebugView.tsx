@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { save as saveFile } from "@tauri-apps/plugin-dialog";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { api, events } from "../../api";
 import { Icon } from "../../ui/Icon";
 import { toast, toastError } from "../../ui/Toast";
 import { t } from "../../i18n";
+import { saveReport as saveReportFile } from "./report";
 
 /** Lines kept in view; older ones stay in lram.log. */
 const KEEP = 5000;
@@ -138,16 +138,6 @@ export function DebugView() {
       .diagnosticsText()
       .then(writeText)
       .then(() => toast(t("debug.reportCopied")), toastError);
-  const saveReport = async () => {
-    try {
-      const path = await saveFile({ defaultPath: `LRAM-diagnostics-${new Date().toISOString().slice(0, 10)}.txt`, filters: [{ name: t("debug.reportFilter"), extensions: ["txt"] }] });
-      if (!path) return;
-      await api.diagnosticsSave(path);
-      toast(t("debug.reportSaved"));
-    } catch (e) {
-      toastError(e);
-    }
-  };
 
   return (
     <main className="flex-1 min-w-0 flex flex-col px-8 pt-5 pb-6 min-h-0">
@@ -194,7 +184,7 @@ export function DebugView() {
           <Icon name="copy" />
           {t("debug.copyReport")}
         </button>
-        <button className="btn btn-sm" title={t("debug.reportHint")} onClick={saveReport}>
+        <button className="btn btn-sm" title={t("debug.reportHint")} onClick={() => void saveReportFile()}>
           <Icon name="download" />
           {t("debug.saveReport")}
         </button>

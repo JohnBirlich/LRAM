@@ -25,6 +25,12 @@ const INSTALL_WAIT_MS: i64 = 900_000;
 /// How long a launch whose client started (`slow_start`) is given to show up. A client sits in the
 /// tray until it joins, and ten of them starting at once take minutes to get there.
 const SLOW_START_MS: i64 = 600_000;
+/// How long a client that is alive may stay out of a game (loading, joining, in the tray) before it
+/// counts as stuck: ten clients on one PC load for minutes, but not for a quarter of an hour.
+const STUCK_MS: i64 = 15 * 60 * 1000;
+/// A stuck client is restarted at most this many times (`Instance::rejoins` counts the relaunches):
+/// a client that never loads would otherwise be restarted every quarter of an hour forever.
+const STUCK_TRIES: u32 = 3;
 const MAX_ENDED: usize = 30;
 /// How long a teleport may take to reach its next game; then it failed (`LogFacts::teleporting`).
 const TELEPORT_MS: i64 = 60_000;
@@ -50,6 +56,14 @@ pub fn unexpected() -> String {
 /// The note of a running client whose window stopped responding.
 pub fn hung() -> String {
     tr!("Not responding")
+}
+/// The note of a client that has been loading far longer than a first load may take.
+pub fn stuck() -> String {
+    tr!("Stuck before reaching a game")
+}
+/// The note of a client LRAM stopped restarting because it never reached a game (`STUCK_TRIES`).
+pub fn never_loaded() -> String {
+    tr!("Gave up: never reached a game")
 }
 /// The note of a client the user (or LRAM) closed.
 pub fn closed() -> String {
@@ -225,6 +239,15 @@ impl Entry {
         self.hung_polls >= HANG_POLLS
     }
 
+    /// Alive, out of a game, and out of time (`loading_since`, `STUCK_MS`): the watcher restarts it
+    /// the way a hang is restarted.
+    fn stuck(&self) -> bool {
+        self.alive
+            && self.in_game_at.is_none()
+            && self.inst.state != InstanceState::Exited
+            && self.loading_since.is_some_and(|t| crate::commands::now_ms() - t >= STUCK_MS)
+    }
+
     /// Loading (for as long as a first load or a teleport may take: one stuck there is limited
     /// again) or not responding: limits would only slow that down (`limits::plan`).
     fn runs_free(&self, now: i64) -> bool {
@@ -246,7 +269,7 @@ impl Entry {
     }
 
     fn cause(&self) -> Option<CrashKind> {
-        wants_rejoin(&self.inst, &self.facts, self.hung()).or_else(|| {
+        wants_rejoin(&self.inst, &self.facts, self.hung(), self.stuck()).or_else(|| {
             (self.mem_high() && self.inst.state != InstanceState::Exited && self.inst.note.is_none()).then_some(CrashKind::Mem)
         })
     }
@@ -675,7 +698,7 @@ impl Tracker {
     pub fn take_rejoins(&self) -> Vec<Rejoin> {
         let mut out = Vec::new();
         for e in self.entries().iter_mut() {
-            let trouble = e.hung() || e.mem_high() || matches!(e.inst.state, InstanceState::Disconnected | InstanceState::Exited);
+            let trouble = e.hung() || e.stuck() || e.mem_high() || matches!(e.inst.state, InstanceState::Disconnected | InstanceState::Exited);
             if !trouble {
                 // Reconnected, teleported or responding again: later trouble counts again, and
                 // an earlier "Gave up" no longer says anything about it.
@@ -685,14 +708,24 @@ impl Tracker {
             } else if !e.rejoin_seen {
                 e.rejoin_seen = true;
                 if let Some(cause) = e.cause() {
-                    let i = &e.inst;
-                    out.push(Rejoin {
-                        from: i.id.clone(),
-                        account_id: i.account_id,
-                        target: i.target.clone(),
-                        rejoins: i.rejoins + 1,
-                        cause,
-                    });
+                    // Nothing left to try for a client that never got in, and a note that says why.
+                    if e.stuck() && e.inst.rejoins >= STUCK_TRIES {
+                        log::warn!("instance {}: still not in a game after {} restarts: giving up", e.inst.id, e.inst.rejoins);
+                        e.inst.note = Some(never_loaded());
+                        e.gave_up = Some(never_loaded());
+                    } else {
+                        if e.stuck() {
+                            log::warn!("instance {}: alive but out of a game for {} min: restarting it", e.inst.id, STUCK_MS / 60_000);
+                        }
+                        let i = &e.inst;
+                        out.push(Rejoin {
+                            from: i.id.clone(),
+                            account_id: i.account_id,
+                            target: i.target.clone(),
+                            rejoins: i.rejoins + 1,
+                            cause,
+                        });
+                    }
                 }
             }
         }
@@ -1114,7 +1147,7 @@ pub struct Rejoin {
 /// - `Hang`: its window has not responded for `HANG_POLLS` polls (no other problem note).
 ///
 /// Never when the player left (reason 285 / 273) or another client replaced it.
-pub fn wants_rejoin(inst: &Instance, facts: &LogFacts, hung: bool) -> Option<CrashKind> {
+pub fn wants_rejoin(inst: &Instance, facts: &LogFacts, hung: bool, stuck: bool) -> Option<CrashKind> {
     if facts.left || facts.replaced {
         return None;
     }
@@ -1123,7 +1156,10 @@ pub fn wants_rejoin(inst: &Instance, facts: &LogFacts, hung: bool) -> Option<Cra
             Some(if facts.disconnected { CrashKind::Disconnect } else { CrashKind::Crash })
         }
         InstanceState::Exited => None,
-        _ if hung => inst.note.as_deref().is_none_or(|n| n == self::hung()).then_some(CrashKind::Hang),
+        _ if hung || stuck => {
+            let ours = inst.note.as_deref().is_none_or(|n| n == self::hung() || n == self::stuck());
+            ours.then_some(CrashKind::Hang)
+        }
         InstanceState::Disconnected if inst.note.is_none() => Some(CrashKind::Disconnect),
         _ => None,
     }
@@ -1432,8 +1468,12 @@ fn settle(e: &mut Entry, now: i64) -> Option<CrashKind> {
         false => None,
     };
     e.inst.sign_in_problem = note.as_ref().is_some_and(|n| *n == wrong_account() || *n == challenged() || *n == auth_failed());
-    if !ended && e.hung() && note.is_none() {
-        note = Some(hung());
+    if !ended && note.is_none() && (e.hung() || e.stuck()) {
+        let said = if e.stuck() { stuck() } else { hung() };
+        if e.inst.note.as_deref() != Some(&*said) {
+            log::warn!("instance {}: {said}: the watcher is on it", e.inst.id);
+        }
+        note = Some(said);
     }
     if let Some(g) = e.gave_up.as_ref().filter(|_| !e.closing) {
         note = Some(g.clone());
@@ -2313,26 +2353,34 @@ mod tests {
             f
         };
         let (kicked, none) = (facts(true, false), facts(false, false));
-        assert_eq!(wants_rejoin(&inst(Disconnected, None), &kicked, false), Some(Disconnect));
-        assert_eq!(wants_rejoin(&inst(Exited, Some(UNEXPECTED)), &kicked, false), Some(Disconnect), "closed by itself after the kick");
-        assert_eq!(wants_rejoin(&inst(Disconnected, None), &facts(true, true), false), None, "the player left");
-        assert_eq!(wants_rejoin(&inst(Exited, Some(UNEXPECTED)), &facts(true, true), false), None, "left, then closed");
+        assert_eq!(wants_rejoin(&inst(Disconnected, None), &kicked, false, false), Some(Disconnect));
+        assert_eq!(wants_rejoin(&inst(Exited, Some(UNEXPECTED)), &kicked, false, false), Some(Disconnect), "closed by itself after the kick");
+        assert_eq!(wants_rejoin(&inst(Disconnected, None), &facts(true, true), false, false), None, "the player left");
+        assert_eq!(wants_rejoin(&inst(Exited, Some(UNEXPECTED)), &facts(true, true), false, false), None, "left, then closed");
         // Ended by itself with nothing in its log: a crash (or the window closed by hand).
-        assert_eq!(wants_rejoin(&inst(Exited, Some(UNEXPECTED)), &none, false), Some(Crash));
+        assert_eq!(wants_rejoin(&inst(Exited, Some(UNEXPECTED)), &none, false, false), Some(Crash));
         let mut replaced = none.clone();
         replaced.replaced = true;
-        assert_eq!(wants_rejoin(&inst(Exited, Some(UNEXPECTED)), &replaced, false), None);
+        assert_eq!(wants_rejoin(&inst(Exited, Some(UNEXPECTED)), &replaced, false, false), None);
         for n in ["Closed", WRONG_ACCOUNT, CHALLENGED, "Gave up after 3 restarts"] {
-            assert_eq!(wants_rejoin(&inst(Exited, Some(n)), &kicked, false), None, "{n}");
-            assert_eq!(wants_rejoin(&inst(InGame, Some(n)), &none, true), None, "hung, {n}");
+            assert_eq!(wants_rejoin(&inst(Exited, Some(n)), &kicked, false, false), None, "{n}");
+            assert_eq!(wants_rejoin(&inst(InGame, Some(n)), &none, true, false), None, "hung, {n}");
         }
-        assert_eq!(wants_rejoin(&inst(Disconnected, Some(CHALLENGED)), &kicked, false), None);
+        assert_eq!(wants_rejoin(&inst(Disconnected, Some(CHALLENGED)), &kicked, false, false), None);
         for state in [Starting, Joining, InGame] {
-            assert_eq!(wants_rejoin(&inst(state, None), &none, false), None, "{state:?}");
-            assert_eq!(wants_rejoin(&inst(state, Some(HUNG)), &none, true), Some(Hang), "{state:?}");
+            assert_eq!(wants_rejoin(&inst(state, None), &none, false, false), None, "{state:?}");
+            assert_eq!(wants_rejoin(&inst(state, Some(HUNG)), &none, true, false), Some(Hang), "{state:?}");
         }
-        assert_eq!(wants_rejoin(&inst(Disconnected, Some(HUNG)), &kicked, true), Some(Hang));
-        assert_eq!(wants_rejoin(&inst(Exited, Some("Closed")), &none, true), None, "a hung client LRAM closed");
+        assert_eq!(wants_rejoin(&inst(Disconnected, Some(HUNG)), &kicked, true, false), Some(Hang));
+        // Alive but never in a game (`stuck`): restarted like a hang, and the state does not matter.
+        for state in [Starting, Joining, InGame] {
+            assert_eq!(wants_rejoin(&inst(state, None), &none, false, true), Some(Hang), "stuck, {state:?}");
+        }
+        assert_eq!(wants_rejoin(&inst(Exited, None), &none, false, true), None, "gone, not stuck");
+        let stuck_note = stuck();
+        assert_eq!(wants_rejoin(&inst(Starting, Some(&stuck_note)), &none, false, true), Some(Hang), "said once, still restarted");
+        assert_eq!(wants_rejoin(&inst(Starting, Some(&stuck_note)), &none, false, false), None, "and only while it is stuck");
+        assert_eq!(wants_rejoin(&inst(Exited, Some("Closed")), &none, true, false), None, "a hung client LRAM closed");
     }
 
     #[test]

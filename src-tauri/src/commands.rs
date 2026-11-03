@@ -1844,6 +1844,26 @@ fn diagnostics_sources(s: &App) -> Result<crate::diagnostics::Sources> {
         v.multi_instance,
         crate::performance::of(&v, None, now_ms()),
     );
+    let now = now_ms();
+    let list = s.tracker.list();
+    let running: Vec<&Instance> = list.iter().filter(|i| i.state != InstanceState::Exited).collect();
+    let mut clients = format!("Clients: {} running\n", running.len());
+    for i in running {
+        let up = (now - i.started_at).max(0) / 1000;
+        let window = crate::instances::window::report_state(i.pid).unwrap_or_else(|| "no window".to_owned());
+        let cell = crate::instances::window::cell_of(i.pid).map_or_else(|| "none".to_owned(), |(x, y, w, h)| format!("{w}x{h} at {x},{y}"));
+        clients.push_str(&format!(
+            "  instance {} account {}: {:?}{}, pid {}, up {}s, rejoins {}, cell {cell}, window {window}, limits {}\n",
+            i.id,
+            i.account_id,
+            i.state,
+            i.note.as_ref().map_or_else(String::new, |n| format!(" ({n})")),
+            i.pid,
+            up,
+            i.rejoins,
+            crate::performance::limits_line(&i.applied_limits),
+        ));
+    }
     let mut names: Vec<String> = s.db.accounts()?.into_iter().flat_map(|a| [a.username, a.display_name, a.alias]).collect();
     names.extend(s.db.favourites()?.into_iter().map(|f| f.name));
     let mut roblox_logs = s.tracker.live_logs();
@@ -1856,7 +1876,7 @@ fn diagnostics_sources(s: &App) -> Result<crate::diagnostics::Sources> {
         }
     }
     roblox_logs.truncate(5);
-    Ok(crate::diagnostics::Sources { head, lram_log: s.data_dir.join("logs").join("lram.log"), roblox_logs, names })
+    Ok(crate::diagnostics::Sources { head, clients, lram_log: s.data_dir.join("logs").join("lram.log"), roblox_logs, names })
 }
 
 #[tauri::command]

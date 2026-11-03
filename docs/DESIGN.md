@@ -441,7 +441,7 @@ doesn't retry a version that failed. Fallback: open roblox.com/download.
   the version from `tauri.conf.json`, output `dist\RoALT-Setup-<version>.exe`.
 - `.github/workflows/release.yml` (same pattern as AgentSuite): a `v*` tag builds on windows-latest,
   installs Inno Setup, signs `RoALT-Setup-<version>.exe` + newline + the setup .exe's bytes with the
-  `ROALT_UPDATE_KEY` secret (ECDSA P-256 / SHA-256, IEEE P1363, base64 in `RoALT-Setup-<version>.exe.sig`;
+  `LRAM_UPDATE_KEY` secret (ECDSA P-256 / SHA-256, IEEE P1363, base64 in `LRAM-Setup-<version>.exe.sig`;
   the job fails without the secret, or when the signature doesn't verify against `PUBLIC_KEY` in
   `self_update.rs`), attaches both and
   `SHA256SUMS.txt` to a **draft** release; you publish it.

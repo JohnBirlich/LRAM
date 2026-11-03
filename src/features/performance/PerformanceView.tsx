@@ -269,7 +269,7 @@ export function PerformanceView({ settings }: { settings: Settings }) {
             </div>
           </TuneRow>
           <SwitchRow title={t("performance.autoTile")} hint={t("performance.hintAutoTile")} more={t("performance.hintAutoTile")} checked={settings.autoTile} onChange={(autoTile) => set.mutate({ autoTile })} />
-          <h3 id="perf-roalt" className="font-semibold pt-5 pb-2">{t("performance.section.roalt")}</h3>
+          <h3 id="perf-lram" className="font-semibold pt-5 pb-2">{t("performance.section.lram")}</h3>
           <TuneRow title={t("dashboard.previewFps")} hint={t("dashboard.previewFpsHint")}>
             <Segmented mono label={t("dashboard.previewFps")} value={previewFps} options={PREVIEW_FPS.map((f) => ({ value: f, label: t("dashboard.fps", { fps: f }) }))} onChange={setFps} />
           </TuneRow>

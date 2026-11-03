@@ -262,7 +262,7 @@ fn main_window(app: &TauriApp, data_dir: &Path, skip_splash: bool) -> tauri::Res
     }
     // Debug builds only: DevTools protocol for automated UI checks on a hidden desktop.
     #[cfg(debug_assertions)]
-    if let Ok(port) = std::env::var("ROALT_CDP_PORT") {
+    if let Ok(port) = std::env::var("LRAM_CDP_PORT") {
         builder = builder.additional_browser_args(&format!(
             "--remote-debugging-port={port} --disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection"
         ));

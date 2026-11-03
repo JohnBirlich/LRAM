@@ -582,7 +582,7 @@ mod tests {
     #[test]
     #[ignore = "starts Roblox: run on a desktop of its own, with no client running"]
     fn real_client_window() {
-        let exe = std::env::var("ROALT_TEST_CLIENT").unwrap();
+        let exe = std::env::var("LRAM_TEST_CLIENT").unwrap();
         let mut child = std::process::Command::new(exe).spawn().unwrap();
         let pid = child.id();
         let wait = |ms| std::thread::sleep(std::time::Duration::from_millis(ms));

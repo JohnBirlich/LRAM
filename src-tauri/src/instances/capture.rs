@@ -382,12 +382,12 @@ mod tests {
         assert!(t.rgba.chunks(4).any(|p| p[..3] != t.rgba[..3]), "not one flat colour");
     }
 
-    /// Brightness of the window in `ROALT_TEST_HWND` over 6 s of pictures, 15 a second: median,
+    /// Brightness of the window in `LRAM_TEST_HWND` over 6 s of pictures, 15 a second: median,
     /// max and how many were far brighter than usual (white flashes).
     #[test]
     #[ignore]
     fn measures_flashes() {
-        let Ok(h) = std::env::var("ROALT_TEST_HWND") else { return };
+        let Ok(h) = std::env::var("LRAM_TEST_HWND") else { return };
         let hwnd = windows::Win32::Foundation::HWND(h.parse::<isize>().unwrap() as _);
         let mut means = Vec::new();
         let mut pictures = std::collections::HashSet::new();

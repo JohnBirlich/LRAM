@@ -10,6 +10,7 @@ import { AccountMenu, type MenuAt } from "./AccountMenu";
 import { isLive } from "../launch/Running";
 import { DetailPanel } from "./DetailPanel";
 import { FriendsDialog } from "./FriendsDialog";
+import { ExportProfilesDialog, ImportProfilesDialog } from "./Profiles";
 import { GroupChips } from "./GroupsNav";
 import { accountName, ago, Avatar, Status } from "./shared";
 import { t, tx, type Key } from "../../i18n";
@@ -73,6 +74,8 @@ export function AccountsView({ accounts, groups, density, vaultMode, clipboardSe
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [checked, setChecked] = useState<Set<number>>(new Set());
+  const [exportIds, setExportIds] = useState<number[] | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
   const [removeIds, setRemoveIds] = useState<number[]>([]);
   const [removeOpen, setRemoveOpen] = useState(false);
   const [friends, setFriends] = useState<AccountSummary | null>(null);
@@ -364,6 +367,10 @@ export function AccountsView({ accounts, groups, density, vaultMode, clipboardSe
             <button className="btn" onClick={() => !validate.isPending && validate.mutate(undefined)} disabled={validate.isPending || !accounts.length} title={t("accounts.validateAllHint", { keys: "Ctrl+R" })}>
               <Icon name="refresh" size={14} className={validate.isPending ? "spin" : ""} />
               {validate.isPending ? t("accounts.validating") : t("accounts.validateAll")}
+            </button>
+            <button className="btn" onClick={() => setImportOpen(true)} title={t("accounts.profiles.importHint")}>
+              <Icon name="download" size={14} />
+              {t("accounts.profiles.import")}
             </button>
             <button className="btn btn-primary" onClick={onAdd} title={t("accounts.addHint", { keys: "Ctrl+N" })}>
               <Icon name="plus" size={14} />
@@ -670,6 +677,10 @@ export function AccountsView({ accounts, groups, density, vaultMode, clipboardSe
                 </button>
               ))}
             </div>
+            <button className="btn" onClick={() => setExportIds(checkedIds)} title={t("accounts.profiles.exportHint")}>
+              <Icon name="download" size={14} />
+              {t("accounts.profiles.export")}
+            </button>
             <button className="btn btn-danger" onClick={() => askRemove(checkedIds)}>
               <Icon name="trash" size={14} />
               {t("common.remove")}
@@ -692,6 +703,8 @@ export function AccountsView({ accounts, groups, density, vaultMode, clipboardSe
         onFriends={setFriends}
       />
       <FriendsDialog open={friends !== null} onClose={() => setFriends(null)} account={friends} />
+      <ExportProfilesDialog ids={exportIds ?? []} open={exportIds !== null} onClose={() => setExportIds(null)} vaultMode={vaultMode} />
+      <ImportProfilesDialog open={importOpen} onClose={() => setImportOpen(false)} />
       <ConfirmDialog
         open={removeOpen}
         onClose={() => setRemoveOpen(false)}

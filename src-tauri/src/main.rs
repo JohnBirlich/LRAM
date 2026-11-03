@@ -12,7 +12,6 @@ mod model;
 mod network;
 mod performance;
 mod roblox_api;
-mod rpc;
 mod self_update;
 mod splash;
 mod storage;
@@ -447,7 +446,6 @@ fn init(app: &TauriApp, data_dir: &Path, moved_from: Option<&Path>) -> std::resu
     launcher::flags::restore();
     launcher::client_settings::spawn(app.handle().clone());
     discord::spawn(app.handle().clone());
-    rpc::spawn(app.handle().clone());
     launcher::update::spawn(app.handle().clone());
     remind_bandwidth(app.handle().clone());
     Ok(())

@@ -167,9 +167,6 @@ export function SettingsView({ vault, settings, onPerformance, onRecoveryCode }:
             onChange={(density) => set.mutate({ density })}
           />
         </Row>
-        <Row title={t("settings.discord")} hint={t("settings.discordHint")}>
-          <Switch label={t("settings.discord")} checked={settings.discordPresence} onChange={(discordPresence) => set.mutate({ discordPresence })} />
-        </Row>
         <Row title={t("settings.closeToTray")} hint={t("settings.closeToTrayHint")}>
           <Switch label={t("settings.closeToTray")} checked={settings.closeToTray} onChange={(closeToTray) => set.mutate({ closeToTray })} />
         </Row>

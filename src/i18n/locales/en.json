@@ -252,8 +252,6 @@
   "settings.densityHint": "Row height in the accounts list.",
   "settings.densityDetailed": "Detailed",
   "settings.densityCompact": "Compact",
-  "settings.discord": "Show on Discord",
-  "settings.discordHint": "Your Discord profile shows “Playing LRAM” with the game and how many alts run. Only while Discord is open on this PC.",
   "settings.closeToTray": "Close to tray",
   "settings.closeToTrayHint": "The window hides; running clients and auto-rejoin keep working.",
   "settings.skipSplash": "Skip splash screen",

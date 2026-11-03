@@ -241,7 +241,7 @@ for the amount you pick, and you confirm the purchase on Roblox.
 | 📤 **Performance profiles** | Export your performance settings to a file or a share code, or import someone else's: you see what changes, then apply it. Only performance settings travel, never accounts, passwords, launch arguments or hotkeys. |
 | 📶 **Bandwidth** | One upload cap for all Roblox clients through a Windows QoS policy. Applied only when you click Apply (admin prompt); cleared when Windows restarts. |
 | 💤 **Anti-AFK** | Off by default, with a switch on Home. While you are away from the PC, every few minutes each client is briefly brought to the front and gets one Space press, so Roblox doesn't kick it after 20 idle minutes. Hidden and minimized clients get it too, invisibly. Stops the moment you touch the mouse. Or **in the background**: a Tab press is posted to the window without bringing it to the front, even when minimized (Roblox may not count it in every game; auto-rejoin stays the fallback). Per-client opt-out. |
-| 🔔 **Discord** | Crash, disconnect, restart and batch alerts, plus an opt-in alert when a client gets into a game. Mute alerts per account. **Rich presence** (on by default, a switch in Settings): your profile shows "Playing LRAM", idling or with the game and how many alts run. |
+| 🔔 **Discord** | Crash, disconnect, restart and batch alerts, plus an opt-in alert when a client gets into a game. Mute alerts per account. |
 | 🔄 **LRAM updates** | Looks for a new LRAM on GitHub Releases at start and every 6 hours (can be turned off; *Check now* in Settings). A banner offers it; *Update now* downloads it, checks its release signature, installs it silently and restarts LRAM. Never installs on its own. |
 | 🧰 **Comfort** | Tray menu with favourites, close to tray, relaunch an ended client in one click, movable data folder, keyboard shortcuts. Dark, light or system theme, any accent colour, and your own background image, with a choice of how much the theme covers it. Optional skip of the splash screen. Your LRAM and Roblox versions at the top of Settings. |
 
@@ -364,7 +364,7 @@ In **Settings → Launching**, turn on **Auto-rejoin** (and, if you like, **Auto
 - **Never** sends telemetry. There is no LRAM server and no LRAM account.
 - **Never** writes cookies, tickets or launch arguments to its logs.
 - **Never** changes Windows settings, except the opt-in bandwidth limit.
-- **Never** contacts Discord's servers unless you paste a webhook. Rich presence goes only to the Discord app on your PC.
+- **Never** contacts Discord's servers unless you paste a webhook.
 
 </td>
 </tr>
@@ -374,8 +374,6 @@ In **Settings → Launching**, turn on **Auto-rejoin** (and, if you like, **Auto
 <summary><b>The details</b></summary>
 <br>
 
-- **Discord rich presence (on by default).** LRAM tells the Discord app on this PC, over its local pipe, the game's
-  name and how many clients run. Discord shows that on your profile. Turn it off under **Settings → Show on Discord**.
 - **Discord alerts (opt-in).** If you paste a webhook in the Discord tab, alerts go to that webhook on `discord.com`. The URL is
   kept encrypted in the vault, and messages name accounts by display name and username only, with mentions disabled.
   Nothing is sent while the vault is locked.

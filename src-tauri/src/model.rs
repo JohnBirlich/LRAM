@@ -216,7 +216,6 @@ pub struct Settings {
     pub discord: DiscordEvents,
     pub auto_update: bool,
     pub self_update: bool,
-    pub discord_presence: bool,
     pub minimize_on_launch: bool,
     pub live_hidden_previews: bool,
     pub panic_hotkey: String,
@@ -424,7 +423,6 @@ impl Default for Settings {
             discord: DiscordEvents::default(),
             auto_update: false,
             self_update: false,
-            discord_presence: false,
             minimize_on_launch: false,
             live_hidden_previews: true,
             panic_hotkey: String::new(),
@@ -514,8 +512,6 @@ pub struct SettingsPatch {
     pub auto_update: Option<bool>,
     #[ts(optional)]
     pub self_update: Option<bool>,
-    #[ts(optional)]
-    pub discord_presence: Option<bool>,
     #[ts(optional)]
     pub minimize_on_launch: Option<bool>,
     #[ts(optional)]

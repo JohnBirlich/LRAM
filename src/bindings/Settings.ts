@@ -59,8 +59,6 @@ autoUpdate: boolean,
 
 selfUpdate: boolean,
 
-discordPresence: boolean,
-
 minimizeOnLaunch: boolean,
 
 liveHiddenPreviews: boolean,

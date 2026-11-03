@@ -530,6 +530,7 @@ pub fn unhide(pid: u32, hwnd: HWND) {
     // and a tiny one comes back big and shrinks while it still can't be seen.
     un_iconify(hwnd, false);
     back_to_tiny(pid, hwnd);
+    back_to_cell(pid, hwnd);
     // Once more: a preview may have started a wake while it was still minimized.
     waking().retain(|w| *w != hwnd.0 as isize);
     clear_ghost(hwnd);
@@ -891,11 +892,12 @@ pub fn micro(id: &str, pid: u32, on: bool, size: (u32, u32)) -> Result<(u32, u32
 
 /// Lays the clients (instance id, pid) out in a grid on the work area (taskbar left free) of
 /// the monitor `near` is on: with `micro`, client areas of that size left to right and top to
-/// bottom (more than fit start over at the top, overlapping), each remembered as `micro` does;
-/// else cells sized so all fit, each as big as a 4:3 picture can be, and that is its normal size
-/// from then on (what `micro` remembered is dropped). Hidden and minimized clients stay so (Restore
-/// all first to include them), as do ones without a window or not responding. Returns the ids laid
-/// out.
+/// bottom; else cells sized so all fit, each as big as a 4:3 picture can be, and that is its normal
+/// size from then on (what `micro` remembered is dropped). Every client gets a cell of its own,
+/// hidden and minimized ones too, and keeps it (`unhide` puts it back there): counting only the
+/// windows on screen at that moment gave the one client started after the others went to sleep the
+/// whole screen. Ones without a window or not responding are left where they are. Returns the ids
+/// laid out.
 pub fn tile(clients: &[(String, u32)], near: HWND, micro: Option<(u32, u32)>) -> Vec<String> {
     let mut mi = MONITORINFO { cbSize: size_of::<MONITORINFO>() as u32, ..Default::default() };
     // SAFETY: reads the monitor nearest to a window into a local with cbSize set; with
@@ -905,33 +907,75 @@ pub fn tile(clients: &[(String, u32)], near: HWND, micro: Option<(u32, u32)>) ->
         return Vec::new();
     }
     let w = mi.rcWork;
-    let wins: Vec<(&str, u32, HWND)> = clients
-        .iter()
-        .filter_map(|(id, pid)| match process::main_window(*pid) {
-            Some((hwnd, false)) if !is_hidden(hwnd) && !process::hung(*pid) => Some((id.as_str(), *pid, hwnd)),
-            _ => None,
-        })
-        .collect();
+    let mut laid = Vec::new();
     // One frame size for all: Roblox windows share a style.
-    let cell = micro.and_then(|(w, h)| wins.first().and_then(|c| frame(c.2)).map(|(fw, fh)| (w as i32 + fw, h as i32 + fh)));
-    let cells = grid(wins.len(), (w.left, w.top, w.right - w.left, w.bottom - w.top), cell);
-    for (&(id, pid, hwnd), &(x, y, cw, ch)) in wins.iter().zip(&cells) {
-        set_tiny(pid, micro);
+    let size = micro.and_then(|(mw, mh)| {
+        clients
+            .iter()
+            .find_map(|(_, pid)| resizable(*pid).and_then(frame).map(|(fw, fh)| (mw as i32 + fw, mh as i32 + fh)))
+    });
+    let cells = grid(clients.len(), (w.left, w.top, w.right - w.left, w.bottom - w.top), size);
+    for ((id, pid), &slot) in clients.iter().zip(&cells) {
+        let Some(hwnd) = resizable(*pid) else { continue };
+        set_tiny(*pid, micro);
         if micro.is_some() {
-            remember(id, pid, hwnd);
+            remember(id, *pid, hwnd);
         } else {
-            saved().retain(|(i, p, _)| !(i == id && *p == pid));
+            saved().retain(|(i, p, _)| !(i == id && *p == *pid));
         }
         normal(hwnd, false);
-        free_resize(hwnd, (x, y, cw, ch), false);
+        free_resize(hwnd, slot, false);
+        laid.push(id.clone());
     }
-    wins.into_iter().map(|w| w.0.to_owned()).collect()
+    let mut plan = placed();
+    plan.clear();
+    plan.extend(clients.iter().zip(&cells).map(|((_, pid), slot)| (*pid, *slot)));
+    laid
+}
+
+/// The window of a client whose cell can be set now: none while it is hidden, minimized (a cell
+/// puts it back on screen) or not answering.
+fn resizable(pid: u32) -> Option<HWND> {
+    match process::main_window(pid) {
+        Some((hwnd, false)) if !is_hidden(hwnd) && !process::hung(pid) => Some(hwnd),
+        _ => None,
+    }
+}
+
+/// A window's place on screen: x, y, width, height.
+type Cell = (i32, i32, i32, i32);
+
+/// The cell each client was laid out in, by pid: where a hidden one goes back to (`unhide`).
+static PLACED: Mutex<Vec<(u32, Cell)>> = Mutex::new(Vec::new());
+
+fn placed() -> MutexGuard<'static, Vec<(u32, Cell)>> {
+    PLACED.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Puts a client that is back on screen into the cell the grid gave it, unless it is already there.
+fn back_to_cell(pid: u32, hwnd: HWND) {
+    let Some(cell) = placed().iter().find(|(p, _)| *p == pid).map(|(_, c)| *c) else { return };
+    if !left_cell(hwnd, cell) {
+        return;
+    }
+    log::debug!("client {pid}: back to its cell {cell:?}");
+    free_resize(hwnd, cell, false);
+}
+
+/// Whether a window is no longer where the grid put it (2 px of slack).
+fn left_cell(hwnd: HWND, (x, y, w, h): Cell) -> bool {
+    let mut r = RECT::default();
+    // SAFETY: reads one window's rectangle into a local.
+    if unsafe { GetWindowRect(hwnd, &mut r) }.is_err() {
+        return false;
+    }
+    (r.left - x).abs() > 2 || (r.top - y).abs() > 2 || ((r.right - r.left) - w).abs() > 2 || ((r.bottom - r.top) - h).abs() > 2
 }
 
 /// Cells (x, y, w, h) for `n` windows in `area` (x, y, w, h): `cell`-sized ones left to right,
 /// top to bottom, starting over at the top once the area is full; else the column count whose
 /// cells hold the biggest 4:3 picture, fewer columns on a tie (pure).
-pub fn grid(n: usize, area: (i32, i32, i32, i32), cell: Option<(i32, i32)>) -> Vec<(i32, i32, i32, i32)> {
+pub fn grid(n: usize, area: Cell, cell: Option<(i32, i32)>) -> Vec<Cell> {
     let (ax, ay, aw, ah) = area;
     if n == 0 || aw <= 0 || ah <= 0 {
         return Vec::new();

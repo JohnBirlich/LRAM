@@ -1593,7 +1593,8 @@ fn check_window_size((w, h): (u32, u32)) -> Result<()> {
 }
 
 /// Lays every running client's window out in a grid on the monitor LRAM is on, `micro`-sized
-/// or as big as all fit (`window::tile`; hidden and minimized ones are left alone). How many it laid out.
+/// or as big as all fit (`window::tile`; a hidden or minimized client keeps its cell for when it is
+/// shown again). How many it laid out.
 #[tauri::command]
 pub async fn instances_tile(app: AppHandle, s: State<'_, App>, micro: bool) -> Result<usize> {
     let clients: Vec<(String, u32)> = s.tracker.clients().into_iter().map(|c| (c.0, c.1)).collect();

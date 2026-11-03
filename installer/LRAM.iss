@@ -1,6 +1,3 @@
-; LRAM for Windows: a per-user install of the app, no admin rights. Contract: docs/DESIGN.md
-; ("Releases"). Build it with scripts\build-installer.ps1, which passes the version from
-; src-tauri\tauri.conf.json and where cargo put the release build.
 
 #if Ver < EncodeVer(6,6,0)
   #error Inno Setup 6.6 or newer is needed (WizardStyle dynamic windows11)
@@ -8,7 +5,6 @@
 #ifndef AppVersion
   #error Pass /DAppVersion=x.y.z, or build with scripts\build-installer.ps1
 #endif
-; VersionInfoVersion must be numeric; a prerelease such as 0.2.0-beta.1 passes 0.2.0 here.
 #ifndef AppNumVersion
   #define AppNumVersion AppVersion
 #endif
@@ -16,8 +12,6 @@
   #define AppExe "..\src-tauri\target\release\lram.exe"
 #endif
 
-; A fresh AppId: a renamed product installs beside the original build, not over it, so both
-; can be uninstalled separately.
 [Setup]
 AppId={{E647C13A-F0B1-42FF-9C22-211876297675}
 AppName=LRAM
@@ -25,19 +19,16 @@ AppVersion={#AppVersion}
 AppPublisher=JohnBirlich
 AppPublisherURL=https://github.com/JohnBirlich/RAM
 VersionInfoVersion={#AppNumVersion}
-; Per-user: {autopf} is %LOCALAPPDATA%\Programs.
 DefaultDirName={autopf}\LRAM
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-; Windows 10 1809, the oldest Windows Tauri 2 supports.
 MinVersion=10.0.17763
 WizardStyle=modern dynamic windows11
 SetupIconFile=..\src-tauri\icons\icon.ico
 UninstallDisplayIcon={app}\LRAM.exe
 UninstallDisplayName=LRAM
-; Restart Manager closes a running LRAM before its exe is replaced.
 CloseApplications=force
 OutputDir=..\dist-installer
 OutputBaseFilename=LRAM-Setup-{#AppVersion}
@@ -56,7 +47,6 @@ Name: "{autodesktop}\LRAM"; Filename: "{app}\LRAM.exe"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\LRAM.exe"; Description: "{cm:LaunchProgram,LRAM}"; Flags: nowait postinstall skipifsilent; Check: WebView2Installed
-; LRAM's self-updater runs Setup with /VERYSILENT ... /RELAUNCH and quits: start it again.
 Filename: "{app}\LRAM.exe"; Flags: nowait; Check: Relaunch
 
 [Code]

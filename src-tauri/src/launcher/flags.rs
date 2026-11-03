@@ -1,17 +1,3 @@
-//! Lighter rendering for the clients LRAM starts (`Settings.lighter_rendering`), through the only
-//! local flags Roblox still honours: its allowlist (DevForum "Allowlist for local client
-//! configuration via Fast Flags"; any other is logged as "Denied local configuration for: ...")
-//! in `<version folder>\ClientSettings\ClientAppSettings.json`. Lowest geometry detail always, and
-//! what `Settings.render_flags` picks: less GPU memory and time per client.
-//!
-//! Every client shares the file and reads it once, as it starts; Roblox never writes it. A launch
-//! merges these flags into the user's own flags and puts the file back exactly as it was once its
-//! client has read its settings (inside `launch`'s `client_settings::LOCK` window, so another
-//! launch never sees them by mistake). The original waits in a file beside it (`SAVED`), so a quit
-//! or crash meanwhile loses nothing: `restore` at start and exit, or the next `apply`, puts it back.
-//! Not under a bootstrapper: Bloxstrap and the like copy their own file over this one at every
-//! launch.
-
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
@@ -20,11 +6,8 @@ use serde_json::{Map, Value};
 use super::client_settings::{retry, set_readonly};
 use crate::model::{Msaa, RenderFlags, RenderMode, TextureQuality};
 
-/// Only one of these can be on.
 const MODES: [&str; 3] = ["FFlagDebugGraphicsPreferD3D11", "FFlagDebugGraphicsPreferVulkan", "FFlagDebugGraphicsPreferOpenGL"];
 
-/// The allowlisted flags for `r`, as strings like Bloxstrap writes them (pure). "Roblox default" is
-/// no flag at all, so a user's own value for it stays.
 fn flags_of(r: &RenderFlags) -> Vec<(&'static str, &'static str)> {
     let mut f = vec![
         ("DFIntCSGLevelOfDetailSwitchingDistance", "0"),
@@ -69,8 +52,6 @@ fn flags_of(r: &RenderFlags) -> Vec<(&'static str, &'static str)> {
     f
 }
 
-/// The file's text with `set` set and the user's other flags kept (pure); None when it isn't a JSON
-/// object (it is left alone then). A chosen rendering mode replaces one of the user's own.
 fn merge(text: Option<&str>, set: &[(&str, &str)]) -> Option<String> {
     let mut flags: Map<String, Value> = match text.map(str::trim) {
         None | Some("") => Map::new(),
@@ -85,7 +66,6 @@ fn merge(text: Option<&str>, set: &[(&str, &str)]) -> Option<String> {
     serde_json::to_string_pretty(&flags).ok()
 }
 
-/// Replaces the file in one step; a read-only one stays read-only.
 fn write(file: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let tmp = file.with_extension("json.lram");
     let readonly = std::fs::metadata(file).is_ok_and(|m| m.permissions().readonly());
@@ -104,13 +84,9 @@ fn write(file: &Path, bytes: &[u8]) -> std::io::Result<()> {
     done
 }
 
-/// The original beside the flag file: `1` then its bytes, or `0` when there was no file.
 const SAVED: &str = "ClientAppSettings.json.lram-before";
-/// Where builds that named it after the old crate kept it.
 const SAVED_BEFORE: &str = "ClientAppSettings.json.roalt-before";
 
-/// Puts back the original kept beside `file`, if one is; it stays there until that worked. False
-/// when it is still there.
 fn put_back_at(file: &Path) -> bool {
     let saved = [SAVED, SAVED_BEFORE]
         .map(|name| file.with_file_name(name))
@@ -131,21 +107,16 @@ fn put_back_at(file: &Path) -> bool {
     }
 }
 
-/// A launch's flags are in the file until this runs.
 pub struct Undo {
     file: PathBuf,
 }
 
 impl Undo {
-    /// Puts the file back exactly as it was (removed if there was none); failures are logged.
     pub fn put_back(self) {
         let _ = put_back_at(&self.file);
     }
 }
 
-/// Puts back what a launch cut short by a quit or crash left behind (at start, and at exit while a
-/// launch may still be waiting for its client), in every build: a launch can use another than
-/// `client::find`'s.
 pub fn restore() {
     for dir in super::client::versions_dirs() {
         for build in std::fs::read_dir(dir).into_iter().flatten().flatten() {
@@ -159,13 +130,9 @@ pub fn restore() {
     }
 }
 
-/// Writes `render`'s flags next to the client at `exe` for the launch about to start; what to put
-/// back once it has started, None when nothing was written. Failures are logged and never stop the
-/// launch.
+// -- Main func
 pub fn apply(exe: &Path, render: &RenderFlags) -> Option<Undo> {
     let file = exe.parent()?.join("ClientSettings").join("ClientAppSettings.json");
-    // A launch cut short: the user's own file first, or these flags would pass for it and the only
-    // copy of it would be lost.
     if !put_back_at(&file) {
         log::warn!("lighter rendering skipped: the user's own {} couldn't be put back", file.display());
         return None;
@@ -242,7 +209,6 @@ mod tests {
         assert_eq!(has(RenderFlags { pause_voxelizer: true, ..d }, "DFFlagDebugPauseVoxelizer"), Some("True"));
         assert_eq!(has(RenderFlags { mode: RenderMode::Vulkan, ..d }, MODES[1]), Some("True"));
 
-        // Only one mode: a chosen one replaces the user's own, and none leaves it.
         let own = r#"{"FFlagDebugGraphicsPreferD3D11": "True"}"#;
         let set = flags_of(&RenderFlags { mode: RenderMode::Opengl, ..d });
         let v: Value = serde_json::from_str(&merge(Some(own), &set).unwrap()).unwrap();
@@ -257,20 +223,17 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
 
-        // No file before: written, then removed again.
         let r = RenderFlags::default();
         let undo = apply(&exe, &r).expect("written");
         assert!(std::fs::read_to_string(&file).unwrap().contains("DFIntDebugFRMQualityLevelOverride"));
         undo.put_back();
         assert!(!file.exists());
 
-        // The user's own file: the very same bytes come back.
         let own = b"{\r\n  \"FFlagDebugSkyGray\": \"True\"\r\n}";
         std::fs::write(&file, own).unwrap();
         apply(&exe, &r).expect("written").put_back();
         assert_eq!(std::fs::read(&file).unwrap(), own);
 
-        // Cut short by a quit: the next launch doesn't mistake the flags for the user's own.
         let _left_behind = apply(&exe, &r).expect("written");
         apply(&exe, &r).expect("written").put_back();
         assert_eq!(std::fs::read(&file).unwrap(), own);
@@ -279,7 +242,6 @@ mod tests {
         put_back_at(&file);
         assert_eq!(std::fs::read(&file).unwrap(), own, "as `restore` does");
 
-        // Can't be put back (held open): the original isn't lost, and nothing is written over it.
         let _left_behind = apply(&exe, &r).expect("written");
         let flagged = std::fs::read(&file).unwrap();
         let kept = std::fs::read(file.with_file_name(SAVED)).unwrap();
@@ -293,7 +255,6 @@ mod tests {
         assert!(put_back_at(&file));
         assert_eq!(std::fs::read(&file).unwrap(), own);
 
-        // Not a JSON object: left alone.
         std::fs::write(&file, b"oops").unwrap();
         assert!(apply(&exe, &r).is_none());
         assert_eq!(std::fs::read(&file).unwrap(), b"oops");

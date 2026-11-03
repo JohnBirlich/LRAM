@@ -690,7 +690,7 @@ What this fork changes:
   and nothing in the app asks for money.
 - **English only**: one language, no translations to keep in sync.
 - **Its own releases**: fixes and features after the fork point (0.10.x and 0.11.x) come from the
-  reports and suggestions in `docs/REQUESTS-ru.md` — false "Disconnected" and "Closed unexpectedly"
+  reports and suggestions in `docs/REQUESTS.md` — false "Disconnected" and "Closed unexpectedly"
   states, the first-launch "failed" report, the 403 hint, window tiling, friend requests and the
   anti-AFK press modes.
 

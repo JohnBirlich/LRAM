@@ -1,8 +1,6 @@
 use serde::{Serialize, Serializer};
 use ts_rs::TS;
 
-/// Every error the UI can see. Messages are user-facing and must never contain a cookie,
-/// ticket, link code or anything else from the vault.
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
     #[error("The vault is locked.")]
@@ -15,7 +13,6 @@ pub enum AppError {
     Challenge,
     #[error("Roblox is limiting requests. Try again in {0} s.")]
     RateLimited(u64),
-    /// Too many wrong passwords in a row (`vault::Attempts`).
     #[error("Too many wrong passwords. Try again in {0} s.")]
     TooManyAttempts(u64),
     #[error("Roblox now requires a bound session for this account.")]
@@ -30,7 +27,6 @@ pub enum AppError {
     Cancelled,
     #[error("{0}")]
     Invalid(String),
-    /// Refused for now, for a reason that may pass by itself (`temporary`); to the UI, `Invalid`.
     #[error("{0}")]
     Wait(String),
     #[error("Storage error: {0}")]
@@ -41,9 +37,8 @@ pub enum AppError {
     Internal(String),
 }
 
-/// A Windows error in English: the system text comes in the language of Windows, and the
-/// interface is English only. The code stays, so a report can still be looked up.
 #[cfg(windows)]
+// -- Main func
 pub fn windows_error(e: &windows::core::Error) -> String {
     let code = e.code().0 as u32;
     match known_win32(e.code()) {
@@ -52,7 +47,6 @@ pub fn windows_error(e: &windows::core::Error) -> String {
     }
 }
 
-/// What the error codes this app meets mean, in words (`code` is the HRESULT of a Win32 error).
 #[cfg(windows)]
 fn known_win32(code: windows::core::HRESULT) -> Option<&'static str> {
     use windows::Win32::Foundation::{
@@ -106,8 +100,6 @@ impl AppError {
         }
     }
 
-    /// May pass by itself (the network, Roblox, a locked vault), so the same thing is worth trying
-    /// again later. A bad cookie or a refused target (Roblox's 4xx) stays until someone acts.
     pub fn temporary(&self) -> bool {
         match self {
             Self::Locked | Self::RateLimited(_) | Self::TooManyAttempts(_) | Self::Network(_) | Self::Wait(_) => true,
@@ -116,13 +108,10 @@ impl AppError {
         }
     }
 
-    /// Roblox answered 403, and not with a human check (`Challenge`) or for a CSRF token, which
-    /// the API client handles itself.
     pub fn is_forbidden(&self) -> bool {
         matches!(self, Self::Roblox(why) if why == "HTTP 403")
     }
 
-    /// Logs this error (English, secret-free like every message) at a level fit for its kind.
     pub fn log(&self) {
         let level = match self {
             Self::Cancelled | Self::Invalid(_) | Self::Wait(_) | Self::Locked | Self::WrongPassword | Self::NotFound => log::Level::Debug,
@@ -132,7 +121,6 @@ impl AppError {
         log::log!(level, "{} error: {self}", self.kind());
     }
 
-    /// The message in the current language (Display stays English, for logs).
     pub fn message(&self) -> String {
         match self {
             Self::Locked => tr!("The vault is locked."),
@@ -155,7 +143,6 @@ impl AppError {
     }
 }
 
-/// What a rejected `invoke` carries to the UI.
 #[derive(Serialize, TS)]
 #[ts(export)]
 pub struct ErrorPayload {
@@ -165,7 +152,6 @@ pub struct ErrorPayload {
 
 impl Serialize for AppError {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        // Only IPC serializes an AppError: every command error the UI gets is logged here once.
         self.log();
         ErrorPayload { kind: self.kind().into(), message: self.message() }.serialize(s)
     }

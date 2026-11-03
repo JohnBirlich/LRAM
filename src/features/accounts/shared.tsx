@@ -3,7 +3,6 @@ import type { AccountStatus, AccountSummary, Presence, PresenceKind } from "../.
 import { useHeadshot } from "../../data";
 import { fmtDate, t, type Key } from "../../i18n";
 
-/** Colours offered for accounts and groups (from the design canvas). */
 export const SWATCHES = ["#C6F432", "#7AB0FF", "#5FE0C8", "#FFA05C", "#B49CFF", "#FF8FC7", "#ECEEF1", "#5E6672"];
 
 export const accountName = (a: AccountSummary) => a.alias || a.displayName || a.username;
@@ -12,17 +11,15 @@ export function initials(a: AccountSummary) {
   return accountName(a).replace(/[^\p{L}\p{N}]/gu, "").slice(0, 2).toUpperCase() || "?";
 }
 
-/** Accounts without a colour get a stable one from their user id. */
 export const avatarColor = (a: AccountSummary) => a.color ?? SWATCHES[Math.abs(a.userId) % 6];
 
-/** Dark ink on light colours, white on dark ones (custom #rrggbb can be anything). */
 function inkOn(hex: string) {
   const n = parseInt(hex.slice(1), 16);
   const lum = 0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255);
   return lum > 110 ? "#0A0B0D" : "#FFFFFF";
 }
 
-/** The Roblox headshot over the account colour; the initials show until it loads, or if it fails. */
+// -- Main func
 export function Avatar({ account, size, url }: { account: AccountSummary; size: number; url?: string | null }) {
   const src = useHeadshot(account.id) ?? url ?? null;
   const [loaded, setLoaded] = useState<string | null>(null);
@@ -34,7 +31,6 @@ export function Avatar({ account, size, url }: { account: AccountSummary; size: 
     <span
       aria-hidden="true"
       className="relative flex-none grid place-content-center font-bold overflow-hidden rounded-full"
-      // The colour backs the initials only: a headshot has a transparent background of its own.
       style={{ width: size, height: size, background: done ? "transparent" : bg, color: inkOn(bg), fontSize: Math.round(size * 0.36) }}
     >
       <span className={done ? "opacity-0" : undefined}>{initials(account)}</span>
@@ -54,7 +50,6 @@ export function Avatar({ account, size, url }: { account: AccountSummary; size: 
   );
 }
 
-/** Status is told apart by shape and label, never by colour alone. */
 type Look = { label: Key; color: string; mark: CSSProperties };
 const hollow: CSSProperties = { border: "1px solid var(--grey)", borderRadius: "50%" };
 
@@ -87,13 +82,11 @@ function Mark({ look, label, detail }: { look: Look; label: string; detail?: str
   );
 }
 
-/** "In game · Sky Islands" where Roblox names the game. */
 export function PresenceStatus({ presence: p }: { presence: Presence }) {
   const label = p.kind === "inGame" && p.lastLocation ? t("accounts.presence.inGameAt", { place: p.lastLocation }) : t(PRESENCE[p.kind].label);
   return <Mark look={PRESENCE[p.kind]} label={label} />;
 }
 
-/** Cookie status; a valid account shows its presence instead once that is known. */
 export function Status({ status, presence, checking, detail }: {
   status: AccountStatus;
   presence?: Presence;
@@ -123,7 +116,6 @@ export function ago(ms: number | null, now = Date.now()) {
 
 export const formatDate = (ms: number) => fmtDate(ms, { day: "numeric", month: "short", year: "numeric" });
 
-/** "7 y 7 m" since an ISO date; null when the date doesn't parse. */
 export function accountAge(created: string, now = new Date()) {
   const c = new Date(created);
   if (Number.isNaN(c.getTime())) return null;
@@ -133,4 +125,3 @@ export function accountAge(created: string, now = new Date()) {
   );
   return t("accounts.age", { y: Math.floor(m / 12), m: m % 12 });
 }
-

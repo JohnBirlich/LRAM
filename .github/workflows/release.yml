@@ -1,9 +1,5 @@
 name: Release
 
-# On a v* tag, or by hand (Actions > Release > Run workflow): builds the installer, signs it for
-# LRAM's self-updater (LRAM-Setup-<version>.exe.sig, ECDSA P-256 with the LRAM_UPDATE_KEY
-# secret), then puts both with their SHA-256 on a draft release v<version>. Nothing is published:
-# a maintainer reviews the draft and publishes it, which creates the tag when a manual run made it.
 on:
   push:
     tags: ["v*"]
@@ -29,8 +25,6 @@ jobs:
       self_signed: ${{ env.HAS_UPDATE_KEY }}
     env:
       HAS_SIGNPATH: ${{ secrets.SIGNPATH_API_TOKEN != '' }}
-      # No LRAM_UPDATE_KEY secret, no updater signature: this fork ships builds installed by hand,
-      # and a release must still go through without that secret.
       HAS_UPDATE_KEY: ${{ secrets.LRAM_UPDATE_KEY != '' }}
     steps:
       - uses: actions/checkout@v7
@@ -48,12 +42,8 @@ jobs:
           node-version: 24
       - uses: dtolnay/rust-toolchain@stable
       - name: Inno Setup 6.6+
-        # Installs it, or upgrades a preinstalled older 6.x (the .iss needs 6.6).
         run: choco upgrade innosetup --no-progress -y
       - run: powershell -ExecutionPolicy Bypass -File scripts\build-installer.ps1
-      # Optional, until SignPath has approved the project: SIGNPATH_API_TOKEN (secret) and
-      # SIGNPATH_ORGANIZATION_ID (variable). Before the updater's signature, which covers the
-      # installer's exact bytes.
       - uses: actions/upload-artifact@v7
         id: unsigned
         if: env.HAS_SIGNPATH == 'true'
@@ -77,10 +67,6 @@ jobs:
         run: Copy-Item "dist-signed\LRAM-Setup-${{ steps.v.outputs.version }}.exe" dist-installer\ -Force
       - name: Sign the installer for the self-updater
         if: env.HAS_UPDATE_KEY == 'true'
-        # The key (a PKCS#8 PEM P-256 private key) reaches Node only through the environment and is
-        # never printed. Signed: "LRAM-Setup-<version>.exe\n" then the installer's bytes, so the
-        # version can't be swapped. The signature is IEEE P1363 (r||s, 64 bytes) in base64: what
-        # LRAM checks, and it is checked here against the PUBLIC_KEY in self_update.rs first.
         env:
           LRAM_UPDATE_KEY: ${{ secrets.LRAM_UPDATE_KEY }}
           VERSION: ${{ steps.v.outputs.version }}
@@ -153,7 +139,6 @@ jobs:
           $(cat SHA256SUMS.txt)
           ~~~
           EOF
-          # A manual run must not attach a build of one commit to a tag on another.
           if tag_sha=$(gh api "repos/$GH_REPO/commits/refs/tags/$TAG" --jq .sha 2>/dev/null) && [ "$tag_sha" != "$GITHUB_SHA" ]; then
             echo "::error::tag $TAG is at $tag_sha, not $GITHUB_SHA: raise the version, or run the workflow from the tag"
             exit 1

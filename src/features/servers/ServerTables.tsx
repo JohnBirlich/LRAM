@@ -23,6 +23,7 @@ function Players({ playing, max }: { playing: number; max: number }) {
   );
 }
 
+// -- Main func
 export function PublicTable({ servers, pick, onPick }: { servers: GameServer[]; pick: string | null; onPick: (id: string) => void }) {
   if (!servers.length) return null;
   return (
@@ -71,7 +72,6 @@ export function PublicTable({ servers, pick, onPick }: { servers: GameServer[]; 
   );
 }
 
-/** Access codes stay out of the UI: a row only says whether this account can join. */
 export function PrivateTable({ servers, pick, onPick }: { servers: PrivateServer[]; pick: number | null; onPick: (id: number) => void }) {
   if (!servers.length) return null;
   return (

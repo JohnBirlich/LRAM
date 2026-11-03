@@ -77,7 +77,6 @@ windows = { version = "0.62", features = [
 windows-future = "0.3"
 webview2-com = "0.39"
 
-# Line numbers in backtraces, no variable info in the debugger: keeps target\debug small.
 [profile.dev]
 debug = "line-tables-only"
 

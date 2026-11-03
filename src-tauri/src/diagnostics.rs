@@ -1,23 +1,15 @@
-//! A report to send when something goes wrong: versions, the performance settings, and the end of
-//! LRAM's log and of the Roblox client logs that matter, cleaned line by line (`redact`). Built
-//! only when asked for, and it only goes where the user copies or saves it.
-
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
 use crate::instances::logwatch::SENSITIVE;
 
-/// For the clipboard (a chat message takes little more) and for a file.
 pub const FOR_CLIPBOARD: usize = 60 * 1024;
 pub const FOR_FILE: usize = 500 * 1024;
 const LRAM_LINES: usize = 500;
 const ROBLOX_LINES: usize = 300;
-/// How much of the end of a log is read.
 const TAIL_BYTES: u64 = 4 << 20;
-/// More words that mark a line not to share, on top of what the log watcher never reports.
 const ALSO_SENSITIVE: [&str; 5] = ["authorization", "bearer", "joinscript", "webhook", "password"];
 
-/// `line` with what shouldn't leave this PC masked; None when all of it must stay (pure).
 pub fn redact(line: &str) -> Option<String> {
     let lower = line.to_ascii_lowercase();
     if SENSITIVE.iter().chain(&ALSO_SENSITIVE).any(|w| lower.contains(w)) {
@@ -29,7 +21,6 @@ pub fn redact(line: &str) -> Option<String> {
     Some(mask_uuids(&mask_ipv4(&mask_queries(&out))))
 }
 
-/// Ids shaped 8-4-4-4-12 to `…`: a job id with its place id is enough to find that exact server.
 fn mask_uuids(line: &str) -> String {
     let is_uuid = |s: &[u8]| s.len() == 36 && s.iter().enumerate().all(|(i, c)| if matches!(i, 8 | 13 | 18 | 23) { *c == b'-' } else { c.is_ascii_hexdigit() });
     let (mut out, mut rest) = (String::new(), line);
@@ -46,30 +37,24 @@ fn mask_uuids(line: &str) -> String {
     out + rest
 }
 
-/// Where `key` (lowercase ASCII) first is in `text`, ignoring ASCII case.
 fn find_ascii_ci(text: &str, key: &str) -> Option<usize> {
     text.as_bytes().windows(key.len()).position(|w| w.eq_ignore_ascii_case(key.as_bytes()))
 }
 
-/// `C:\Users\name\x` to `C:\Users\…\x`, for every such path.
 fn mask_user_folder(line: &str) -> String {
     let (mut out, mut rest) = (String::new(), line);
-    // Only as far as the next match: the whole line for every match is quadratic on a long one.
     while let Some(i) = find_ascii_ci(rest, r"\users\") {
         let (head, tail) = rest.split_at(i + r"\users\".len());
         out.push_str(head);
-        // `{:?}` doubles the backslashes.
         let sep = tail.len() - tail.trim_start_matches(['\\', '/']).len();
         out.push_str(&tail[..sep]);
         out.push('…');
         let tail = &tail[sep..];
-        // A user name can have spaces, so a space doesn't end it: masking too much is the safe way.
         rest = &tail[tail.find(['\\', '/', '"', ',']).unwrap_or(tail.len())..];
     }
     out + rest
 }
 
-/// What follows `key` (case-insensitive), up to a space or comma, masked.
 fn mask_after(line: &str, key: &str) -> String {
     let (mut out, mut rest) = (String::new(), line);
     while let Some(i) = find_ascii_ci(rest, key) {
@@ -81,7 +66,6 @@ fn mask_after(line: &str, key: &str) -> String {
     out + rest
 }
 
-/// A URL's query (`?…`) dropped: tokens travel there.
 fn mask_queries(line: &str) -> String {
     let (mut out, mut rest) = (String::new(), line);
     while let Some(i) = rest.find("http") {
@@ -97,7 +81,6 @@ fn mask_queries(line: &str) -> String {
     out + rest
 }
 
-/// Dotted quads to `x.x.x.x`; a version like 0.745.0.7451137 has too long a part to be one.
 fn mask_ipv4(line: &str) -> String {
     let mut out = String::with_capacity(line.len());
     let mut rest = line;
@@ -114,8 +97,7 @@ fn mask_ipv4(line: &str) -> String {
     out + rest
 }
 
-/// The last `max` lines of the file, each through `redact` and with `names` masked; empty when it
-/// can't be read.
+// -- Main func
 pub fn clean_tail(path: &Path, max: usize, names: &[String]) -> Vec<String> {
     let read = || -> std::io::Result<String> {
         let mut f = std::fs::File::open(path)?;
@@ -130,13 +112,10 @@ pub fn clean_tail(path: &Path, max: usize, names: &[String]) -> Vec<String> {
     lines[lines.len().saturating_sub(max)..].iter().filter_map(|l| redact(l)).map(|l| mask_names(l, names)).collect()
 }
 
-/// The user's account and favourite names to `…` (shorter ones would mask ordinary words).
 fn mask_names(line: String, names: &[String]) -> String {
     names.iter().filter(|n| n.chars().count() >= 3).fold(line, |l, n| l.replace(n.as_str(), "…"))
 }
 
-/// The sections under `max` bytes in all: each gets an equal share and keeps its newest lines
-/// (pure). A section using less leaves its share to no one: simple, and it stays under.
 fn compose(head: &str, sections: &[(String, Vec<String>)], max: usize) -> String {
     let share = max.saturating_sub(head.len()) / sections.len().max(1);
     let mut out = head.to_owned();
@@ -159,15 +138,11 @@ fn compose(head: &str, sections: &[(String, Vec<String>)], max: usize) -> String
     out
 }
 
-/// Everything the report is made of: read once on a background thread.
 pub struct Sources {
     pub head: String,
-    /// What the clients are doing right now (`commands::diagnostics_sources`): the states, pids and
-    /// windows that answer "why did it open full screen" and "why is it not counted".
     pub clients: String,
     pub lram_log: std::path::PathBuf,
     pub roblox_logs: Vec<std::path::PathBuf>,
-    /// Account and favourite names, kept out of the logs' text.
     pub names: Vec<String>,
 }
 
@@ -211,7 +186,6 @@ mod tests {
         assert_eq!(mask_names("MyAlt is running".into(), &["MyAlt".into(), "a".into()]), "… is running");
     }
 
-    /// Over this PC's real Roblox logs: `cargo test -- --ignored redacts_real_logs --nocapture`.
     #[test]
     #[ignore]
     fn redacts_real_logs() {

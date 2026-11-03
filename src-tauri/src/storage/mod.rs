@@ -1,7 +1,3 @@
-//! SQLite storage. One connection behind a mutex; every query is short. A database file is
-//! encrypted whole (`cipher`).
-// ponytail: queries run on the calling (tokio) thread; move to spawn_blocking if any grows slow.
-
 mod cipher;
 
 use std::path::{Path, PathBuf};
@@ -16,7 +12,6 @@ use crate::error::{AppError, Result};
 use crate::model::{group_order, AccountPatch, AccountStatus, AccountSummary, Crash, CrashKind, Group, GroupInput, ServerVisit, Settings, VaultMode};
 use crate::vault::{Kdf, RecoveryRecord, VaultRecord};
 
-/// What `upsert_account` writes. `cookie` is the encrypted blob.
 pub struct NewAccount<'a> {
     pub user_id: i64,
     pub username: &'a str,
@@ -26,7 +21,6 @@ pub struct NewAccount<'a> {
     pub checked_at: Option<i64>,
 }
 
-/// User-editable details, set wholesale by a backup import.
 pub struct AccountMeta {
     pub alias: String,
     pub notes: String,
@@ -36,16 +30,13 @@ pub struct AccountMeta {
 
 pub struct Db {
     conn: Mutex<Connection>,
-    /// The database file (its key is `cipher::read_key(file)`); None in memory.
     file: Option<PathBuf>,
 }
 
-/// The key file beside a database: `lram.db` → `lram.db.key`.
 pub fn key_path(db: &Path) -> PathBuf {
     cipher::beside(db, ".key")
 }
 
-/// A `favourites` row; `target` is the encrypted `LaunchTarget` JSON (link codes are bearer secrets).
 pub struct FavouriteRow {
     pub id: i64,
     pub name: String,
@@ -56,9 +47,7 @@ pub struct FavouriteRow {
     pub last_used_at: Option<i64>,
 }
 
-/// Set once `Db::public_guard_off_once` has run.
 const PUBLIC_GUARD_OFF_ONCE: &str = "public_guard_default_v2";
-/// Set once `Db::background_cover_once` has run.
 const BACKGROUND_COVER_ONCE: &str = "background_cover_v2";
 const MAX_ALIAS: usize = 64;
 const MAX_NOTES: usize = 2000;
@@ -66,7 +55,6 @@ const MAX_GROUP_NAME: usize = 40;
 const MAX_CRASHES: i64 = 200;
 const MAX_SERVERS: i64 = 50;
 
-/// What `add_crash` writes: one client that ended badly. `log_path` never reaches the UI.
 pub struct NewCrash<'a> {
     pub instance_id: &'a str,
     pub account_id: i64,
@@ -88,8 +76,6 @@ const ACCOUNT_SELECT: &str = "SELECT a.id, a.user_id, a.username, a.display_name
 const GROUP_SELECT: &str = "SELECT id, name, color, sort_order FROM groups";
 
 impl Db {
-    /// Opens (creating if needed) and migrates. Encrypted (`cipher`: a new database gets a new
-    /// key, a plain one from before is encrypted first), WAL, foreign keys on.
     pub fn open(path: &Path) -> Result<Db> {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
@@ -115,7 +101,6 @@ impl Db {
 
     fn init(mut conn: Connection, file: Option<PathBuf>) -> Result<Db> {
         conn.busy_timeout(Duration::from_secs(5))?;
-        // secure_delete: freed pages (removed cookies, old key wraps) are zeroed, not left behind.
         conn.execute_batch("PRAGMA foreign_keys = ON; PRAGMA secure_delete = ON;")?;
         migrations()
             .to_latest(&mut conn)
@@ -129,9 +114,6 @@ impl Db {
         Ok(db)
     }
 
-    /// The public-network guard is off by default now. A stored "guard on" can't be told apart
-    /// from the old default nobody chose, so it goes off once for everyone; choices made after
-    /// that stay. Corrupt settings are left for `settings` to report.
     fn public_guard_off_once(&self) -> Result<()> {
         if self.setting_value(PUBLIC_GUARD_OFF_ONCE)?.is_some() {
             return Ok(());
@@ -145,8 +127,6 @@ impl Db {
         self.set_setting_value(PUBLIC_GUARD_OFF_ONCE, Some("1"))
     }
 
-    /// The theme used to cover a background image by 70 to 90 %, which hid most pictures. A stored
-    /// value over today's default goes down to it once; choices made after that stay.
     fn background_cover_once(&self) -> Result<()> {
         if self.setting_value(BACKGROUND_COVER_ONCE)?.is_some() {
             return Ok(());
@@ -161,10 +141,6 @@ impl Db {
         self.set_setting_value(BACKGROUND_COVER_ONCE, Some("1"))
     }
 
-    /// A consistent copy of the open database, written to `path` (compacted: no freed pages
-    /// come along) and encrypted with the same key, which goes beside it (`key_path`); then
-    /// `then` with the database still locked, so nothing is written to it after the copy
-    /// meanwhile. Fails when `path` exists.
     pub fn copy_to<T>(&self, path: &Path, then: impl FnOnce() -> Result<T>) -> Result<T> {
         if path.exists() {
             return Err(AppError::Invalid(tr!("That folder already has a LRAM database.")));
@@ -173,8 +149,6 @@ impl Db {
         match &self.file {
             Some(file) => {
                 let key = cipher::read_key(file)?;
-                // Under its final name only when whole: a kill here must not leave a folder
-                // that looks as if it already had a database.
                 let partial = path.with_extension("db.partial");
                 let _ = std::fs::remove_file(&partial);
                 cipher::export(&conn, &partial, &key)?;
@@ -194,7 +168,6 @@ impl Db {
     fn conn(&self) -> MutexGuard<'_, Connection> {
         self.conn.lock().unwrap_or_else(|e| {
             log::warn!("database lock was poisoned by an earlier panic; recovering");
-            // Cleared so this is logged once, not on every query.
             self.conn.clear_poison();
             e.into_inner()
         })
@@ -227,7 +200,6 @@ impl Db {
         self.save_vault(rec, None)
     }
 
-    /// Both or neither: a recovery is only done, and its old code void, with the new password.
     pub fn save_vault_and_recovery(&self, rec: &VaultRecord, recovery: &RecoveryRecord) -> Result<()> {
         self.save_vault(rec, Some(recovery))
     }
@@ -244,7 +216,6 @@ impl Db {
              VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6)",
             params![mode, rec.wrapped_key, kdf.map(|k| &k.salt), kdf.map(|k| k.m_kib), kdf.map(|k| k.t), kdf.map(|k| k.p)],
         )?;
-        // A recovery code belongs to the master password: it goes when that does.
         if rec.mode == VaultMode::Dpapi {
             tx.execute("DELETE FROM vault_recovery", [])?;
         }
@@ -266,26 +237,22 @@ impl Db {
         Ok(rec)
     }
 
-    /// Replaces the record, which revokes the old code.
     pub fn save_recovery_record(&self, recovery: &RecoveryRecord) -> Result<()> {
         let c = self.conn();
         write_recovery(&c, recovery)?;
         flush_old_wraps(&c)
     }
 
-    /// Ordered by `sort_order`, then `id`.
     pub fn accounts(&self) -> Result<Vec<AccountSummary>> {
         let c = self.conn();
         let mut st = c.prepare(&format!("{ACCOUNT_SELECT} ORDER BY a.sort_order, a.id"))?;
         Ok(st.query_map([], account_row)?.collect::<rusqlite::Result<_>>()?)
     }
 
-    /// `NotFound` if missing.
     pub fn account(&self, id: i64) -> Result<AccountSummary> {
         Ok(self.conn().query_row(&format!("{ACCOUNT_SELECT} WHERE a.id = ?1"), [id], account_row)?)
     }
 
-    /// The accounts marked Full quality (read every poll: only their ids).
     pub fn full_quality_accounts(&self) -> Result<Vec<i64>> {
         let c = self.conn();
         let mut st = c.prepare("SELECT id FROM accounts WHERE full_quality = 1")?;
@@ -297,11 +264,7 @@ impl Db {
         Ok(self.conn().query_row(sql, [user_id], |r| r.get(0)).optional()?)
     }
 
-    /// Inserts, or updates username / display name / cookie / status of the row with this
-    /// `user_id` (keeping alias, notes, colour, favourite, groups, order). New rows go last.
-    /// Returns the account id.
     pub fn upsert_account(&self, a: &NewAccount) -> Result<i64> {
-        // One statement, so atomic without an explicit transaction.
         let sql = "INSERT INTO accounts \
              (id, user_id, username, display_name, cookie, status, status_checked_at, sort_order, created_at, updated_at) \
              VALUES (MAX((SELECT COALESCE(MAX(id), 0) FROM accounts), \
@@ -319,10 +282,6 @@ impl Db {
         write_meta(&self.conn(), id, meta)
     }
 
-    /// Applies a UI patch. `color` must be `#rrggbb` or `""` (clear); alias ≤ 64 chars,
-    /// notes ≤ 2000 chars; `group_ids` must exist and replace the current set; `launch_args`
-    /// blank clears the override, `fps_cap` 0 likewise (the caller validates the rest).
-    /// Bad input → `AppError::Invalid`, unknown id → `NotFound`.
     pub fn update_account(&self, id: i64, patch: &AccountPatch) -> Result<()> {
         let mut c = self.conn();
         let tx = c.transaction()?;
@@ -366,7 +325,6 @@ impl Db {
         Ok(())
     }
 
-    /// `(user_id, encrypted cookie)`.
     pub fn account_cookie(&self, id: i64) -> Result<(i64, Vec<u8>)> {
         let sql = "SELECT user_id, cookie FROM accounts WHERE id = ?1";
         Ok(self.conn().query_row(sql, [id], |r| Ok((r.get(0)?, r.get(1)?)))?)
@@ -377,7 +335,6 @@ impl Db {
         found(self.conn().execute(sql, params![id, blob, now_ms()])?)
     }
 
-    /// Also refreshes username / display name when given.
     pub fn set_status(
         &self,
         id: i64,
@@ -391,8 +348,6 @@ impl Db {
         found(self.conn().execute(sql, params![id, status.as_str(), checked_at, username, display_name, now_ms()])?)
     }
 
-    /// `ids` get sort_order 0..n in that order; accounts not listed keep their relative
-    /// order after them. One transaction.
     pub fn reorder_accounts(&self, ids: &[i64]) -> Result<()> {
         let mut c = self.conn();
         let tx = c.transaction()?;
@@ -400,7 +355,6 @@ impl Db {
             .prepare("SELECT id FROM accounts ORDER BY sort_order, id")?
             .query_map([], |r| r.get(0))?
             .collect::<rusqlite::Result<_>>()?;
-        // ponytail: O(n²) contains checks; fine for hundreds of accounts, use a HashSet past that.
         let mut order: Vec<i64> = Vec::with_capacity(current.len());
         for id in ids.iter().chain(&current) {
             if current.contains(id) && !order.contains(id) {
@@ -418,15 +372,12 @@ impl Db {
         let mut c = self.conn();
         let tx = c.transaction()?;
         for id in ids {
-            // Cached Roblox data (Robux, 2-step, presence) goes with the account.
             tx.execute(
                 "DELETE FROM cache WHERE key IN \
                  (SELECT 'info:' || user_id FROM accounts WHERE id = ?1 \
                   UNION ALL SELECT 'headshot:' || user_id FROM accounts WHERE id = ?1)",
                 [id],
             )?;
-            // An id is never used again: a late cookie rotation, a running client or a favourite
-            // must not reach whoever is added next.
             tx.execute(
                 "INSERT INTO settings (key, value) VALUES ('last_account_id', ?1) ON CONFLICT (key) \
                  DO UPDATE SET value = MAX(CAST(value AS INTEGER), ?1)",
@@ -439,7 +390,6 @@ impl Db {
         Ok(())
     }
 
-    /// Numbered names first (`1Main` before `007 Bank`), the rest in the order they were made.
     pub fn groups(&self) -> Result<Vec<Group>> {
         let c = self.conn();
         let mut st = c.prepare(&format!("{GROUP_SELECT} ORDER BY sort_order, id"))?;
@@ -448,8 +398,6 @@ impl Db {
         Ok(all)
     }
 
-    /// Name trimmed, 1..=40 chars, unique (case-insensitive) → else `Invalid`.
-    /// Colour `#rrggbb` or none.
     pub fn save_group(&self, g: &GroupInput) -> Result<Group> {
         let c = self.conn();
         let id = write_group(&c, g.id, &g.name, g.color.as_deref())?;
@@ -461,7 +409,6 @@ impl Db {
         Ok(())
     }
 
-    /// Existing group id for this name (case-insensitive), or a new group.
     pub fn group_by_name_or_create(&self, name: &str, color: Option<&str>) -> Result<i64> {
         let c = self.conn();
         let sql = "SELECT id FROM groups WHERE name = ?1";
@@ -471,7 +418,6 @@ impl Db {
         }
     }
 
-    /// Replaces the account's group set.
     pub fn set_account_groups(&self, account_id: i64, group_ids: &[i64]) -> Result<()> {
         let mut c = self.conn();
         let tx = c.transaction()?;
@@ -481,11 +427,9 @@ impl Db {
         Ok(())
     }
 
-    /// Defaults when nothing is stored yet (key `settings`, JSON).
     pub fn settings(&self) -> Result<Settings> {
         let sql = "SELECT value FROM settings WHERE key = 'settings'";
         let json: Option<String> = self.conn().query_row(sql, [], |r| r.get(0)).optional()?;
-        // The JSON may hold secrets (webhook URLs): only where it broke is logged.
         Ok(json
             .and_then(|j| {
                 serde_json::from_str(&j)
@@ -504,12 +448,10 @@ impl Db {
         Ok(())
     }
 
-    /// A value kept beside the settings under its own key (not `settings`), e.g. a vault blob.
     pub fn setting_value(&self, key: &str) -> Result<Option<String>> {
         Ok(self.conn().query_row("SELECT value FROM settings WHERE key = ?1", [key], |r| r.get(0)).optional()?)
     }
 
-    /// Sets (Some) or removes (None) a value kept beside the settings.
     pub fn set_setting_value(&self, key: &str, value: Option<&str>) -> Result<()> {
         match value {
             Some(v) => self.conn().execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)", params![key, v])?,
@@ -518,7 +460,6 @@ impl Db {
         Ok(())
     }
 
-    /// Favourites in order:`(id, name, encrypted target, account ids, in tray, sort order, last used)`.
     pub fn favourites(&self) -> Result<Vec<FavouriteRow>> {
         let c = self.conn();
         let mut st = c.prepare(
@@ -541,7 +482,6 @@ impl Db {
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
-    /// Insert (`id: None`, goes last) or update; the name is trimmed, 1..=60 chars.
     pub fn save_favourite(&self, id: Option<i64>, name: &str, target: &[u8], account_ids: &[i64], in_tray: bool) -> Result<i64> {
         let name = name.trim();
         if name.is_empty() || name.chars().count() > 60 {
@@ -574,7 +514,6 @@ impl Db {
         Ok(())
     }
 
-    /// `ids` get sort_order 0..n; others keep their order after them.
     pub fn reorder_favourites(&self, ids: &[i64]) -> Result<()> {
         let mut c = self.conn();
         let tx = c.transaction()?;
@@ -595,8 +534,6 @@ impl Db {
         Ok(())
     }
 
-    /// Records a server the account's client reached, unless it was already the latest; only its
-    /// newest `MAX_SERVERS` are kept.
     pub fn add_server(&self, account_id: i64, v: &ServerVisit) -> Result<()> {
         let mut conn = self.conn();
         let tx = conn.transaction()?;
@@ -618,7 +555,6 @@ impl Db {
         Ok(())
     }
 
-    /// The account's servers, newest first.
     pub fn servers(&self, account_id: i64) -> Result<Vec<ServerVisit>> {
         let c = self.conn();
         let mut st = c.prepare("SELECT place_id, job_id, private, joined_at FROM server_history WHERE account_id = ?1 ORDER BY id DESC")?;
@@ -626,7 +562,6 @@ impl Db {
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
-    /// Records a client that ended badly; only the newest 200 are kept.
     pub fn add_crash(&self, c: &NewCrash) -> Result<()> {
         let mut conn = self.conn();
         let tx = conn.transaction()?;
@@ -640,7 +575,6 @@ impl Db {
         Ok(())
     }
 
-    /// Newest first.
     pub fn crashes(&self) -> Result<Vec<Crash>> {
         let c = self.conn();
         let mut st = c.prepare(
@@ -670,13 +604,11 @@ impl Db {
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
-    /// The client log of a recorded crash (`NotFound` when there is none).
     pub fn crash_log(&self, id: i64) -> Result<String> {
         let path: Option<String> = self.conn().query_row("SELECT log_path FROM crashes WHERE id = ?1", [id], |r| r.get(0))?;
         path.ok_or(AppError::NotFound)
     }
 
-    /// A cached API answer no older than `max_age_ms`, with when it was fetched (unix ms).
     pub fn cache_get(&self, key: &str, max_age_ms: i64, now: i64) -> Result<Option<(String, i64)>> {
         Ok(self
             .conn()
@@ -696,7 +628,6 @@ impl Db {
         Ok(())
     }
 
-    /// Replaces the saved tracked clients with `rows` (instance id, JSON).
     pub fn save_tracked(&self, rows: &[(String, String)]) -> Result<()> {
         let mut conn = self.conn();
         let tx = conn.transaction()?;
@@ -708,7 +639,6 @@ impl Db {
         Ok(())
     }
 
-    /// The saved tracked clients (JSON each).
     pub fn tracked(&self) -> Result<Vec<String>> {
         let c = self.conn();
         let mut st = c.prepare("SELECT data FROM tracked")?;
@@ -740,11 +670,7 @@ fn write_recovery(c: &Connection, r: &RecoveryRecord) -> Result<()> {
     Ok(())
 }
 
-/// The previous wrap of the data key must not survive in the WAL: it would open the vault
-/// without the new (or any) master password, or with a revoked code.
 fn flush_old_wraps(c: &Connection) -> Result<()> {
-    // Committed by now: a failure here must not be reported as a failed save. The next
-    // checkpoint removes the old wrap.
     match c.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |r| r.get::<_, i64>(0)) {
         Ok(0) => {}
         Ok(_) => log::warn!("database journal not flushed after a vault change: busy"),
@@ -788,7 +714,6 @@ fn group_row(r: &Row) -> rusqlite::Result<Group> {
     Ok(Group { id: r.get(0)?, name: r.get(1)?, color: r.get(2)?, sort_order: r.get(3)? })
 }
 
-/// Rows changed by a write → `NotFound` when none.
 fn found(changed: usize) -> Result<()> {
     if changed == 0 { Err(AppError::NotFound) } else { Ok(()) }
 }
@@ -797,7 +722,6 @@ fn invalid(msg: impl Into<String>) -> AppError {
     AppError::Invalid(msg.into())
 }
 
-/// `None` / `""` → no colour; `#rrggbb` → lower-cased; anything else → `Invalid`.
 fn color(c: Option<&str>) -> Result<Option<String>> {
     match c.map(str::trim) {
         None | Some("") => Ok(None),
@@ -808,7 +732,6 @@ fn color(c: Option<&str>) -> Result<Option<String>> {
     }
 }
 
-/// One unreadable value (from a newer version, say) costs that value, not every setting.
 fn readable_settings(json: &str) -> Option<Settings> {
     let stored: serde_json::Map<String, serde_json::Value> = serde_json::from_str(json).ok()?;
     let mut good = serde_json::to_value(Settings::default()).ok()?;
@@ -824,7 +747,7 @@ fn readable_settings(json: &str) -> Option<Settings> {
     serde_json::from_value(good).ok()
 }
 
-/// The limits on what `write_meta` stores.
+// -- Main func
 pub fn check_meta(m: &AccountMeta) -> Result<()> {
     if m.alias.trim().chars().count() > MAX_ALIAS {
         return Err(invalid(tr!("Alias can be at most {max} characters.", max = MAX_ALIAS)));
@@ -843,7 +766,6 @@ fn write_meta(c: &Connection, id: i64, m: &AccountMeta) -> Result<()> {
     found(c.execute(sql, params![id, alias, m.notes, color, m.favourite, now_ms()])?)
 }
 
-/// Caller holds a transaction.
 fn replace_groups(c: &Connection, account_id: i64, group_ids: &[i64]) -> Result<()> {
     c.execute("DELETE FROM account_groups WHERE account_id = ?1", [account_id])?;
     for &gid in group_ids {
@@ -856,14 +778,12 @@ fn replace_groups(c: &Connection, account_id: i64, group_ids: &[i64]) -> Result<
     Ok(())
 }
 
-/// Validates, then inserts (`id: None`) or updates a group; returns its id.
 fn write_group(c: &Connection, id: Option<i64>, name: &str, color_in: Option<&str>) -> Result<i64> {
     let name = name.trim();
     if !(1..=MAX_GROUP_NAME).contains(&name.chars().count()) {
         return Err(invalid(tr!("Group names need 1 to {max} characters.", max = MAX_GROUP_NAME)));
     }
     let color = color(color_in)?;
-    // `name` is COLLATE NOCASE, so `=` compares case-insensitively.
     let sql = "SELECT EXISTS (SELECT 1 FROM groups WHERE name = ?1 AND id IS NOT ?2)";
     if c.query_row(sql, params![name, id], |r| r.get::<_, bool>(0))? {
         return Err(invalid(tr!("A group called \"{name}\" already exists.", name = name)));
@@ -904,7 +824,6 @@ mod tests {
         assert_eq!(db.favourites().unwrap().iter().find(|x| x.id == f).unwrap().account_ids, [a]);
         let c = add(3);
         assert!(c > b, "{c} after {b}");
-        // The same user added again is new too, and an update keeps its id.
         assert_eq!(add(3), c);
     }
 
@@ -970,12 +889,10 @@ mod tests {
         let copy = dir.join("moved").join("lram.db");
         std::fs::create_dir_all(copy.parent().unwrap()).unwrap();
         db.copy_to(&copy, || Ok(())).unwrap();
-        // The original keeps working; the copy has what it had then.
         add(&db, 3);
         let users = |db: &Db| db.accounts().unwrap().iter().map(|a| a.user_id).collect::<Vec<_>>();
         assert_eq!(users(&Db::open(&copy).unwrap()), [1, 2]);
         assert_eq!(users(&db), [1, 2, 3]);
-        // Never over an existing database.
         assert!(db.copy_to(&copy, || Ok(())).is_err());
         drop(db);
         let _ = std::fs::remove_dir_all(&dir);
@@ -995,7 +912,6 @@ mod tests {
             kdf: Some(Kdf { salt: vec![7; 16], m_kib: 65536, t: 3, p: 4 }),
         };
         db.save_vault_record(&master).unwrap();
-        // The process may exit without closing the connection: check the files as they are.
         for f in ["lram.db", "lram.db-wal"] {
             let bytes = std::fs::read(dir.join(f)).unwrap_or_default();
             assert!(!bytes.windows(old.len()).any(|w| w == old.as_slice()), "old wrap left in {f}");
@@ -1183,7 +1099,6 @@ mod tests {
         assert_eq!(err.to_string(), "Colour must look like #a1b2c3.");
         assert!(matches!(db.update_account(404, &AccountPatch::default()), Err(AppError::NotFound)));
 
-        // A rejected patch writes nothing, even the valid fields in it.
         let mixed = AccountPatch { alias: Some("kept?".into()), group_ids: Some(vec![77]), ..Default::default() };
         assert!(is_invalid(db.update_account(id, &mixed)));
         assert_eq!(db.account(id).unwrap().alias, "");
@@ -1260,12 +1175,10 @@ mod tests {
         assert_eq!(db.settings().unwrap(), s);
         db.conn().execute("UPDATE settings SET value = 'nope' WHERE key = 'settings'", []).unwrap();
         assert_eq!(db.settings().unwrap(), Settings::default());
-        // Settings saved before the web dashboard was removed still load.
         let old = r#"{"autoLockMinutes":3,"remote":{"enabled":true}}"#;
         db.conn().execute("UPDATE settings SET value = ?1 WHERE key = 'settings'", [old]).unwrap();
         assert_eq!(db.settings().unwrap().auto_lock_minutes, 3);
 
-        // The guard goes off once for settings saved with it on; later choices stay.
         let on = Settings { allow_public_networks: false, ..Settings::default() };
         let db2 = Db::open_in_memory().unwrap();
         db2.set_setting_value(PUBLIC_GUARD_OFF_ONCE, None).unwrap();
@@ -1277,7 +1190,6 @@ mod tests {
         assert!(!db2.settings().unwrap().allow_public_networks, "the user's later choice stays");
         assert!(Settings::default().allow_public_networks);
 
-        // The background's cover comes down once, and a later choice stays.
         let heavy = Settings { background_dim: 90, ..Settings::default() };
         db2.set_setting_value(BACKGROUND_COVER_ONCE, None).unwrap();
         db2.save_settings(&heavy).unwrap();
@@ -1287,7 +1199,6 @@ mod tests {
         db2.background_cover_once().unwrap();
         assert_eq!(db2.settings().unwrap().background_dim, 90, "the user's later choice stays");
 
-        // Values kept beside the settings leave them alone.
         assert_eq!(db.setting_value("discord_webhook").unwrap(), None);
         db.set_setting_value("discord_webhook", Some("00ff")).unwrap();
         db.save_settings(&s).unwrap();
@@ -1336,7 +1247,6 @@ mod tests {
         db.update_account(id, &patch(|p| p.fps_cap = Some(0))).unwrap();
         assert_eq!(db.account(id).unwrap().fps_cap, None);
 
-
         let log = r"C:\logs\x.log";
         for n in 0..205 {
             db.add_crash(&NewCrash {
@@ -1357,7 +1267,6 @@ mod tests {
         assert_eq!((list[1].kind, list[1].has_log, list[199].at), (CrashKind::Disconnect, false, 5));
         assert_eq!(db.crash_log(list[0].id).unwrap(), log);
         assert!(matches!(db.crash_log(list[1].id), Err(AppError::NotFound)));
-        // They go with the account.
         db.remove_accounts(&[id]).unwrap();
         assert!(db.crashes().unwrap().is_empty());
     }
@@ -1371,7 +1280,6 @@ mod tests {
         let mut got = db.tracked().unwrap();
         got.sort();
         assert_eq!(got, [row("a").1, row("b").1]);
-        // "a" ended.
         db.save_tracked(&[row("b")]).unwrap();
         assert_eq!(db.tracked().unwrap(), [row("b").1]);
         db.save_tracked(&[]).unwrap();

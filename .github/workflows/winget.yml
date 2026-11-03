@@ -1,8 +1,5 @@
 name: Winget
 
-# When a release is published, proposes it to the Windows Package Manager. Does nothing until the
-# WINGET_TOKEN secret is set (a GitHub token with public_repo, on an account with a fork of
-# microsoft/winget-pkgs); the first version of JohnBirlich.LRAM must be submitted by hand.
 on:
   release:
     types: [released]

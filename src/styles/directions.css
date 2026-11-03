@@ -1,5 +1,3 @@
-/* The LRAM look: dark surfaces, square corners, hairline rules. Inert without data-direction="lram". */
-
 @layer components {
 
   :root[data-direction="lram"]:not([data-theme="light"]) {
@@ -47,7 +45,6 @@
     --primary-edge: #2f62cc;
   }
 
-
   :root[data-direction="lram"] body {
     background: var(--frame);
   }
@@ -80,7 +77,6 @@
     background: color-mix(in oklab, var(--bg) 88%, transparent);
   }
 
-
   :root[data-direction="lram"] .panel {
     border-radius: 2px;
     border: 1px solid var(--line);
@@ -97,7 +93,6 @@
   :root[data-direction="lram"] .bezel canvas {
     border-radius: 0;
   }
-
 
   :root[data-direction="lram"] .btn,
   :root[data-direction="lram"] .chip,
@@ -295,7 +290,6 @@
     background: #0f131b;
   }
 
-
   :root[data-direction="lram"] .nav-item {
     min-height: 34px;
     padding-inline: 9px;
@@ -328,7 +322,6 @@
     color: var(--text);
   }
 
-
   :root[data-direction="lram"] .page-title {
     font-size: 21px;
     font-weight: 700;
@@ -352,7 +345,6 @@
   :root[data-direction="lram"] .mono {
     letter-spacing: 0;
   }
-
 
   :root[data-direction="lram"] .row {
     height: 46px;
@@ -388,7 +380,6 @@
     height: 38px;
   }
 
-
   :root[data-direction="lram"] .dlg {
     border-radius: 2px;
     border: 1px solid var(--line-strong);
@@ -421,7 +412,6 @@
   :root[data-direction="lram"] .toast::before {
     border-radius: 1px;
   }
-
 
   :root[data-direction="lram"] .led {
     box-shadow: none;
@@ -465,7 +455,6 @@
     font-size: 11px;
     color: #b1bccf;
   }
-
 
   :root[data-direction="lram"] .counters {
     border-radius: 2px;

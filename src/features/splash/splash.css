@@ -1,6 +1,3 @@
-/* The start-up splash (Splash.tsx), from the approved design canvas: one 3.8 s timeline, every
-   layer keyed to the same percentages. It settles at 79% and holds; the window grows 2 s later
-   (`splash_done`), then the splash fades. */
 .splash {
   position: fixed;
   inset: 0;
@@ -67,7 +64,7 @@
   49.5%, 51% { transform: translate(-15px, -17px); }
   51.5%, 53% { transform: translate(-19px, -18px); }
   53.5%, 64.4% { transform: translate(-16.7px, -16.7px); }
-  /* The teleport: paired stops snap instead of sliding. */
+
   64.5%, 65.4% { transform: translate(-19px, -14px); }
   65.5%, 66.4% { transform: translate(2px, -2px); }
   66.5%, 67.4% { transform: translate(-1px, 1px); }

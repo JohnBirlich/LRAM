@@ -18,7 +18,7 @@ const EVENTS: [key: Exclude<keyof DiscordEvents, "statusEveryMin">, title: Key, 
   ["batchDone", "discord.evBatchDone", "discord.evBatchDoneHint"],
 ];
 
-/** Alerts to a Discord channel through a webhook; the URL itself stays in the vault. */
+// -- Main func
 export function DiscordView({ settings }: { settings: Settings }) {
   const qc = useQueryClient();
   const set = useSetSettings();

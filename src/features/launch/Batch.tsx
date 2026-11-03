@@ -10,7 +10,7 @@ import { describeTarget } from "./target";
 
 const STEPS: Key[] = ["launch.batch.stepTicket", "launch.batch.stepRun", "launch.batch.stepJoin", "launch.batch.stepIn"];
 type Kind = Exclude<BulkStage["kind"], "failed">;
-/** The step in progress; 4 is all done, -1 none. */
+
 const AT: Record<Kind, number> = { queued: -1, ticket: 0, starting: 1, joining: 2, inGame: 4, done: 4, cancelled: -1 };
 const NOTE: Record<Kind, Key> = {
   queued: "launch.batch.queued",
@@ -23,16 +23,12 @@ const NOTE: Record<Kind, Key> = {
 };
 
 function steps(stage: BulkStage, started: boolean, done: boolean) {
-  // A started client that failed got past the ticket.
   const at = stage.kind === "failed" ? (started ? 1 : 0) : AT[stage.kind];
   const live = stage.kind === "failed" ? "step step-fail" : done ? "step step-live" : "step step-live pulse";
   return STEPS.map((_, i) => (i < at ? "step step-done" : i === at ? live : "step"));
 }
 
-/** A started client's stage from its tracked instance (as the backend mirrors it), so rows keep
- * moving after the batch itself stopped. `allowDisconnect`: its account's setting. */
 function stageOf(i: Instance, allowDisconnect: boolean): BulkStage {
-  // As the backend's mirror_item: these notes fail the item whatever the state.
   if (i.signInProblem) return { kind: "failed", message: i.note ?? "" };
   switch (i.state) {
     case "starting":
@@ -46,7 +42,7 @@ function stageOf(i: Instance, allowDisconnect: boolean): BulkStage {
   }
 }
 
-/** The running or last bulk launch, above Running clients. `onPick` picks accounts in Launch. */
+// -- Main func
 export function BatchSection({ accounts, onPick }: { accounts: AccountSummary[]; onPick: (ids: number[]) => void }) {
   const qc = useQueryClient();
   const p = useBulk().data;
@@ -55,7 +51,6 @@ export function BatchSection({ accounts, onPick }: { accounts: AccountSummary[];
   if (!p) return null;
 
   const byId = new Map(accounts.map((a) => [a.id, a]));
-  // The account an item was started as (ids are reused once an account is removed).
   const own = (i: { accountId: number; userId: number }) => {
     const a = byId.get(i.accountId);
     return a && a.userId === i.userId ? a : undefined;
@@ -65,13 +60,10 @@ export function BatchSection({ accounts, onPick }: { accounts: AccountSummary[];
   const items = p.items.map((item) => {
     const inst = item.instanceId ? live.get(item.instanceId) : undefined;
     const running = item.stage.kind === "starting" || item.stage.kind === "joining" || item.stage.kind === "inGame";
-    // Only ended clients leave the tracker; while the batch runs the backend already says so,
-    // and a progress event may arrive before the instance list catches up.
     const stage = inst ? stageOf(inst, own(item)?.allowDisconnect ?? false) : running && p.done && instances && item.instanceId ? closed : item.stage;
     return { ...item, stage, job: inst?.jobId ?? null };
   });
   const n = items.length;
-  // Allow-disconnect accounts that disconnected are done, not failed.
   const ok = items.filter((i) => i.stage.kind === "inGame" || i.stage.kind === "done").length;
   const done = items.some((i) => i.stage.kind === "done");
   const failed = items.filter((i) => i.stage.kind === "failed").length;

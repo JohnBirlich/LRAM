@@ -11,12 +11,11 @@ import { t } from "../../i18n";
 
 export type MenuAt = { account: AccountSummary; x: number; y: number };
 
-/** Right-click menu of an account row. With several rows ticked and this one among them,
- * Launch, Validate and Remove apply to all of them. */
+// -- Main func
 export function AccountMenu({ at, onClose, selection, canLaunch, onLaunch, onValidate, onRemove, onFriends }: {
   at: MenuAt | null;
   onClose: () => void;
-  /** Ticked account ids. */
+
   selection: number[];
   canLaunch: (id: number) => boolean;
   onLaunch: (ids: number[]) => void;
@@ -33,7 +32,6 @@ export function AccountMenu({ at, onClose, selection, canLaunch, onLaunch, onVal
     const el = ref.current;
     if (!el || !at) return;
     el.showPopover();
-    // Keep it inside the window.
     const r = el.getBoundingClientRect();
     setPos({ left: Math.max(4, Math.min(at.x, innerWidth - r.width - 4)), top: Math.max(4, Math.min(at.y, innerHeight - r.height - 4)) });
     el.querySelector<HTMLElement>(".menu-item:not(:disabled)")?.focus();

@@ -1,4 +1,3 @@
-// UI strings: one English catalog (./locales/en.json). `t` fills `{name}` placeholders.
 import { Fragment, createElement, type ReactNode } from "react";
 import en from "./locales/en.json";
 
@@ -26,13 +25,11 @@ function lookup(key: Key, p?: Params): string {
 
 const show = (name: string, v: string | number) => (name === "count" && typeof v === "number" ? numbers.format(v) : String(v));
 
-/** The string for `key`, with `{name}` placeholders filled from `p`. */
 export function t(key: Key, p?: Params): string {
   return lookup(key, p).replace(/\{(\w+)\}/g, (m, n: string) => (p && n in p ? show(n, p[n]) : m));
 }
 
-/** Like `t`, for strings with markup: `{name}` may be a React node, and `<b>text</b>` calls
- *  `tags.b("text")`. Tags don't nest. */
+// -- Main func
 export function tx(key: Key, p: Record<string, ReactNode | string | number> = {}, tags: Record<string, (s: string) => ReactNode> = {}): ReactNode {
   const text = lookup(key, p as Params);
   const out: ReactNode[] = [];

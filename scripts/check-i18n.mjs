@@ -1,6 +1,3 @@
-// Checks that every UI string the code asks for exists in src/i18n/locales/en.json.
-// The app is English only: the English text is the single catalog, and Rust's `tr!`/`trn!` keys
-// are the English source strings themselves.
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 

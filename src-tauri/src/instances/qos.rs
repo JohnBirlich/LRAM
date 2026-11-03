@@ -1,10 +1,3 @@
-//! The bandwidth limit: a Windows QoS policy throttling the outbound traffic of every
-//! `RobloxPlayerBeta.exe` together. Setting it needs admin rights, so `apply` runs a fixed,
-//! built-in PowerShell script (only the validated rate is put in) elevated through the UAC
-//! prompt, and only when the user clicks Apply. The policy lives in the ActiveStore: Windows
-//! drops it on restart, and nothing about the system stays changed. Reading it back needs admin
-//! rights too, so whether it is in force is judged by when it was applied (`applied_this_boot`).
-
 use std::os::windows::ffi::OsStrExt;
 use std::time::Duration;
 
@@ -20,16 +13,11 @@ use crate::error::{AppError, Result};
 const POLICY: &str = "LRAM-Roblox";
 pub const MIN_KBPS: u32 = 64;
 pub const MAX_KBPS: u32 = 10_000_000;
-/// How long the elevated script may take once the prompt is answered.
 const TIMEOUT: Duration = Duration::from_secs(60);
 
-/// The script `apply` runs elevated (pure): removes LRAM's policy, then for a rate (kbps,
-/// `MIN_KBPS..=MAX_KBPS`) adds it again; 0 only removes it. Nothing but the checked integer is
-/// put into it.
 pub fn script(kbps: u32) -> Result<String> {
     let remove = format!("Remove-NetQosPolicy -Name '{POLICY}' -PolicyStore ActiveStore -Confirm:$false -ErrorAction SilentlyContinue");
     if kbps == 0 {
-        // Nothing to remove is fine, yet leaves PowerShell's exit code at 1.
         return Ok(format!("{remove}; exit 0"));
     }
     if !(MIN_KBPS..=MAX_KBPS).contains(&kbps) {
@@ -42,8 +30,7 @@ pub fn script(kbps: u32) -> Result<String> {
     ))
 }
 
-/// Sets (or with 0 removes) the limit: Windows shows its admin prompt, then the script runs
-/// hidden; waits for it. Declining the prompt or a failing script is an error.
+// -- Main func
 pub fn apply(kbps: u32) -> Result<()> {
     let script = script(kbps)?;
     let exe = std::env::var_os("SystemRoot").unwrap_or_else(|| r"C:\Windows".into());
@@ -60,7 +47,7 @@ pub fn apply(kbps: u32) -> Result<()> {
         nShow: SW_HIDE.0,
         ..Default::default()
     };
-    // SAFETY: `info` is a local with its size set; the strings it points at outlive the call.
+    // -- SAFETY: `info` is a local with its size set; the strings it points at outlive the call
     if let Err(e) = unsafe { ShellExecuteExW(&mut info) } {
         return Err(if e.code() == ERROR_CANCELLED.to_hresult() {
             AppError::Invalid(tr!("The bandwidth limit needs admin rights; the prompt was declined."))
@@ -71,10 +58,10 @@ pub fn apply(kbps: u32) -> Result<()> {
     if info.hProcess.is_invalid() {
         return Err(AppError::Internal(tr!("PowerShell didn't start.")));
     }
-    // SAFETY: SEE_MASK_NOCLOSEPROCESS hands us the process handle; Owned closes it.
+    // -- SAFETY: SEE_MASK_NOCLOSEPROCESS hands us the process handle; Owned closes it
     let h = unsafe { Owned::new(info.hProcess) };
     let mut code = 1u32;
-    // SAFETY: `h` is a live process handle; `code` is a local.
+    // -- SAFETY: `h` is a live process handle; `code` is a local
     unsafe {
         if WaitForSingleObject(*h, TIMEOUT.as_millis() as u32) != WAIT_OBJECT_0 {
             return Err(AppError::Internal(
@@ -90,14 +77,11 @@ pub fn apply(kbps: u32) -> Result<()> {
     Ok(())
 }
 
-/// When Windows last started, Unix ms (to the second or so).
 pub fn boot_ms(now_ms: i64) -> i64 {
-    // SAFETY: no arguments; reads the tick count.
+    // -- SAFETY: no arguments; reads the tick count
     now_ms - unsafe { GetTickCount64() } as i64
 }
 
-/// A policy applied when Windows had started at `applied_boot_ms` is still in force now that it
-/// started at `boot_ms` (pure; the two readings of the boot time differ by a few ms).
 pub fn applied_this_boot(applied_boot_ms: i64, boot_ms: i64) -> bool {
     (applied_boot_ms - boot_ms).abs() < 60_000
 }

@@ -10,7 +10,7 @@ import { accountName, Avatar, PresenceStatus } from "../accounts/shared";
 
 const RANK: Record<PresenceKind, number> = { inGame: 0, studio: 1, online: 2, unknown: 3, offline: 4 };
 
-/** Friends online plus the other stored accounts; asked each time it opens, never polled. */
+// -- Main func
 export function JoinDialog({ open, onClose, account, accounts, onPick }: {
   open: boolean;
   onClose: () => void;

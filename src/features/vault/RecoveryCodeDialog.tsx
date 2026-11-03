@@ -6,7 +6,7 @@ import { Icon } from "../../ui/Icon";
 import { toast, toastError } from "../../ui/Toast";
 import { t } from "../../i18n";
 
-/** Shows a new recovery code, once. It won't close until the user says it is saved. */
+// -- Main func
 export function RecoveryCodeDialog({ code, onClose }: { code: string | null; onClose: () => void }) {
   const [saved, setSaved] = useState(false);
 

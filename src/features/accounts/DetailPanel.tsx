@@ -27,7 +27,7 @@ const STATS: Key[] = [
 const clip = (text: string, done: string) => writeText(text).then(() => toast(done), toastError);
 const openLink = (url: string) => openUrl(url).catch(toastError);
 
-/** The parent keys this by account id, so local edits reset when the selection changes. */
+// -- Main func
 export function DetailPanel({ account: a, groups, vaultMode, clipboardSeconds, checking, playing, onValidate, onRemove, onLaunch }: {
   account: AccountSummary;
   groups: Group[];
@@ -48,7 +48,6 @@ export function DetailPanel({ account: a, groups, vaultMode, clipboardSeconds, c
     mutationFn: () => api.accountInfo(a.id, true),
     onSuccess: (fresh) => {
       qc.setQueryData(qk.info(a.id), fresh);
-      // account_info just cached the new avatar URL; the list reads it from there.
       qc.invalidateQueries({ queryKey: qk.headshots });
     },
   });
@@ -68,12 +67,10 @@ export function DetailPanel({ account: a, groups, vaultMode, clipboardSeconds, c
   const [ask, setAsk] = useState<"reveal" | "copy" | null>(null);
   const [lastAsk, setLastAsk] = useState<"reveal" | "copy">("reveal");
   const [more, setMore] = useState(false);
-  // Only info that belongs to this Roblox user (local ids can be reused after a removal).
   const d = info.data?.userId === a.userId ? info.data : undefined;
   const username = d?.username || a.username;
   const busy = refresh.isPending || info.isFetching;
 
-  // Revealed cookies hide themselves; unmounting (other account, lock) drops them too.
   useEffect(() => {
     if (!cookie) return;
     const timer = setTimeout(() => setCookie(null), REVEAL_SECONDS * 1000);
@@ -415,10 +412,8 @@ function Info({ d }: { d: AccountInfo }) {
   );
 }
 
-/** Label, value (null = no answer), tooltip. */
 type Stat = [Key, string | null, string?];
 
-/** Big counts shrink to "1.2M" with the exact number as the tooltip. */
 function num(k: Key, n: number | null): Stat {
   if (n === null) return [k, null];
   if (n < 100_000) return [k, fmtNum(n)];
@@ -501,7 +496,6 @@ function PresenceBlock({ p }: { p: Presence | null }) {
   );
 }
 
-/** Three lines, with "Show more" only when the text is actually cut. */
 function About({ text }: { text: string }) {
   const p = useRef<HTMLParagraphElement>(null);
   const [cut, setCut] = useState(false);
@@ -571,7 +565,6 @@ function ActionButton({ icon, label, title, disabled, onClick }: {
   );
 }
 
-/** The servers this account's clients reached, newest first; a public one can be joined again. */
 function ServerHistory({ accountId }: { accountId: number }) {
   const servers = useQuery({
     queryKey: qk.serverHistory(accountId),
@@ -595,7 +588,6 @@ function ServerHistory({ accountId }: { accountId: number }) {
 function ServerRow({ accountId, visit: v }: { accountId: number; visit: ServerVisit }) {
   const game = useQuery({ queryKey: qk.game(v.placeId), queryFn: () => api.gameInfo(v.placeId) }).data;
   const [busy, setBusy] = useState(false);
-  // With multi-instance off it would end the client that runs.
   const multi = useMultiStatus().data;
   const batch = useBulk().data;
   const others = (useInstances().data ?? []).some((i) => i.state !== "exited" && i.accountId !== accountId);
@@ -628,7 +620,6 @@ function Section({ children }: { children: ReactNode }) {
   return <div className="flex flex-col gap-3 px-5 py-4 border-b border-line">{children}</div>;
 }
 
-/** The UI name of an AccountInfo part Roblox didn't answer for (ids from `account_info`). */
 const PARTS: Record<string, Key> = {
   profile: "accounts.part.profile",
   avatar: "accounts.part.avatar",

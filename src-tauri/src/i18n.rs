@@ -1,8 +1,5 @@
-//! English text for errors, notices, the tray menu and Discord messages: the source string is the key.
-
 use std::fmt::Display;
 
-/// The one language there is; the tray menu keeps it in its key so a change would rebuild it.
 pub fn current() -> &'static str {
     "en"
 }
@@ -19,6 +16,7 @@ pub fn tr(key: &'static str, args: &[(&str, &dyn Display)]) -> String {
     fill(key, args)
 }
 
+// -- Main func
 pub fn trn(n: u64, one: &'static str, other: &'static str, args: &[(&str, &dyn Display)]) -> String {
     let text = if n == 1 { one } else { other };
     fill(&fill(text, &[("n", &n)]), args)

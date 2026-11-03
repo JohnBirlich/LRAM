@@ -8,7 +8,7 @@ import { toast } from "../../ui/Toast";
 import { t, tx } from "../../i18n";
 import { SWATCHES } from "./shared";
 
-/** Group keys over the accounts list: click filters, right-click or the pencil edits, "+" creates. */
+// -- Main func
 export function GroupChips({ groups, accounts, active, onPick }: {
   groups: Group[];
   accounts: AccountSummary[];
@@ -34,7 +34,7 @@ export function GroupChips({ groups, accounts, active, onPick }: {
 
   return (
     <>
-      {/* Capped, so many groups can't push the list off the window. */}
+      {}
       <div className="scroll min-w-0 flex flex-wrap items-center gap-3 max-h-[132px] p-2 -m-2">
         <button className="chip" aria-pressed={active === null} onClick={() => onPick(null)}>{t("accounts.filter.all")}</button>
         {groups.map((g) => (

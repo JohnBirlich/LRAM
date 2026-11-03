@@ -1,6 +1,6 @@
 import type { KeyboardEvent } from "react";
 
-/** Keys of a popover menu: arrows, Home and End move; Tab leaves and closes it. */
+// -- Main func
 export function menuKeys(e: KeyboardEvent<HTMLElement>) {
   const root = e.currentTarget;
   if (e.key === "Tab") {

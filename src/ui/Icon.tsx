@@ -1,4 +1,3 @@
-// Square-cut 16px line icons, drawn to match the design canvas.
 const paths = {
   search: <><rect x="2" y="2" width="9" height="9" /><path d="M10.5 10.5L14 14" /></>,
   sun: <><rect x="5" y="5" width="6" height="6" /><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3 3l1.5 1.5M11.5 11.5L13 13M13 3l-1.5 1.5M4.5 11.5L3 13" /></>,
@@ -55,6 +54,7 @@ const paths = {
 
 export type IconName = keyof typeof paths;
 
+// -- Main func
 export function Icon({ name, size = 16, fill = false, className }: { name: IconName; size?: number; fill?: boolean; className?: string }) {
   return (
     <svg

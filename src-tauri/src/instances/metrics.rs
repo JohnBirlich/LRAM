@@ -1,8 +1,3 @@
-//! What each client uses: CPU from `GetProcessTimes` deltas, memory from
-//! `K32GetProcessMemoryInfo`, IO from `GetProcessIoCounters`, GPU from `gpu`. Each sample opens a short-lived
-//! `PROCESS_QUERY_LIMITED_INFORMATION` handle checked against the client's start time; nothing
-//! reads the client's memory (no VM_READ).
-
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -18,49 +13,35 @@ use super::gpu::{Gpu, Usage};
 use super::process::{open, started};
 use crate::model::{ClientMetrics, Limits, SystemUsage};
 
-/// Samples are reused for this long, so several views polling don't add up. A little under the
-/// views' 2 s, so a poll arriving a hair early gets a new sample instead of waiting for the next.
 const CACHE: Duration = Duration::from_millis(1900);
 const MB: f64 = 1024.0 * 1024.0;
 
-/// How long a sample that took `read` is reused: many clients make the counters slow, and this
-/// keeps them from reading all the time.
 fn ttl(read: Duration) -> Duration {
     CACHE.max(read * 3)
 }
 
-/// One reading of a process.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Reading {
-    /// Kernel + user time, 100 ns ticks.
     pub cpu: u64,
-    /// Private working set: Task Manager's Memory column, what a trim lowers.
     pub memory: u64,
-    /// The whole working set, shared pages too.
     pub working_set: u64,
-    /// Private bytes: Task Manager's Commit size, what a leak grows and the memory limits watch.
     pub private: u64,
     pub read: u64,
     pub write: u64,
 }
 
-/// The previous reading of each client, for the deltas.
 struct Last {
     at: Instant,
     t0: u64,
     r: Reading,
 }
 
-/// The PC's last sample: when, what, and its CPU times (idle, kernel + user).
 type SystemSample = (Instant, SystemUsage, (u64, u64));
 
 pub struct Sampler {
     last: Mutex<HashMap<String, Last>>,
-    /// The last sample and when it stops being reused.
     cache: Mutex<Option<(Instant, Vec<ClientMetrics>)>>,
-    /// Opened on the first sample; stays None where Windows has no such counters.
     gpu: Mutex<Option<Option<Gpu>>>,
-    /// For `system`.
     system: Mutex<Option<SystemSample>>,
 }
 
@@ -69,7 +50,6 @@ impl Sampler {
         Sampler { last: Mutex::new(HashMap::new()), cache: Mutex::new(None), gpu: Mutex::new(None), system: Mutex::new(None) }
     }
 
-    /// How busy the whole PC is, reused for `CACHE`; None if Windows doesn't say.
     pub fn system(&self) -> Option<SystemUsage> {
         let mut last = self.system.lock().unwrap_or_else(|e| e.into_inner());
         if let Some((at, usage, _)) = last.as_ref()
@@ -84,8 +64,6 @@ impl Sampler {
         Some(usage)
     }
 
-    /// Metrics of the running clients (id, pid, start time, limits as `Tracker::clients`);
-    /// a client whose process can't be read is left out.
     pub fn sample(&self, clients: &[(String, u32, u64, Limits)]) -> Vec<ClientMetrics> {
         let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
         if let Some((until, m)) = cache.as_ref()
@@ -102,16 +80,12 @@ impl Sampler {
         last.retain(|id, _| clients.iter().any(|c| c.0 == *id));
         let mut gpu = self.gpu.lock().unwrap_or_else(|e| e.into_inner());
         let gpu = gpu.get_or_insert_with(Gpu::open);
-        // After opening the GPU counters, which can take seconds once: the cache lasts from here.
-        // Not from the end of the read: a poll every 2 s would then keep finding it still fresh.
         let began = Instant::now();
         let usage = match gpu {
             Some(g) => g.read(),
             None => Usage { pct: None, mem_mb: None },
         };
-        // What the rates are measured from: when these values were read.
         let now = Instant::now();
-        // A process using nothing has no counter instance: 0, when the counters answered at all.
         let of = |m: &Option<HashMap<u32, f64>>, pid: u32| m.as_ref().map(|m| m.get(&pid).copied().unwrap_or(0.0));
         let mut out = Vec::new();
         for (id, pid, t0, _) in clients {
@@ -122,7 +96,6 @@ impl Sampler {
             out.push(ClientMetrics {
                 instance_id: id.clone(),
                 pid: *pid,
-                // 100 ns ticks per second of one core: 1e7.
                 cpu_pct: rate(|r| r.cpu).map(|t| (t / 1e7 / cores * 100.0).min(100.0)),
                 memory_mb: r.memory as f64 / MB,
                 private_mb: r.private as f64 / MB,
@@ -146,34 +119,31 @@ impl Default for Sampler {
     }
 }
 
-/// All cores' CPU time so far, 100 ns ticks: idle, and kernel (which includes idle) + user.
 fn cpu_times() -> Option<(u64, u64)> {
     let (mut idle, mut kernel, mut user) = (FILETIME::default(), FILETIME::default(), FILETIME::default());
-    // SAFETY: three local FILETIMEs to write to.
+    // -- SAFETY: three local FILETIMEs to write to
     unsafe { GetSystemTimes(Some(&mut idle), Some(&mut kernel), Some(&mut user)) }
         .inspect_err(|e| log::debug!("metrics: system times unreadable: {e}"))
         .ok()?;
     Some((ticks(idle), ticks(kernel) + ticks(user)))
 }
 
-/// Physical memory in use and in all, bytes.
 pub(super) fn memory() -> Option<(u64, u64)> {
     let mut m = MEMORYSTATUSEX { dwLength: size_of::<MEMORYSTATUSEX>() as u32, ..Default::default() };
-    // SAFETY: a local MEMORYSTATUSEX whose dwLength says its size.
+    // -- SAFETY: a local MEMORYSTATUSEX whose dwLength says its size
     unsafe { GlobalMemoryStatusEx(&mut m) }
         .inspect_err(|e| log::debug!("metrics: memory status unreadable: {e}"))
         .ok()?;
     Some((m.ullTotalPhys.saturating_sub(m.ullAvailPhys), m.ullTotalPhys))
 }
 
-/// The share of time not idle between two `cpu_times` (pure); None without any time passing.
 fn busy_pct(before: (u64, u64), now: (u64, u64)) -> Option<f64> {
     let total = now.1.checked_sub(before.1).filter(|&t| t > 0)?;
     let idle = now.0.saturating_sub(before.0).min(total);
     Some((total - idle) as f64 / total as f64 * 100.0)
 }
 
-/// One reading of `pid`, only while it is still the process started at `t0`.
+// -- Main func
 pub fn read(pid: u32, t0: u64) -> Option<Reading> {
     let h = open(pid, PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SYNCHRONIZE)?;
     if started(*h) != Some(t0) {
@@ -184,11 +154,8 @@ pub fn read(pid: u32, t0: u64) -> Option<Reading> {
     let mut mem = PROCESS_MEMORY_COUNTERS_EX2 { cb: ex2, ..Default::default() };
     let counters = (&raw mut mem).cast::<PROCESS_MEMORY_COUNTERS>();
     let mut io = IO_COUNTERS::default();
-    // SAFETY: `h` is live with PROCESS_QUERY_LIMITED_INFORMATION (all these need); `mem` is a
-    // local PROCESS_MEMORY_COUNTERS_EX2, which is as long as the sizes given and starts with the
-    // shorter forms; `io` is a local.
+    // -- SAFETY: `h` is live with PROCESS_QUERY_LIMITED_INFORMATION (all these need); `mem` is a local …
     unsafe {
-        // Older Windows only knows the shorter form.
         if !K32GetProcessMemoryInfo(*h, counters, ex2).as_bool() {
             K32GetProcessMemoryInfo(*h, counters, ex)
                 .ok()
@@ -199,7 +166,6 @@ pub fn read(pid: u32, t0: u64) -> Option<Reading> {
     }
     Some(Reading {
         cpu,
-        // Zero on that older Windows, which can only say the whole working set.
         memory: if mem.PrivateWorkingSetSize > 0 { mem.PrivateWorkingSetSize } else { mem.WorkingSetSize } as u64,
         working_set: mem.WorkingSetSize as u64,
         private: mem.PrivateUsage as u64,
@@ -211,7 +177,7 @@ pub fn read(pid: u32, t0: u64) -> Option<Reading> {
 fn cpu_ticks(h: HANDLE) -> Option<u64> {
     let (mut created, mut exited, mut kernel, mut user) =
         (FILETIME::default(), FILETIME::default(), FILETIME::default(), FILETIME::default());
-    // SAFETY: `h` is live with PROCESS_QUERY_LIMITED_INFORMATION; the out pointers are locals.
+    // -- SAFETY: `h` is live with PROCESS_QUERY_LIMITED_INFORMATION; the out pointers are locals
     unsafe { GetProcessTimes(h, &mut created, &mut exited, &mut kernel, &mut user) }
         .inspect_err(|e| log::debug!("metrics: CPU time unreadable: {e}"))
         .ok()?;
@@ -222,14 +188,10 @@ fn ticks(f: FILETIME) -> u64 {
     (u64::from(f.dwHighDateTime) << 32) | u64::from(f.dwLowDateTime)
 }
 
-/// How many 10 s memory samples in a row a client has been over the limit, after one more
-/// sample of `private_mb` (pure). 0 when the limit is off.
 pub fn mem_strikes(prev: u32, private_mb: u64, limit_mb: u32) -> u32 {
     if limit_mb > 0 && private_mb > u64::from(limit_mb) { prev.saturating_add(1) } else { 0 }
 }
 
-/// Whether a client is held by the memory throttle after a sample of `private_mb` (pure): on
-/// over `limit_mb`, off again under 90 % of it, else as it was (`prev`). Never with 0 (off).
 pub fn mem_throttled(prev: bool, private_mb: u64, limit_mb: u32) -> bool {
     let limit = u64::from(limit_mb);
     match limit_mb {
@@ -240,7 +202,6 @@ pub fn mem_throttled(prev: bool, private_mb: u64, limit_mb: u32) -> bool {
     }
 }
 
-/// Samples over the limit in a row that restart a client.
 pub const MEM_STRIKES: u32 = 3;
 
 #[cfg(test)]

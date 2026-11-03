@@ -18,7 +18,6 @@ import { Sortable } from "./Sortable";
 const tabId = (id: number | null) => `home-tab-${id ?? "overview"}`;
 const inFlight = (tab: HomeTab) => tab.status === "queued" || tab.status === "launching";
 
-/** Arrows, Home and End move between the tabs and open them. */
 function tabKeys(e: KeyboardEvent<HTMLElement>) {
   const all = [...e.currentTarget.querySelectorAll<HTMLElement>("[role=tab]")];
   const at = all.indexOf(document.activeElement as HTMLElement);
@@ -31,13 +30,12 @@ function tabKeys(e: KeyboardEvent<HTMLElement>) {
   to.click();
 }
 
-/** One account's tab: its game, its options, and its launch or its window. */
 function TabBody({ tab, account: a, accounts, instances, block, onDraft, onLaunch }: {
   tab: HomeTab;
   account: AccountSummary;
   accounts: AccountSummary[];
   instances: Instance[];
-  /** Why no launch can start now, or null. */
+
   block: string | null;
   onDraft: (f: Draft | ((d: Draft) => Draft)) => void;
   onLaunch: () => void;
@@ -53,7 +51,6 @@ function TabBody({ tab, account: a, accounts, instances, block, onDraft, onLaunc
   const name = accountName(a);
   const valid = a.status === "valid";
   const [state, color] = inst ? STATES[inst.state] : [null, undefined];
-  // On screen only, because it can't be read back after a restart.
   const unsaved = usable && !pending && !storedText(draft);
   return (
     <>
@@ -175,22 +172,19 @@ function TabBody({ tab, account: a, accounts, instances, block, onDraft, onLaunc
   );
 }
 
-/** Home's tab strip: Overview (`children`, what Home always shows), then one tab per added account,
- * each with its own game and options, and a launch of all of them. */
+// -- Main func
 export function AccountTabs({ accounts, home, onAdd, children }: { accounts: AccountSummary[]; home: HomeTabs; onAdd: () => void; children: ReactNode }) {
   const qc = useQueryClient();
   const instances = useInstances().data ?? [];
   const multi = useMultiStatus().data;
   const batch = useBulk().data;
   const settings = useSettings().data;
-  // With accounts on the side (`AccountRail`), that list stands in for the strip.
   const side = settings?.tabLayout === "side";
   const network = useNetwork().data;
   const strip = useRef<HTMLDivElement>(null);
   const [who, setWho] = useState("");
   const byId = new Map(accounts.map((a) => [a.id, a]));
   const { active } = home;
-  // In the order they were dragged to, which a launch of all of them goes by too.
   const tabs = homeSorted(home.tabs, home.order);
   const open = tabs.find((tab) => tab.accountId === active);
   const ready = tabs.filter((tab) => {
@@ -198,7 +192,6 @@ export function AccountTabs({ accounts, home, onAdd, children }: { accounts: Acc
     return byId.get(tab.accountId)?.status === "valid" && (usable || pending) && !instances.some((i) => i.accountId === tab.accountId && isLive(i));
   });
   const launching = tabs.some(inFlight);
-  // With multi-instance off, one more client ends the one that runs.
   const replaces = (tab: HomeTab) => instances.some((i) => isRunning(i) && i.accountId !== tab.accountId);
   const allReplace = ready.some(replaces);
   const blockFor = (several: boolean, replacing: boolean) => publicBlock(network, settings) ?? launchBlocked(several || (replacing && !!multi?.enabled), multi, batch);
@@ -206,18 +199,15 @@ export function AccountTabs({ accounts, home, onAdd, children }: { accounts: Acc
   const free = accounts.filter((a) => !tabs.some((tab) => tab.accountId === a.id));
   const needle = who.trim().toLowerCase();
   const picks = needle ? free.filter((a) => `${a.alias}\n${a.displayName}\n${a.username}`.toLowerCase().includes(needle)) : free;
-  /** After a tab was added or closed, once that is on screen: what had the focus is gone. */
+
   const focusSelected = () => requestAnimationFrame(() => strip.current?.querySelector<HTMLElement>("[role=tab][aria-selected=true]")?.focus());
 
-  // The wheel runs along the tabs; at either end it scrolls the page as usual. Not onWheel: React's
-  // is passive, and the page would scroll too.
   useEffect(() => {
     const el = strip.current;
     if (!el) return;
     const wheel = (e: WheelEvent) => {
       if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
       const end = el.scrollWidth - el.clientWidth;
-      // Right to left, scrollLeft runs from 0 down to -end.
       const at = Math.abs(el.scrollLeft);
       if (end <= 0 || (e.deltaY < 0 && at <= 0) || (e.deltaY > 0 && at >= end - 1)) return;
       e.preventDefault();
@@ -227,13 +217,10 @@ export function AccountTabs({ accounts, home, onAdd, children }: { accounts: Acc
     return () => el.removeEventListener("wheel", wheel);
   }, [side]);
 
-  // Coming back to Home, the strip starts at its left end.
   useEffect(() => {
     strip.current?.querySelector("[role=tab][aria-selected=true]")?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [active]);
 
-  /** One after another: `BulkRequest` has a single target, and each tab has its own. The backend
-   * keeps the launch delay between them. */
   const launch = async (list: HomeTab[]) => {
     if (launching) return;
     home.setStatus(list.map((tab) => tab.accountId), "queued");
@@ -241,7 +228,6 @@ export function AccountTabs({ accounts, home, onAdd, children }: { accounts: Acc
       const id = tab.accountId;
       const a = byId.get(id);
       const rest = () => home.setStatus(list.slice(n).map((x) => x.accountId), undefined);
-      // A batch can have started meanwhile; launches go one at a time.
       const running = qc.getQueryData<BulkProgress | null>(qk.bulk);
       if (!a || (running && !running.done)) {
         rest();
@@ -259,9 +245,6 @@ export function AccountTabs({ accounts, home, onAdd, children }: { accounts: Acc
       } catch (e) {
         launchFailed(e);
         const { kind } = asError(e);
-        // The backend refusing: mostly Kill all, or an auto-rejoin or another launch under way. They
-        // have no kind of their own, and the rest must not go on starting. A dead share link reads
-        // the same, so it stops the rest too; its toast says why.
         const refused = asked && kind === "invalid";
         home.setStatus([id], refused ? undefined : "failed");
         if (refused || kind === "cancelled" || kind === "locked") {
@@ -324,7 +307,6 @@ export function AccountTabs({ accounts, home, onAdd, children }: { accounts: Acc
         <button
           type="button"
           className="btn btn-icon flex-none"
-          // Every account has its tab, or there are none: the only way on is another account.
           popoverTarget={free.length ? "home-tabs-add" : undefined}
           onClick={free.length ? undefined : onAdd}
           style={{ anchorName: "--home-tabs-add" }}
@@ -352,7 +334,6 @@ export function AccountTabs({ accounts, home, onAdd, children }: { accounts: Acc
               key={a.id}
               className="menu-item"
               onClick={(e) => {
-                // Now: the item is gone once the tab is added, and its own hide would never run.
                 e.currentTarget.closest<HTMLElement>("[popover]")?.hidePopover();
                 home.add(a.id);
                 focusSelected();

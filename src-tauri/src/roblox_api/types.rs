@@ -1,5 +1,3 @@
-//! Response types. Lenient: unknown fields are ignored.
-
 use serde::Deserialize;
 
 #[derive(Deserialize, Debug, Clone, PartialEq)]
@@ -10,7 +8,6 @@ pub struct AuthenticatedUser {
     pub display_name: String,
 }
 
-/// `GET users.roblox.com/v1/users/{id}`.
 #[derive(Deserialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct UserDetails {
@@ -19,7 +16,6 @@ pub struct UserDetails {
     pub display_name: String,
     #[serde(default)]
     pub description: String,
-    /// ISO 8601.
     pub created: Option<String>,
     #[serde(default)]
     pub is_banned: bool,
@@ -27,7 +23,6 @@ pub struct UserDetails {
     pub has_verified_badge: bool,
 }
 
-/// Friends / followers / following counts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SocialCounts {
     pub friends: i64,
@@ -35,7 +30,6 @@ pub struct SocialCounts {
     pub following: i64,
 }
 
-/// One row of `POST presence.roblox.com/v1/presence/users`.
 #[derive(Deserialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct UserPresence {
@@ -48,15 +42,11 @@ pub struct UserPresence {
     pub universe_id: Option<i64>,
 }
 
-/// The `{data:[..]}` envelope of list answers.
 #[derive(Deserialize, Debug)]
 pub struct Data<T> {
     pub data: Vec<T>,
 }
 
-/// A row of `games.roblox.com/v1/games?universeIds=` as sent. Anything may be null or missing
-/// (`universeAvatarType` is a string against the spec's int: never read). Rows without id or
-/// rootPlaceId are dropped by the caller.
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Game {
@@ -70,14 +60,12 @@ pub struct Game {
     pub create_vip_servers_allowed: Option<bool>,
 }
 
-/// A game's `creator` or a private server's `owner`.
 #[derive(Deserialize, Debug)]
 pub struct Party {
     pub id: Option<i64>,
     pub name: Option<String>,
 }
 
-/// A row of `games.roblox.com/v1/games?universeIds=` with what the server browser shows.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct GameDetails {
     pub universe_id: i64,
@@ -90,7 +78,6 @@ pub struct GameDetails {
     pub private_servers: bool,
 }
 
-/// `thumbnails.roblox.com/v1/users/avatar-headshot` (and `/v1/batch`).
 #[derive(Deserialize, Debug)]
 pub struct Thumbnails {
     pub data: Vec<Thumbnail>,
@@ -100,13 +87,10 @@ pub struct Thumbnails {
 #[serde(rename_all = "camelCase")]
 pub struct Thumbnail {
     pub target_id: i64,
-    /// Completed, Pending, Blocked, Error, InReview, TemporarilyUnavailable.
     pub state: String,
-    /// `""` while Pending; Blocked may carry a placeholder.
     pub image_url: Option<String>,
 }
 
-/// `get-profiles`. Roblox silently drops fields it doesn't know, row by row.
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Profiles {
@@ -127,7 +111,6 @@ pub struct Presences {
     pub user_presences: Vec<UserPresence>,
 }
 
-/// `GET twostepverification.roblox.com/v1/users/{id}/configuration`.
 #[derive(Deserialize, Debug)]
 pub struct TwoStepConfig {
     #[serde(default)]
@@ -137,14 +120,11 @@ pub struct TwoStepConfig {
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct TwoStepMethod {
-    /// An enum int (0 Email … 7 Passkey) or its name.
     pub media_type: serde_json::Value,
     #[serde(default)]
     pub enabled: bool,
 }
 
-/// `sharelinks/v1/resolve-link`: one `*Data` object is filled, by link type. Unknown fields
-/// are ignored; every field is optional because Roblox omits them freely.
 #[derive(Deserialize, Debug, Clone, Default, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct ShareLinkResolution {
@@ -158,11 +138,9 @@ pub struct ShareLinkResolution {
     pub profile_link_resolution_response_data: Option<ShareTarget>,
 }
 
-/// The union of the fields the website reads from any share-link payload.
 #[derive(Deserialize, Debug, Clone, Default, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct ShareTarget {
-    /// Valid | Expired | Invalid | InviterNotInExperience | ...
     pub status: Option<String>,
     pub place_id: Option<i64>,
     pub universe_id: Option<i64>,
@@ -170,22 +148,18 @@ pub struct ShareTarget {
     pub instance_id: Option<String>,
     pub launch_data: Option<String>,
     pub user_id: Option<i64>,
-    /// ExperienceAffiliate / ExperienceEvent keep launch data here.
     pub join_data: Option<serde_json::Value>,
 }
 
-/// `deeplinks/v2/resolve`.
 #[derive(Deserialize, Debug, Clone, Default, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct ShareLinkV2 {
-    /// Experience | StudioEdit | ...
     pub link_type: Option<String>,
     pub status: Option<String>,
     pub target_id: Option<i64>,
     pub custom_data: Option<serde_json::Value>,
 }
 
-/// A row of `friends/v1/users/{id}/friends/online`.
 #[derive(Deserialize, Debug, Clone, PartialEq)]
 pub struct FriendOnline {
     pub id: i64,
@@ -197,8 +171,6 @@ pub struct FriendOnline {
     pub presence: Option<FriendPresence>,
 }
 
-/// A row of `friends/v1/users/{id}/friends/requests`. The website's own tab sends `id`, `name` and
-/// `displayName`; the `sender`/`requester` forms are accepted too so a rename only costs names.
 #[derive(Deserialize, Debug, Clone, Default, PartialEq)]
 pub struct FriendRequestRow {
     #[serde(default)]
@@ -222,7 +194,6 @@ impl FriendRequestRow {
 #[derive(Deserialize, Debug, Clone, Default, PartialEq)]
 #[serde(rename_all = "PascalCase")]
 pub struct FriendPresence {
-    /// "Online" | "InGame" | "InStudio" | ...
     pub user_presence_type: Option<String>,
     #[serde(rename = "lastLocation")]
     pub last_location: Option<String>,
@@ -236,7 +207,6 @@ pub struct FriendPresence {
     pub universe_id: Option<i64>,
 }
 
-/// `games.roblox.com/v2/games/{placeId}/servers/Public`. `data` may be null.
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct ServerList {
@@ -244,8 +214,6 @@ pub struct ServerList {
     pub next_page_cursor: Option<String>,
 }
 
-/// A row of the server list. Roblox may leave anything out; rows without id / maxPlayers /
-/// playing are dropped by the caller.
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct ServerRow {
@@ -257,9 +225,6 @@ pub struct ServerRow {
     pub friend_count: Option<i32>,
 }
 
-/// `games.roblox.com/v1/games/{placeId}/private-servers` (EXPERIMENTAL; no signed-in recording
-/// exists, so this follows the documented shape and accepts anything missing). No `Debug`:
-/// rows carry access codes.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PrivateServerList {
@@ -268,7 +233,6 @@ pub struct PrivateServerList {
     pub game_join_restricted: Option<bool>,
 }
 
-/// Rows without `vipServerId` are dropped by the caller. `accessCode` is a join secret.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PrivateServerRow {
@@ -277,7 +241,6 @@ pub struct PrivateServerRow {
     pub owner: Option<Party>,
     pub playing: Option<i32>,
     pub max_players: Option<i32>,
-    /// The job id while it runs.
     pub id: Option<String>,
     pub access_code: Option<String>,
 }

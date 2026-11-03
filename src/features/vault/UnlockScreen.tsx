@@ -9,6 +9,7 @@ import { MIN_PASSWORD } from "./PasswordDialog";
 
 export type LockReason = "start" | "manual" | "idle";
 
+// -- Main func
 export function UnlockScreen({ status, reason, onRecovered }: { status: VaultStatus; reason: LockReason; onRecovered: (code: string) => void }) {
   const qc = useQueryClient();
   const input = useRef<HTMLInputElement>(null);
@@ -20,8 +21,6 @@ export function UnlockScreen({ status, reason, onRecovered }: { status: VaultSta
   const [error, setError] = useState<string | null>(null);
   const [shakes, setShakes] = useState(0);
   const [busy, setBusy] = useState(false);
-  // Seconds a wrong password keeps the next one waiting; counted down here, so the button and the
-  // field wake up by themselves.
   const [wait, setWait] = useState(status.retryIn ?? 0);
 
   useEffect(() => {
@@ -65,7 +64,6 @@ export function UnlockScreen({ status, reason, onRecovered }: { status: VaultSta
       const e2 = asError(err);
       if (e2.kind !== "wrongPassword") fail(friendly(e2));
       else fail(t(recovering ? "vault.recovery.wrongCode" : "ui.error.wrongPassword"));
-      // A refused attempt comes back as a wait: take it from the status rather than guess it.
       qc.invalidateQueries({ queryKey: qk.vault });
       input.current?.select();
     } finally {
@@ -81,7 +79,6 @@ export function UnlockScreen({ status, reason, onRecovered }: { status: VaultSta
     setError(null);
   };
 
-  // From the tray with auto-lock off it comes as "idle" too.
   const lead = reason === "idle" && status.autoLockMinutes > 0 ? t("vault.lockedIdle", { count: status.autoLockMinutes }) : reason === "start" ? "" : t("vault.lockedManual");
 
   return (

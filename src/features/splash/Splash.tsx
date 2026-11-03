@@ -2,12 +2,10 @@ import { useEffect, useState } from "react";
 import { api } from "../../api";
 import "./splash.css";
 
-/** When the window grows: the animation settles at 3 s (79% of 3.8 s), then holds 2 s. */
 const GROW_MS = 3000 + 2000;
-/** Set once the splash has run: a webview reload doesn't play it again. */
+
 const KEY = "lram.splash";
 
-/** The LRAM mark in whatever colours a layer of the glitch needs. */
 function Tile({ className, blue, light }: { className: string; blue: string; light: string }) {
   return (
     <svg className={className} width="120" height="120" viewBox="0 0 18 18" aria-hidden="true">
@@ -19,7 +17,6 @@ function Tile({ className, blue, light }: { className: string; blue: string; lig
 }
 
 function seen() {
-  // Settings.skip_splash, from `main_window`: the window is already full size.
   if ((window as { __LRAM_SKIP_SPLASH?: boolean }).__LRAM_SKIP_SPLASH) return true;
   try {
     return sessionStorage.getItem(KEY) !== null;
@@ -28,21 +25,17 @@ function seen() {
   }
 }
 
-/** The start-up splash over the app: the tile glitches into the LRAM mark, then the window
- * (opened small by `splash::start`) grows into the app and this fades away. */
+// -- Main func
 export function Splash() {
   const [state, setState] = useState<"play" | "out" | "gone">(() => (seen() ? "gone" : "play"));
 
   useEffect(() => {
     if (state !== "play") return;
-    // Plays even with Windows' animation effects off (theme.css leaves the splash out).
     const grow = () => {
       try {
         sessionStorage.setItem(KEY, "1");
       } catch {
-        // No storage: a reload plays it again.
       }
-      // Fades once the window has grown, even if growing failed.
       api.splashDone().finally(() => setState("out"));
     };
     const t = setTimeout(grow, GROW_MS);

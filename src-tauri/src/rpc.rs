@@ -1,10 +1,3 @@
-//! Discord rich presence (`Settings.discord_presence`): "Playing LRAM", idling or with the
-//! game and how many alts run, plus a Get LRAM button. Off by default.
-//!
-//! Spoken to the Discord app on this PC over its local IPC pipe `\\.\pipe\discord-ipc-N`: each
-//! frame is an opcode and a length (u32 LE each), then JSON. Nothing goes over the network from
-//! LRAM, and nothing happens while Discord isn't running (the pipe is retried every tick).
-
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
 use std::time::Duration;
@@ -16,20 +9,17 @@ use crate::App;
 use crate::commands::{cached_game_name, now_ms};
 use crate::model::{Instance, InstanceState};
 
-/// Empty until an application id from Discord's Developer Portal is set (LRAM_DISCORD_APP_ID).
 const CLIENT_ID: &str = match option_env!("LRAM_DISCORD_APP_ID") {
     Some(id) => id,
     None => "",
 };
 const DOWNLOAD: &str = "https://github.com/JohnBirlich/RAM/releases/latest";
-/// Discord allows about 5 activity updates per 20 s; one is sent only when it changed.
 const TICK: Duration = Duration::from_secs(5);
 
 const HANDSHAKE: u32 = 0;
 const FRAME: u32 = 1;
 const CLOSE: u32 = 2;
 
-/// One IPC frame (pure).
 fn frame(op: u32, body: &Value) -> Vec<u8> {
     let json = body.to_string();
     let mut b = Vec::with_capacity(8 + json.len());
@@ -39,7 +29,6 @@ fn frame(op: u32, body: &Value) -> Vec<u8> {
     b
 }
 
-/// Reads one frame's opcode and JSON; a CLOSE (or anything unreadable) is an error.
 fn read_frame(pipe: &mut File) -> std::io::Result<(u32, Value)> {
     let mut head = [0u8; 8];
     pipe.read_exact(&mut head)?;
@@ -60,7 +49,6 @@ fn read_frame(pipe: &mut File) -> std::io::Result<(u32, Value)> {
     Ok((op, v))
 }
 
-/// The first Discord pipe that takes our handshake.
 fn connect() -> Option<File> {
     (0..10).find_map(|n| {
         let mut pipe = OpenOptions::new().read(true).write(true).open(format!(r"\\.\pipe\discord-ipc-{n}")).ok()?;
@@ -75,7 +63,6 @@ fn connect() -> Option<File> {
     })
 }
 
-/// Sets (or, with `Value::Null`, clears) the activity and reads Discord's answer.
 fn send(pipe: &mut File, activity: &Value, nonce: u64) -> std::io::Result<()> {
     let cmd = json!({
         "cmd": "SET_ACTIVITY",
@@ -90,11 +77,9 @@ fn send(pipe: &mut File, activity: &Value, nonce: u64) -> std::io::Result<()> {
     Ok(())
 }
 
-/// What the profile shows (pure): `details` and `state`. Idling until a client is in a game,
-/// then the game most clients play (the first launched on a tie) and how many run.
 fn status(instances: &[Instance], game_name: impl Fn(i64) -> Option<String>) -> (String, String) {
     let live: Vec<&Instance> = instances.iter().filter(|i| i.state != InstanceState::Exited).collect();
-    let mut games: Vec<(i64, usize, i64)> = Vec::new(); // place, clients, first start
+    let mut games: Vec<(i64, usize, i64)> = Vec::new();
     for i in live.iter().filter(|i| i.state == InstanceState::InGame) {
         let Some(p) = i.place_id else { continue };
         match games.iter_mut().find(|g| g.0 == p) {
@@ -124,7 +109,6 @@ fn status(instances: &[Instance], game_name: impl Fn(i64) -> Option<String>) -> 
     (details, state)
 }
 
-/// The full activity for `status`, with the time that status began.
 fn activity((details, state): &(String, String), since_ms: i64) -> Value {
     json!({
         "details": details,
@@ -135,7 +119,7 @@ fn activity((details, state): &(String, String), since_ms: i64) -> Value {
     })
 }
 
-/// Keeps the presence in step on its own thread (pipe I/O blocks).
+// -- Main func
 pub fn spawn(app: AppHandle) {
     if CLIENT_ID.is_empty() {
         log::info!("discord presence is off: this build carries no Discord application id");
@@ -143,7 +127,6 @@ pub fn spawn(app: AppHandle) {
     }
     std::thread::spawn(move || {
         let mut pipe: Option<File> = None;
-        // What Discord shows now: None when cleared or not connected.
         let mut shown: Option<(String, String)> = None;
         let mut since = now_ms();
         let mut nonce = 0u64;
@@ -179,7 +162,6 @@ pub fn spawn(app: AppHandle) {
                     }
                 }
                 if want.is_none() {
-                    // Off: cleared above, then let go of Discord.
                     pipe = None;
                     shown = None;
                 }

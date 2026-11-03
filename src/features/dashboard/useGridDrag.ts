@@ -3,21 +3,16 @@ import { isRtl } from "../../i18n";
 
 type Rect = Pick<DOMRect, "left" | "top" | "width">;
 
-/** Where a tile dropped at (x, y) goes: before the tile at the returned index, or after the last.
- * Tiles on a row can differ in height, and a row ends at its tallest. From `offset*`, which a drag's
- * transform doesn't move, so a drop on the dragged tile's own place goes nowhere. */
 export function overAt<T extends { getBoundingClientRect(): Rect; offsetTop: number; offsetHeight: number }>(tiles: T[], dragged: T, x: number, y: number) {
   for (let n = 0; n < tiles.length; n++) {
     if (tiles[n] === dragged) continue;
     const r = tiles[n].getBoundingClientRect();
     const height = Math.max(...tiles.filter((t) => t.offsetTop === tiles[n].offsetTop).map((t) => t.offsetHeight));
-    // Before it means on its reading side: its right half, right to left.
     if (y < r.top || (y <= r.top + height && isRtl() !== x < r.left + r.width / 2)) return n;
   }
   return tiles.length;
 }
 
-/** As `overAt` for tiles in one column: before the first whose middle is below `y`. */
 export function overRow<T extends { getBoundingClientRect(): Pick<DOMRect, "top" | "height"> }>(tiles: T[], dragged: T, y: number) {
   for (let n = 0; n < tiles.length; n++) {
     if (tiles[n] === dragged) continue;
@@ -28,24 +23,17 @@ export function overRow<T extends { getBoundingClientRect(): Pick<DOMRect, "top"
 }
 
 type Dragging = { tile: HTMLElement; x: number; y: number; scroller: Element | null; scroll: number; marked: HTMLElement | null };
-/** Pressed on an `item`, not moved far enough yet to be a drag. */
+
 type Pressed = { x: number; y: number };
-/** How far a press moves before it is a drag and not a click. */
+
 const DRAG_FROM = 5;
 
-/** Reorders the children of the `grid` element: a pointer drag on a tile's grip, or arrow keys on
- * it. `onMove(from, over)` moves tile `from` before tile `over`, or after the last. Tiles glide to
- * where the new order puts them. Tiles with the same `data-group` move together, so the keys step
- * past their own. React must keep each tile's element (keys), and `moved` belongs in an aria-live
- * element. `item` is for a tile that is itself a button: dragged by all of it, still clicked, and
- * moved with Alt and the arrows, which on their own may mean something else there. `column`: the
- * tiles are one column. */
+// -- Main func
 export function useGridDrag(onMove: (from: number, over: number) => void, column = false) {
   const grid = useRef<HTMLElement | null>(null);
   const dragging = useRef<Dragging | null>(null);
   const flip = useRef<Map<Element, DOMRect> | null>(null);
   const pressed = useRef<Pressed | null>(null);
-  // The click that ends a drag isn't one.
   const dragged = useRef(false);
   const [moved, setMoved] = useState("");
 
@@ -60,7 +48,6 @@ export function useGridDrag(onMove: (from: number, over: number) => void, column
   };
 
   useLayoutEffect(() => {
-    // Its client closed mid-drag: the pointer capture went with it, so no pointer up will come.
     const d = dragging.current;
     if (d && !d.tile.isConnected) {
       mark(d, null);
@@ -89,7 +76,6 @@ export function useGridDrag(onMove: (from: number, over: number) => void, column
     }
   });
 
-  /** Starts the drag of the tile holding `e`'s element, measured from (x, y). */
   function begin(e: PointerEvent<HTMLButtonElement>, x: number, y: number) {
     const tile = tiles().find((el) => el.contains(e.currentTarget));
     if (!tile) return false;
@@ -109,7 +95,6 @@ export function useGridDrag(onMove: (from: number, over: number) => void, column
   function move(e: PointerEvent) {
     const d = dragging.current;
     if (!d) return;
-    // The wheel still scrolls during a drag: the tile stays under the pointer.
     d.tile.style.transform = `translate(${e.clientX - d.x}px, ${e.clientY - d.y + (d.scroller?.scrollTop ?? 0) - d.scroll}px)`;
     const all = tiles();
     const from = all.indexOf(d.tile);
@@ -119,7 +104,6 @@ export function useGridDrag(onMove: (from: number, over: number) => void, column
     else mark(d, all[all.length - 1], "after");
   }
 
-  /** `e`: where it was dropped; null cancels. */
   function end(e: PointerEvent | null) {
     const d = dragging.current;
     if (!d) return;
@@ -130,7 +114,6 @@ export function useGridDrag(onMove: (from: number, over: number) => void, column
     const from = all.indexOf(d.tile);
     const to = e ? over(all, d.tile, e) : from;
     if (to === from || to === from + 1) {
-      // Glides back home.
       d.tile.style.transition = "";
       d.tile.style.transform = "";
       return;
@@ -139,7 +122,6 @@ export function useGridDrag(onMove: (from: number, over: number) => void, column
     onMove(from, to);
   }
 
-  /** Left and right move a place, up and down to the nearest tile of the next row. */
   function key(e: KeyboardEvent<HTMLButtonElement>, name: string) {
     const all = tiles();
     const back = isRtl() ? 1 : -1;
@@ -159,7 +141,6 @@ export function useGridDrag(onMove: (from: number, over: number) => void, column
     }
     while (same(to, from)) to += step;
     if (to < 0 || to >= all.length) return;
-    // Going forward it lands after the whole group of the tile it passes.
     let over = step < 0 ? to : to + 1;
     if (step > 0) while (same(over, to)) over++;
     snapshot();
@@ -167,7 +148,6 @@ export function useGridDrag(onMove: (from: number, over: number) => void, column
     requestAnimationFrame(() => {
       const now = tiles();
       setMoved(`${name}: ${now.findIndex((el) => el.contains(grip)) + 1} / ${now.length}`);
-      // Moving an element in the DOM takes the focus from what's inside it.
       grip.focus();
     });
   }
@@ -182,12 +162,10 @@ export function useGridDrag(onMove: (from: number, over: number) => void, column
 
   const item = (name: string) => ({
     "aria-keyshortcuts": "Alt+ArrowLeft Alt+ArrowRight Alt+ArrowUp Alt+ArrowDown",
-    // A picture inside would start the webview's own drag.
     onDragStart: (e: DragEvent) => e.preventDefault(),
     onPointerDown: (e: PointerEvent<HTMLButtonElement>) => {
       dragged.current = false;
       pressed.current = e.button === 0 ? { x: e.clientX, y: e.clientY } : null;
-      // Now: a fast first move lands on another tile, and that one would be dragged.
       if (pressed.current) e.currentTarget.setPointerCapture(e.pointerId);
     },
     onPointerMove: (e: PointerEvent<HTMLButtonElement>) => {
@@ -215,7 +193,6 @@ export function useGridDrag(onMove: (from: number, over: number) => void, column
     onKeyDown: (e: KeyboardEvent<HTMLButtonElement>) => {
       if (!e.altKey) return;
       key(e, name);
-      // Not as well a move between tabs.
       if (e.key.startsWith("Arrow")) e.stopPropagation();
     },
   });

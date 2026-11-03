@@ -9,15 +9,10 @@ import { t } from "../../i18n";
 import { friendly, toast } from "../../ui/Toast";
 import { PasswordDialog } from "../vault/PasswordDialog";
 
-/** A cancelled file dialog is not an error: the password dialog stays open. */
 const cancelled = () => ({ kind: "cancelled", message: "" });
 
 const profileFilter = () => [{ name: t("accounts.profiles.filter"), extensions: ["lram", "roalt"] }];
 
-/**
- * Saves the chosen accounts as one `.lram` profile file: the same password-protected pack a backup
- * uses, so it opens with Import profiles and on another PC. Cookies go with it.
- */
 export function ExportProfilesDialog({ ids, open, onClose, vaultMode }: { ids: number[]; open: boolean; onClose: () => void; vaultMode: VaultMode }) {
   const master = vaultMode === "master";
   return (
@@ -43,7 +38,7 @@ export function ExportProfilesDialog({ ids, open, onClose, vaultMode }: { ids: n
   );
 }
 
-/** Reads a `.lram` profile file (or a full backup) back into the list. */
+// -- Main func
 export function ImportProfilesDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const qc = useQueryClient();
   const [path, setPath] = useState("");

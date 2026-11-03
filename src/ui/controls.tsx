@@ -8,7 +8,6 @@ export function Switch({ checked, onChange, label }: { checked: boolean; onChang
   );
 }
 
-/** A row of mutually exclusive buttons (the design's "seg" control). */
 export function Segmented<T extends string | number>({ label, value, options, onChange, mono }: {
   label: string;
   value: T;
@@ -36,8 +35,6 @@ export function Segmented<T extends string | number>({ label, value, options, on
   );
 }
 
-/** Text input that saves (trimmed) on blur or Enter; Escape puts the saved value back, and so
- * does a refused save (`onCommit` rejects; the caller shows why). */
 export function TextField({ label, value, placeholder, className = "", onCommit }: {
   label: string;
   value: string;
@@ -72,9 +69,9 @@ export function TextField({ label, value, placeholder, className = "", onCommit 
   );
 }
 
-/** Number input that saves on blur or Enter and snaps back when out of range or off-step. */
+// -- Main func
 export function NumberField({ label, unit, short, min, max, step = 1, value, onCommit }: {
-  /** Shown before the field; else `unit` names it for screen readers only. */
+
   label?: string;
   unit: string;
   short: string;
@@ -107,7 +104,6 @@ export function NumberField({ label, unit, short, min, max, step = 1, value, onC
         value={text}
         onChange={(e) => setText(e.target.value)}
         onBlur={commit}
-        // The wheel steps a focused number field: scrolling past would change a setting.
         onWheel={(e) => e.currentTarget.blur()}
         onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
       />

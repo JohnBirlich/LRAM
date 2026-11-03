@@ -9,10 +9,9 @@ import { applyDirection, DEFAULT_DIRECTION, DIRECTION_KEY } from "./ui/Direction
 import { debugLog } from "./api";
 import { t } from "./i18n";
 
-// Everything that goes wrong in the UI reaches lram.log (the Debug tab).
 let forwarding = false;
+// -- Main func
 function report(level: "error" | "warn", message: string) {
-  // A failure while forwarding must not forward itself again.
   if (forwarding) return;
   forwarding = true;
   try {
@@ -32,7 +31,6 @@ for (const level of ["error", "warn"] as const) {
   };
 }
 
-/** A render error logs and shows a way back instead of a blank window. */
 class Boundary extends Component<{ children: ReactNode }, { failed: boolean }> {
   state = { failed: false };
   static getDerivedStateFromError() {
@@ -56,15 +54,11 @@ class Boundary extends Component<{ children: ReactNode }, { failed: boolean }> {
 
 try {
   const t = localStorage.getItem(THEME_KEY);
-  // The resolved theme (never "system").
   if (t === "light") document.documentElement.dataset.theme = t;
-  // Design direction (dev-only proposals, src/styles/directions.css).
   applyDirection(localStorage.getItem(DIRECTION_KEY) ?? DEFAULT_DIRECTION);
 } catch {
-  // No storage: the default (dark) applies until settings load.
 }
 
-// Plain-browser preview (`npm run dev` outside Tauri). Dead code in production builds.
 if (import.meta.env.DEV && !("__TAURI_INTERNALS__" in window)) {
   await import("./dev/mockIpc");
 }

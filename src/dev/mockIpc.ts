@@ -1,20 +1,3 @@
-// Dev-only fake backend so the UI can be previewed in a normal browser (`npm run dev`).
-// main.tsx loads it only when import.meta.env.DEV and there is no Tauri runtime.
-// Master password for the fake vault: "password". A pasted cookie containing "bad" is rejected.
-// Launching as "AFK 1" fails with an expired cookie; "Builder" launches through a bootstrapper.
-// A username containing "nobody" doesn't exist.
-// Launched clients start, join and play on timers; one fake Roblox client is already running,
-// so turning multi-instance on first asks to close it.
-// A bulk launch runs on timers too; "AFK 1" fails in it the same way and the batch goes on.
-// Servers: place 1 doesn't exist; Mega Obby (7719004215) sells no private servers; "Builder" may
-// not join private servers. Without an account the public list allows 3 requests a minute, as Roblox does.
-// "Alt 02"'s first client is kicked 20 s into its game; with auto-rejoin on it is closed and comes back once.
-// Each kick is recorded as a disconnect, shown under the ended row in Running clients. "Kill all" ends everything.
-// Monitor: each running client's CPU, memory and IO drift over time; "Alt 01"'s memory keeps growing (a leak).
-// The bandwidth limit "applies" after a pretend admin prompt; 1234 kbit/s fails as a declined prompt.
-// Moving the data folder to a path containing "bad" fails as a folder that already has a LRAM database.
-// Anti-AFK (when on) "presses a key" in each opted-in client in a game every 20 s, so the time moves.
-// Discord: any discord.com webhook URL is accepted; one whose token contains "deleted" fails the test.
 import { emit } from "@tauri-apps/api/event";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import type {
@@ -80,7 +63,6 @@ let settings: Settings = {
   allowPublicNetworks: true,
 };
 
-// Outdated, so Settings offers the update and the Launch view warns before a batch.
 let robloxClient: RobloxClient = {
   path: "C:\\Users\\you\\AppData\\Local\\Roblox\\Versions\\version-5e1f0c9a7d3b4e21\\RobloxPlayerBeta.exe",
   bootstrapper: false,
@@ -88,7 +70,7 @@ let robloxClient: RobloxClient = {
   latest: "version-9ac8595712b447a7",
   outdated: true,
 };
-/** LRAM's self-update: the background check "finds" the next minor version 10 s after start. */
+
 const APP_VERSION: string = import.meta.env.APP_VERSION;
 const NEXT_VERSION = APP_VERSION.replace(/^(\d+)\.(\d+)\..*$/, (_, a, b) => `${a}.${Number(b) + 1}.0`);
 let appUpdate: string | null = null;
@@ -97,8 +79,7 @@ setTimeout(() => {
   appUpdate = NEXT_VERSION;
   void emit("app://update", { current: APP_VERSION, available: appUpdate });
 }, 10_000);
-/** The fake vault's Discord webhook (the real one is encrypted; the UI only ever sees its id's end). */
-/** `roblox_install` runs: launches and a second install are refused, as in Rust. */
+
 let installing = false;
 let shutdownAt: number | null = null;
 let background = new ArrayBuffer(0);
@@ -107,7 +88,7 @@ let webhook: { id: string; token: string } | null = null;
 const WEBHOOK = /^https:\/\/(?:(?:ptb|canary)\.)?discord(?:app)?\.com\/api\/webhooks\/(\d{1,25})\/([A-Za-z0-9_-]{1,128})$/;
 const discordStatus = () => ({ configured: webhook !== null, webhook: webhook && `…${webhook.id.slice(-4)}` });
 let bandwidthActive = false;
-/** Fake metrics: a wave per client, so the sparklines move. */
+
 function fakeMetrics() {
   const t = Date.now() / 1000;
   return instances.filter((i) => i.state !== "exited").map((i, n) => {
@@ -127,17 +108,16 @@ function fakeMetrics() {
     };
   });
 }
-/** Clients hidden by Minimize: still drawing, as `window::ghost`. */
+
 const ghosts = new Set<string>();
 let thumbSeq = 0;
 type FakeShot = { seq: number; w: number; h: number; rgba: Uint8ClampedArray; at: number };
-/** Each client's newest picture, kept like `capture::SHOTS`. */
+
 const shots = new Map<string, FakeShot>();
-/** To see what the mock doesn't get into by itself, from the console:
- * `mockPreview.set(instanceId, "pending" | "unsupported" | "stale" | "minimized")`. */
+
 const previewForced = new Map<string, "pending" | "unsupported" | "stale" | "minimized">();
 (window as unknown as { mockPreview: typeof previewForced }).mockPreview = previewForced;
-/** As `window::Preview::to_bytes`: the header, then the pixels unless they are `known`. */
+
 function thumbReply(i: Instance, status: number, known: number, shot?: FakeShot) {
   const pixels = shot && shot.seq !== known ? shot.rgba : null;
   const buf = new ArrayBuffer(24 + (pixels?.length ?? 0));
@@ -151,7 +131,7 @@ function thumbReply(i: Instance, status: number, known: number, shot?: FakeShot)
   if (pixels) new Uint8ClampedArray(buf, 24).set(pixels);
   return buf;
 }
-/** A fake 4:3 picture of a client's window: a moving sky over a green baseplate. */
+
 function fakeShot(i: Instance, w: number): FakeShot {
   const h = Math.round((w * 3) / 4);
   const px = new Uint8ClampedArray(w * h * 4);
@@ -169,7 +149,6 @@ function fakeShot(i: Instance, w: number): FakeShot {
   return { seq: ++thumbSeq, w, h, rgba: px, at: Date.now() };
 }
 const crashes: Crash[] = [];
-// Instances: a stranger client blocks multi-instance until "Close Roblox".
 let strangerRunning = true;
 let lockHeld = false;
 let instances: Instance[] = [];
@@ -184,8 +163,6 @@ const multiStatus = (): MultiInstanceStatus => {
     : "Multi-instance isn't active yet. Turn it off and on again to retry.";
   return { enabled: settings.multiInstance, active: lockHeld, protectSharedLogin: settings.protectSharedLogin, blockedBy, message };
 };
-// A client launched without the lock owns Roblox's singleton event; clients started under the
-// lock don't block taking it again.
 let eventHolder: string | null = null;
 const retakeLock = () => {
   const holder = instances.some((i) => i.id === eventHolder && i.state !== "exited");
@@ -199,7 +176,7 @@ function endInstance(id: string, note: string) {
   i.note = note;
   instancesChanged();
 }
-/** The last performance profile "saved" in the preview (performance_export). */
+
 let lastProfile: string | null = null;
 const PERF_KEYS = ["fpsCap", "lowGraphics", "lighterRendering", "renderFlags", "minimizeOnLaunch", "liveHiddenPreviews", "microWidth", "microHeight", "tinyOnLaunch", "autoTile", "memRestartMb", "memThrottle", "trimEveryMin", "autoSpread", "fairCap", "adaptive"] as const;
 
@@ -209,7 +186,6 @@ function perfProfile(previewFps: number) {
   return JSON.stringify({ format: "lram-performance", version: 1, exportedAt: Date.now(), settings: { ...s, previewFps } }, null, 2);
 }
 
-/** The profile in `text` as performance_parse returns it, or the error message. */
 function perfParse(text: string): Record<string, unknown> | string {
   const refused = "This isn't a LRAM performance profile.";
   let file: { format?: unknown; version?: number; settings?: Record<string, unknown> };
@@ -232,7 +208,6 @@ function perfParse(text: string): Record<string, unknown> | string {
 }
 
 function track(accountId: number, pid: number, target: LaunchTarget, placeId: number | null, viaBootstrapper: boolean, rejoins = 0, fpsCap: number | null = null) {
-  // Without the lock a new client replaces the running one, as Roblox does.
   if (!lockHeld) for (const old of instances) endInstance(old.id, "Replaced by another Roblox client");
   const i: Instance = {
     id: crypto.randomUUID(), accountId, pid, state: "starting", target, placeId, jobId: null,
@@ -248,8 +223,7 @@ function track(accountId: number, pid: number, target: LaunchTarget, placeId: nu
   if (accountId === 3 && rejoins === 0) setTimeout(() => kick(i), 24_000);
   return i;
 }
-/** As instances::rejoin: a disconnected client is closed after the launch delay and the same
- * account launched into the same target again. */
+
 function kick(i: Instance) {
   if (i.state === "exited") return;
   i.state = "disconnected";
@@ -270,7 +244,6 @@ function kick(i: Instance) {
     track(a.id, 14000 + Math.floor(Math.random() * 9000), i.target, i.placeId, i.viaBootstrapper, i.rejoins + 1, i.fpsCap);
   }, settings.launchDelayMs);
 }
-// Debug tab: lram.log as tauri-plugin-log writes it, and a new line every few seconds.
 const LEVEL_NAMES = ["", "TRACE", "DEBUG", "INFO", "WARN", "ERROR"];
 const fakeLog: string[] = [];
 function logLine(level: number, target: string, message: string, live = true) {
@@ -295,7 +268,6 @@ setInterval(() => {
   due.forEach((i) => (i.afkAt = Date.now()));
   if (due.length) instancesChanged();
 }, 20_000);
-// Fake recovery code: "ABC-DEF-234" until a new one is made.
 const vault = { mode: "master" as VaultMode, locked: false, password: "password", recovery: "ABC-DEF-234" };
 const normalCode = (s: string) => s.replace(/[-\s]/g, "").toUpperCase();
 function fakeRecoveryCode() {
@@ -323,16 +295,13 @@ function addFake(username: string): AccountSummary {
   return a;
 }
 
-// ---------- M2: headshots, presence, account info ----------
-
-/** A blocky head on a transparent background, so the account colour shows behind it. */
 function headshot(seed: number) {
   const skin = ["#F5CD9B", "#E0A878", "#C68642", "#8D5524", "#FFDBAC"][seed % 5];
   const shirt = ["#2B2F36", "#3A6EA5", "#7A3E9D", "#2E7D5B", "#B23A48"][seed % 7 % 5];
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><rect x="8" y="36" width="32" height="12" fill="${shirt}"/><rect x="13" y="9" width="22" height="24" fill="${skin}"/><rect x="18" y="18" width="3" height="4" fill="#111"/><rect x="27" y="18" width="3" height="4" fill="#111"/><rect x="20" y="27" width="8" height="2" fill="#111"/></svg>`;
   return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }
-const NO_HEADSHOT = 8; // shows the initials fallback
+const NO_HEADSHOT = 8;
 
 const SKY: Presence = {
   kind: "inGame", lastLocation: "Sky Islands", placeId: 4410028153, rootPlaceId: 4410028153, universeId: 1559201384,
@@ -363,7 +332,6 @@ const infos = new Map<number, AccountInfo>();
 function makeInfo(a: AccountSummary): AccountInfo {
   const i = a.id;
   const r = (n: number) => (a.userId % 9973) * (i + 3) % n;
-  // A dead cookie still gets the public parts, like the real backend.
   const missing = a.status === "invalid" ? ["robux", "presence", "email", "2-step"] : [];
   if (i === NO_HEADSHOT) missing.push("avatar");
   const has = (part: string) => !missing.includes(part);
@@ -385,8 +353,6 @@ function makeInfo(a: AccountSummary): AccountInfo {
   };
 }
 
-// ---------- M3: target parsing, launch, favourites, join ----------
-
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SHARE_TYPES = ["Server", "ExperienceInvite", "ExperienceDetails", "ExperienceAffiliate", "ExperienceEvent", "Profile"];
 const idOf = (v?: string) => (v && /^\d{1,15}$/.test(v) && Number(v) > 0 ? Number(v) : null);
@@ -394,7 +360,6 @@ const target = (t: LaunchTarget): ParsedInput => ({ kind: "target", target: t })
 const bad = (reason: string): ParsedInput => ({ kind: "invalid", reason });
 const follow = (v?: string) => (idOf(v) ? target({ kind: "followUser", userId: Number(v) }) : bad("That user ID isn't valid."));
 
-/** A small stand-in for launcher::target::parse (the real rules: docs/research/ref_parse.py). */
 function parseTarget(raw: string): ParsedInput {
   const s = raw.trim().replace(/^<|>$/g, "");
   if (!s) return bad("Paste a game link, an ID or @username.");
@@ -408,7 +373,6 @@ function parseTarget(raw: string): ParsedInput {
   } catch {
     return bad("That doesn't look like a link.");
   }
-  // First occurrence of a key wins, as in the real parser.
   const q = new Map([...u.searchParams].reverse().map(([k, v]) => [k.toLowerCase(), v]));
   if (u.protocol === "roblox:") {
     const route = `${u.host}${u.pathname}`.replace(/^\/+|\/+$/g, "").toLowerCase();
@@ -455,7 +419,6 @@ function share(q: Map<string, string>): ParsedInput {
 
 const FRIENDS: JoinCandidate[] = [
   { userId: 1203994411, username: "skyrunner_k", displayName: "Kai", accountId: null, presence: SKY },
-  // In a game, but Roblox hides which server: picking this one follows.
   { userId: 998120347, username: "mossy_bricks", displayName: "Moss", accountId: null, presence: { ...OBBY, placeId: null, gameId: null } },
   { userId: 3001772200, username: "lunatrades", displayName: "Luna", accountId: null, presence: plain("online", "Website") },
 ];
@@ -472,15 +435,13 @@ let favourites: Favourite[] = favSeed.map(([name, t, accountIds], i) => ({
 
 const placeOfTarget = (t: LaunchTarget) => ("placeId" in t ? t.placeId : t.kind === "shareLink" ? SKY.placeId : null);
 
-// ---------- M5: bulk launch, servers ----------
-
 const EXPIRED = "This cookie is not valid or has expired. Sign in again.";
 let batch: BulkProgress | null = null;
 let batchCancel = false;
 function bulkChanged() {
   if (batch) void emit("bulk://progress", structuredClone(batch));
 }
-/** Started clients' stages follow their instances, as in launcher::bulk::stage_of. */
+
 function mirrorBatch() {
   if (!batch || batch.done) return;
   let moved = false;
@@ -500,7 +461,6 @@ function mirrorBatch() {
   if (moved) bulkChanged();
 }
 
-/** A stable list of public servers per place. */
 function fakeServers(placeId: number): GameServer[] {
   let seed = placeId % 2147483647 || 1;
   const rnd = () => (seed = (seed * 48271) % 2147483647) / 2147483647;
@@ -519,11 +479,8 @@ function serverPage(placeId: number, order: ServerOrder, excludeFull: boolean, l
   };
   const list = fakeServers(placeId).filter((s) => !excludeFull || s.playing < s.maxPlayers).sort(by[order]);
   const from = Number(cursor) || 0;
-  // Pages overlap by 3, as Roblox's repeat servers.
   return { servers: list.slice(from, from + limit), nextCursor: from + limit < list.length ? String(from + limit - 3) : null };
 }
-
-// ---------- M6: server browser ----------
 
 const SIGNED_IN_ONLY = "Pick an account to sort by Recommended or Best latency: Roblox only does that for a signed-in account.";
 const ISLAND = `data:image/svg+xml,${encodeURIComponent(
@@ -542,7 +499,7 @@ function fakeGame(placeId: number): GameInfo {
   };
 }
 let guest = { minute: 0, calls: 0 };
-/** Roblox's guest limit on the server list: 3 a minute, on a window aligned to the clock minute. */
+
 function guestLimited() {
   const minute = Math.floor(Date.now() / MIN);
   guest = guest.minute === minute ? { minute, calls: guest.calls + 1 } : { minute, calls: 1 };
@@ -619,7 +576,6 @@ async function runBatch(b: BulkProgress, favouriteId: number | null, fpsCap: num
     }
     prev = i;
   }
-  // As the backend: a stopped batch is done at once; otherwise it waits for its clients to settle.
   const settling = (s: BulkStage) => s.kind === "ticket" || s.kind === "starting" || s.kind === "joining";
   if (!batchCancel) await until(() => batchCancel || !b.items.some((x) => settling(x.stage)), 120_000);
   if (batchCancel) {
@@ -659,6 +615,7 @@ function reauth(password?: string) {
   return Promise.resolve();
 }
 
+// -- Main func
 async function handle(cmd: string, args: Args): Promise<unknown> {
   switch (cmd) {
     case "vault_status":
@@ -801,7 +758,6 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       await sleep(1200);
       const a = find(args.accountId);
       if (!a) return fail("notFound", "Not found.");
-      // As commands::launch_tracked: one live client per account.
       if (instances.some((i) => i.accountId === a.id && ["starting", "joining", "inGame"].includes(i.state)))
         return fail("invalid", `${a.alias || a.displayName} is already running. Close its client first.`);
       if (a.username === "afk_unit_1") {
@@ -1108,7 +1064,6 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
     case "self_update_install":
       if (!appUpdate) return fail("invalid", "LRAM is up to date.");
       if (batch && !batch.done) return fail("invalid", "Wait for the running launch, batch or auto-rejoin to finish, then update LRAM.");
-      // Downloading, checking, then the installer restarts the app.
       await sleep(2500);
       location.reload();
       return new Promise(() => {});
@@ -1149,7 +1104,6 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       return null;
     }
     case "background_set": {
-      // A generated picture stands in for the picked file.
       const c = document.createElement("canvas");
       c.width = 640;
       c.height = 400;
@@ -1229,7 +1183,6 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
     case "plugin:window|is_maximized":
       return false;
     default:
-      // Window controls, opener and clipboard calls do nothing in the preview.
       if (!/^plugin:(window|opener|clipboard-manager)\|/.test(cmd)) console.warn("[mock ipc] unhandled", cmd);
       return null;
   }

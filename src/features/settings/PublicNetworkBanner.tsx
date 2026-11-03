@@ -3,8 +3,7 @@ import { useNetwork } from "../../data";
 import { Icon } from "../../ui/Icon";
 import { t } from "../../i18n";
 
-/** Under the title bar while the public-network guard is on and a Public network is connected
- * (`network`): what LRAM refuses there. */
+// -- Main func
 export function PublicNetworkBanner({ settings }: { settings: Settings }) {
   const onPublic = useNetwork().data?.public;
   if (!onPublic || settings.allowPublicNetworks) return null;

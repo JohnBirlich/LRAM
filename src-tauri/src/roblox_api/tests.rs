@@ -13,13 +13,11 @@ fn fixture(name: &str) -> String {
     std::fs::read_to_string(path).unwrap()
 }
 
-/// The recorded `body` of a JSON fixture, as it came over the wire.
 fn fixture_body(name: &str) -> Vec<u8> {
     let v: Value = serde_json::from_str(&fixture(name)).unwrap();
     serde_json::to_vec(&v["body"]).unwrap()
 }
 
-/// A `.headers.txt` capture (status line, then `name: value` lines).
 fn fixture_headers(name: &str) -> HeaderMap {
     headers(&fixture(name).lines().filter_map(|l| l.split_once(": ")).collect::<Vec<_>>())
 }
@@ -41,7 +39,6 @@ fn rate_limit_headers() {
     let servers = RateLimit::parse(&fixture_headers("servers-v1-429.headers.txt"));
     assert_eq!((servers.remaining, servers.reset_secs()), (Some(0), Some(50)));
 
-    // No reset header: the next clock-aligned window boundary.
     let hourly = RateLimit::parse(&headers(&[("x-ratelimit-limit", "750, 750;w=3600"), ("x-ratelimit-remaining", "749")]));
     assert_eq!(hourly.window, Some(3600));
     assert!((1..=3600).contains(&hourly.reset_secs().unwrap()));
@@ -78,7 +75,6 @@ fn set_cookie_rotation() {
     }
     assert!(rotated_cookie(&HeaderMap::new()).is_none());
 
-    // The site cookies Roblox sets on an anonymous www request are no rotation.
     let v: Value = serde_json::from_str(&fixture("authlaunch-www-xsrftoken-get.json")).unwrap();
     let set: Vec<(&str, &str)> =
         v["headers"]["set-cookie"].as_array().unwrap().iter().map(|c| ("set-cookie", c.as_str().unwrap())).collect();
@@ -98,14 +94,12 @@ fn error_classification() {
     let bound = br#"{"errors":[{"code":9002,"subcode":2,"message":"Unauthorized"}]}"#;
     assert!(matches!(classify(StatusCode::UNAUTHORIZED, &none, bound), AppError::BoundSessionRequired));
 
-    // Bare string, {Error: ..} and empty bodies: no code, still a plain 401.
     let bare = fixture_body("links-sharelinks-resolve-server-unauth-401.json");
     for body in [&bare[..], br#"{"Error":"Unauthorized"}"#, b"", b"<html>"] {
         assert_eq!(error_code(body), None);
         assert!(matches!(classify(StatusCode::UNAUTHORIZED, &none, body), AppError::CookieInvalid));
     }
 
-    // auth.roblox.com's flat CSRF body; a 403 that reaches classify is a plain error.
     let csrf = fixture_body("authlaunch-csrf-login-v2-nocsrf.json");
     assert_eq!(error_code(&csrf), Some((0, 0)));
     assert!(matches!(classify(StatusCode::FORBIDDEN, &none, &csrf), AppError::Roblox(m) if m == "HTTP 403"));
@@ -115,8 +109,6 @@ fn error_classification() {
     let gone = fixture_body("acctinfo-presence-last-online-nocookie.json");
     assert!(matches!(classify(StatusCode::NOT_FOUND, &none, &gone), AppError::Roblox(m) if m == "HTTP 404"));
 }
-
-// End to end against a canned HTTP server on 127.0.0.1.
 
 const USER: &str = r#"{"id":1,"name":"roblox","displayName":"Roblox","hasVerifiedBadge":true}"#;
 const TICKET: &str = "https://auth.roblox.com/v1/authentication-ticket";
@@ -129,7 +121,6 @@ fn reply(status: &str, headers: &[&str], body: &str) -> String {
     )
 }
 
-/// Answers one connection per response, in order, and passes on each raw request.
 fn serve(responses: Vec<String>) -> (String, mpsc::Receiver<String>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
@@ -163,7 +154,6 @@ fn read_request(s: &mut TcpStream) -> String {
     String::from_utf8_lossy(&buf).into_owned()
 }
 
-/// Case-insensitive "request contains this header line".
 fn has(req: &str, line: &str) -> bool {
     req.to_ascii_lowercase().contains(&line.to_ascii_lowercase())
 }
@@ -189,7 +179,6 @@ async fn authenticated_user_success() {
     assert!(req.starts_with("GET /v1/users/authenticated HTTP/1.1\r\n"), "{req}");
     assert!(has(&req, "\r\ncookie: .ROBLOSECURITY=OLD\r\n"));
     assert!(has(&req, "\r\nuser-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)"));
-    // GET on users.roblox.com: no CSRF token, no website Origin.
     assert!(!has(&req, "x-csrf-token") && !has(&req, "\r\norigin:"));
 }
 
@@ -209,7 +198,6 @@ async fn csrf_token_is_stored_and_retried_once() {
     let (first, retry) = (reqs.recv().unwrap(), reqs.recv().unwrap());
     assert!(!has(&first, "x-csrf-token"));
     assert!(has(&retry, "\r\nx-csrf-token: TOK1\r\n"));
-    // The retry already carries the cookie Roblox rotated in the 403.
     assert!(has(&retry, "\r\ncookie: .ROBLOSECURITY=_|WARNING:-DO-NOT-SHARE-THIS.NEW\r\n"));
     for r in [&first, &retry] {
         assert!(r.starts_with("POST /v1/authentication-ticket HTTP/1.1\r\n"));
@@ -217,7 +205,6 @@ async fn csrf_token_is_stored_and_retried_once() {
         assert!(has(r, "\r\ncontent-type: application/json\r\n") && r.ends_with("\r\n\r\n{}"));
     }
 
-    // The cached token goes out with the account's next call straight away.
     c.request(Method::POST, "ticket", TICKET, Some(&body), 3, Some(&old)).await.unwrap();
     assert!(has(&reqs.recv().unwrap(), "\r\nx-csrf-token: TOK1\r\n"));
 }
@@ -245,12 +232,10 @@ async fn rotated_cookie_reaches_sink_and_caller() {
     assert_eq!(rotated.unwrap().expose(), "_|WARNING:-DO-NOT-SHARE-THIS.NEW");
     assert_eq!(*rotations.lock().unwrap(), vec![(7, "_|WARNING:-DO-NOT-SHARE-THIS.NEW".to_string())]);
 
-    // A cookie that is not stored yet (id 0) comes back but never reaches the sink.
     let (_, rotated) = c.authenticated_user(0, &Secret::new("OLD")).await.unwrap();
     assert_eq!(rotated.unwrap().expose(), "_|WARNING:-DO-NOT-SHARE-THIS.NEW");
     assert_eq!(rotations.lock().unwrap().len(), 1);
 
-    // Roblox repeating the current value is no rotation.
     let (_, rotated) = c.authenticated_user(7, &Secret::new("_|WARNING:-DO-NOT-SHARE-THIS.NEW")).await.unwrap();
     assert!(rotated.is_none());
     assert_eq!(rotations.lock().unwrap().len(), 1);
@@ -268,7 +253,6 @@ async fn rate_limited_then_success() {
     let start = Instant::now();
     let (user, _) = c.authenticated_user(1, &Secret::new("OLD")).await.unwrap();
     assert_eq!(user.id, 1);
-    // Waited for x-ratelimit-reset (1 s), not retry-after (5 s).
     assert!((Duration::from_millis(900)..Duration::from_secs(4)).contains(&start.elapsed()));
 }
 
@@ -298,7 +282,6 @@ async fn challenge_is_not_retried() {
         &["rblx-challenge-id: abc", "rblx-challenge-type: captcha", "rblx-challenge-metadata: e30=", "x-csrf-token: TOK"],
         "{}",
     );
-    // One canned answer: a retry would hit a closed port and fail as Network.
     let (base, _reqs) = serve(vec![challenge]);
     let (c, _) = client(&base);
     let url = "https://apis.roblox.com/sharelinks/v1/resolve-link";
@@ -331,9 +314,6 @@ async fn used_up_window_delays_the_next_call() {
     assert_eq!(lock(&c.windows)["route"].remaining, 0);
 }
 
-// Account info: recorded answers.
-
-/// The recorded HTTP status of a JSON fixture.
 fn fixture_status(name: &str) -> StatusCode {
     let v: Value = serde_json::from_str(&fixture(name)).unwrap();
     StatusCode::from_bytes(v["_status"].as_str().unwrap().split(' ').nth(1).unwrap().as_bytes()).unwrap()
@@ -365,12 +345,10 @@ fn headshot_fixtures() {
     let (ids, pending, out) = sort("acctinfo-thumbnails-headshot-1-150-png.json");
     assert_eq!((ids, pending), (vec![1, 156], vec![]));
     assert!(out[&156].starts_with("https://tr.rbxcdn.com/30DAY-AvatarHeadshot-635A2AA0"));
-    // Unknown ids are simply left out; /v1/batch rows carry extra fields.
     assert_eq!(sort("acctinfo-thumbnails-headshot-invalid-and-nonexistent.json").0, [1]);
     assert_eq!(sort("acctinfo-thumbnails-headshot-1-420-webp-circular.json").0, [1]);
     assert_eq!(sort("acctinfo-thumbnails-batch-headshot.json").0, [1, 156]);
 
-    // Pending rows have "" URLs; Blocked rows (empty or a placeholder URL) are never kept.
     let (ids, pending, _) = sort("acctinfo-thumbnails-headshot-pending-first-request.json");
     assert_eq!((ids, pending), (vec![], vec![4123400, 4123401, 4123402]));
     let (ids, pending, _) = sort("acctinfo-thumbnails-headshot-pending-after-retry.json");
@@ -388,7 +366,6 @@ fn social_count_fixtures() {
     assert_eq!(count("acctinfo-friends-count-1.json"), 0);
     assert_eq!(count("acctinfo-friends-followers-count-1.json"), 16821485);
     assert_eq!(count("acctinfo-friends-followings-count-1.json"), 0);
-    // A missing field or a non-object answer is unreadable, never a default 0.
     assert!(field::<i64>(serde_json::json!({ "total": 3 }), "count").is_err());
     assert!(field::<i64>(Value::Bool(true), "count").is_err());
 }
@@ -409,7 +386,6 @@ fn presence_fixtures() {
     };
     assert_eq!(three[0], offline);
     assert!(rows("acctinfo-presence-users-empty.json").is_empty());
-    // Unknown ids still get an offline row.
     assert_eq!(rows("acctinfo-presence-users-nonexistent.json")[0].user_id, 999999999999);
 
     let too_many = "acctinfo-presence-users-51ids-error.json";
@@ -425,20 +401,17 @@ fn plus_fixtures() {
         .map(|p| (p.user_id, p.has_roblox_subscription))
         .collect();
     assert_eq!(two, [(1, Some(true)), (156, Some(true))]);
-    // Over 200 ids (or only unknown fields): an empty 200, not an error.
     assert!(rows("acctinfo-userprofile-get-profiles-201ids-silent-empty.json").is_empty());
 }
 
 #[test]
 fn two_step_and_cookie_only_fixtures() {
-    // The swagger's UserConfiguration (no recording with a cookie exists).
     let config = br#"{"primaryMediaType":2,"methods":[
         {"mediaType":0,"enabled":true,"updated":"2026-01-02T03:04:05Z"},{"mediaType":2,"enabled":true,"updated":null},
         {"mediaType":3,"enabled":true},{"mediaType":1,"enabled":false}]}"#;
     assert_eq!(enabled_methods(json(config).unwrap()), ["Email", "Authenticator"]);
     assert!(enabled_methods(json(b"{}").unwrap()).is_empty());
 
-    // Without a cookie 2SV answers 400, the others 401.
     let tsv = "acctinfo-twostepverification-configuration-1-nocookie.json";
     assert!(is_http(classify(fixture_status(tsv), &HeaderMap::new(), &fixture_body(tsv)), "400"));
     for name in [
@@ -450,8 +423,6 @@ fn two_step_and_cookie_only_fixtures() {
         assert!(matches!(e, AppError::CookieInvalid), "{name}");
     }
 }
-
-// Account info end to end.
 
 fn ok(body: &str) -> String {
     reply("200 OK", &[], body)
@@ -495,7 +466,6 @@ async fn headshots_give_up_after_five_retries() {
     let pending = ok(r#"{"data":[{"targetId":8,"state":"Pending","imageUrl":""}]}"#);
     let (base, reqs) = serve(vec![pending; 6]);
     let (c, _) = client(&base);
-    // A seventh call would hit a closed port and fail as Network.
     assert!(c.headshots(&[8]).await.unwrap().is_empty());
     assert_eq!(reqs.iter().count(), 6);
 }
@@ -538,7 +508,6 @@ async fn presence_drops_bad_ids_and_chunks_at_50() {
         assert!(has(&req, "\r\ncookie: .ROBLOSECURITY=OLD\r\n"));
         assert_eq!(body_of(&req), serde_json::json!({ "userIds": want.collect::<Vec<i64>>() }));
     }
-    // Nothing valid to ask about: no call at all (a third would fail as Network).
     assert!(c.presence(4, &cookie, &[0, -1]).await.unwrap().is_empty());
 }
 
@@ -558,7 +527,6 @@ async fn premium_is_a_bare_boolean() {
 
 #[tokio::test]
 async fn public_calls_send_no_cookie() {
-    // A Set-Cookie on an anonymous answer is no rotation either.
     let count = reply("200 OK", &["set-cookie: .ROBLOSECURITY=_|WARNING:-DO-NOT-SHARE-THIS.NEW; path=/"], r#"{"count":7}"#);
     let (base, reqs) = serve(vec![count.clone(), count.clone(), count, ok(USER)]);
     let (c, rotations) = client(&base);
@@ -617,8 +585,6 @@ async fn two_step_maps_int_and_string_media_types() {
     assert!(has(&req, "\r\ncookie: .ROBLOSECURITY=OLD\r\n"));
 }
 
-// Launching end to end: the API calls and `launcher::resolve` on top of them.
-
 const LINK_CODE: &str = "67771413747491684286858666824242";
 const JOB: &str = "8d3e4f5a-1b2c-4d5e-8f90-123456789abc";
 
@@ -630,7 +596,6 @@ fn share(link_type: &str) -> LaunchTarget {
     LaunchTarget::ShareLink { code: "ce65b2c80e8dae48866fe2f919966557".into(), link_type: link_type.into() }
 }
 
-/// `resolve` against canned answers, as account 4 with cookie "OLD" (the warning is dropped).
 async fn resolve_with(answers: Vec<String>, target: LaunchTarget) -> (Result<Join>, mpsc::Receiver<String>) {
     let (r, reqs) = resolve_warn(answers, target).await;
     (r.map(|(join, _)| join), reqs)
@@ -671,7 +636,6 @@ async fn ticket_comes_from_the_header_after_a_csrf_retry() {
         assert_eq!(first_line(r), "POST /v1/authentication-ticket/ HTTP/1.1");
         assert!(has(r, "\r\ncookie: .ROBLOSECURITY=OLD\r\n") && has(r, "\r\ncontent-type: application/json\r\n"));
         assert!(has(r, "\r\nreferer: https://www.roblox.com/\r\n") && has(r, "\r\norigin: https://www.roblox.com\r\n"));
-        // The assertion answer is the ticket request's body, unchanged.
         assert_eq!(body_of(r), serde_json::json!({ "clientAssertion": "ASSERT.abc" }));
     }
 }
@@ -684,14 +648,12 @@ async fn ticket_without_assertion_sends_empty_object() {
     let (c, _) = client(&base);
     let cookie = Secret::new("OLD");
 
-    // A failed assertion is ignored, as the website does.
     let assertion = c.client_assertion(3, &cookie).await.ok();
     assert!(assertion.is_none());
     assert_eq!(c.authentication_ticket(3, &cookie, None).await.unwrap().expose(), "T2");
     reqs.recv().unwrap();
     assert_eq!(body_of(&reqs.recv().unwrap()), serde_json::json!({}));
 
-    // A 2xx without the header is no ticket.
     let r = c.authentication_ticket(3, &cookie, None).await;
     assert!(matches!(r, Err(AppError::Roblox(m)) if m == "no ticket"));
 }
@@ -729,7 +691,6 @@ async fn share_link_status_invalid_fails_and_expired_still_joins() {
     assert_eq!(join, Join::Private { place_id: 5, link_code: Some(LINK_CODE.into()), access_code: None });
     assert!(warning.unwrap().contains("expired"));
 
-    // A server link without a usable link code, and types that are no game.
     let no_code = ok(r#"{"privateServerInviteData":{"status":"Valid","placeId":5,"linkCode":"1+placelauncherurl:x"}}"#);
     let (join, _) = resolve_with(vec![no_code], share("Server")).await;
     assert!(invalid(join, "This share link is no longer valid."));
@@ -744,12 +705,10 @@ async fn experience_invite_joins_its_server_while_valid() {
     let (join, _) = resolve_with(vec![ok(&valid)], share("ExperienceInvite")).await;
     assert_eq!(join.unwrap(), Join::Job { place_id: 1818, job_id: JOB.into() });
 
-    // Expired (or the inviter left): the website opens the game instead.
     let left = format!(r#"{{"experienceInviteData":{{"status":"InviterNotInExperience","placeId":1818,"instanceId":"{JOB}"}}}}"#);
     let (join, _) = resolve_with(vec![ok(&left)], share("ExperienceInvite")).await;
     assert_eq!(join.unwrap(), Join::Game { place_id: 1818, launch_data: None });
 
-    // Notification invites carry the inviter's server the same way.
     let note = format!(r#"{{"notificationExperienceInviteData":{{"status":"Valid","placeId":1818,"instanceId":"{JOB}","launchData":"x"}}}}"#);
     let (join, _) = resolve_with(vec![ok(&note)], share("NotificationExperienceInvite")).await;
     assert_eq!(join.unwrap(), Join::Job { place_id: 1818, job_id: JOB.into() });
@@ -772,7 +731,6 @@ async fn experience_details_resolve_the_universe_to_its_root_place() {
     assert_eq!(first_line(&req), "GET /v1/games?universeIds=994732206 HTTP/1.1");
     assert!(!has(&req, "\r\ncookie:"));
 
-    // Affiliate links keep their launch data in joinData; an unknown universe is no game.
     let affiliate = ok(r#"{"experienceAffiliateData":{"status":"Valid","universeId":7,"joinData":{"launchData":"ref=abc"}}}"#);
     let root = ok(r#"{"data":[{"id":7,"rootPlaceId":70,"name":"Seven"}]}"#);
     let (join, _) = resolve_with(vec![affiliate, root], share("ExperienceAffiliate")).await;
@@ -875,8 +833,6 @@ async fn friends_online_reads_pascal_case_presence() {
     assert!(matches!(c.friends_online(4, &cookie, 1).await, Err(AppError::CookieInvalid)));
 }
 
-/// Live check of the public (cookie-less) endpoints against roblox.com, user 1 ("Roblox").
-/// Not run by default: `cargo test live_public -- --ignored --nocapture`.
 #[tokio::test]
 #[ignore = "talks to roblox.com"]
 async fn live_public_endpoints() {
@@ -896,8 +852,6 @@ async fn live_public_endpoints() {
     assert_eq!(found.first().map(|u| u.id), Some(1));
     println!("user={user:?}\nheads={heads:?}\nplus={plus:?}\ncounts={counts:?}\ngames={games:?}");
 }
-
-// Server list.
 
 const SERVERS: &str = "GET /v2/games/920587237/servers/Public";
 
@@ -929,7 +883,6 @@ async fn servers_public_maps_each_order_and_sends_no_cookie_for_guests() {
         (ServerOrder::BestLatency, Some(&cookie), false, 100, "BestLatency&excludeFullGames=false&limit=100"),
     ];
     for (order, cookie, exclude_full, limit, query) in asks {
-        // An empty cursor is no cursor.
         let page = c.servers_public(3, cookie, 920587237, order, exclude_full, limit, Some("")).await.unwrap();
         assert_eq!(page, ServerPage { servers: vec![], next_cursor: None });
         let req = reqs.recv().unwrap();
@@ -957,11 +910,9 @@ async fn servers_public_guest_sorts_say_to_pick_an_account() {
     let (c, _) = client(&base);
     let r = c.servers_public(0, None, 920587237, ServerOrder::BestLatency, true, 100, None).await;
     assert!(matches!(r, Err(AppError::Invalid(m)) if m.starts_with("Pick an account to sort by")));
-    // Any other 400 stays a plain Roblox error.
     let r = c.servers_public(0, None, 920587237, ServerOrder::OccupancyDesc, true, 100, None).await;
     assert!(is_http(r.unwrap_err(), "400"));
 
-    // Code 7 means "guest" only on the server list.
     let (base, _reqs) = serve(vec![reply("400 Bad Request", &[], &guest)]);
     let (c, _) = client(&base);
     assert!(is_http(c.presence(1, &Secret::new("OLD"), &[1]).await.unwrap_err(), "400"));
@@ -969,7 +920,6 @@ async fn servers_public_guest_sorts_say_to_pick_an_account() {
 
 #[test]
 fn server_list_parsing_is_lenient() {
-    // A real page: guests get fps and friendCount but no ping; players / playerTokens ignored.
     let list: ServerList = json(fixture("servers-v2-public-occupancyasc-limit100.json").as_bytes()).unwrap();
     let rows = list.data.unwrap();
     assert_eq!(rows.len(), 100);
@@ -1013,8 +963,6 @@ async fn servers_public_drops_rows_without_id_or_counts() {
     assert_eq!(empty, ServerPage { servers: vec![], next_cursor: None });
 }
 
-// Game info and private servers.
-
 #[tokio::test]
 async fn place_universe_reads_the_id_or_null() {
     let (base, reqs) = serve(vec![
@@ -1027,7 +975,6 @@ async fn place_universe_reads_the_id_or_null() {
     assert_eq!(first_line(&req), "GET /universes/v1/places/2753915549/universe HTTP/1.1");
     assert!(!has(&req, "\r\ncookie:"));
     assert_eq!(c.place_universe(1).await.unwrap(), None);
-    // No such place id at all: no call (a third would fail as Network).
     assert_eq!(c.place_universe(0).await.unwrap(), None);
     assert_eq!(c.place_universe(-5).await.unwrap(), None);
 }
@@ -1057,7 +1004,6 @@ async fn games_read_the_browser_fields_leniently() {
     assert_eq!(first_line(&req), "GET /v1/games?universeIds=383310974,994732206 HTTP/1.1");
     assert!(!has(&req, "\r\ncookie:"));
 
-    // Nulls default, rows without id or root place are dropped.
     let bare = GameDetails { universe_id: 7, root_place_id: 70, private_servers: true, ..Default::default() };
     assert_eq!(c.games(&[7, 8, 9]).await.unwrap(), [bare]);
     assert!(c.games(&[]).await.unwrap().is_empty());
@@ -1091,7 +1037,6 @@ async fn place_icons_match_by_target_id_and_keep_only_completed() {
     assert_eq!(first_line(&req), format!("GET /v1/places/gameicons?placeIds=920587237,2753915549&{query} HTTP/1.1"));
     assert!(!has(&req, "\r\ncookie:"));
 
-    // Pending is not retried here: no icon is shown instead.
     let icons = c.place_icons(&[10, 20, 30, 40, 50]).await.unwrap();
     assert_eq!(icons, HashMap::from([(30, "https://tr.rbxcdn.com/c".to_string())]));
 }
@@ -1099,6 +1044,7 @@ async fn place_icons_match_by_target_id_and_keep_only_completed() {
 const ACCESS: &str = "0f1e2d3c-4b5a-4968-8776-655443322110";
 
 #[tokio::test]
+// -- Main func
 async fn private_servers_send_the_cookie_and_keep_only_guid_secrets() {
     use crate::model::{PrivateServer, PrivateServerPage};
     let body = format!(
@@ -1137,7 +1083,6 @@ async fn private_servers_send_the_cookie_and_keep_only_guid_secrets() {
     assert_eq!(first_line(&req), "GET /v1/games/920587237/private-servers?sortOrder=Desc&excludeFullGames=false&cursor=abc%2B%2F%3D HTTP/1.1");
     assert!(has(&req, "\r\ncookie: .ROBLOSECURITY=OLD\r\n"));
 
-    // First page: no query at all; an empty next cursor is the last page.
     let page = c.private_servers(4, &cookie, 920587237, Some("")).await.unwrap();
     assert_eq!(page, PrivateServerPage { servers: vec![], next_cursor: None, join_restricted: false });
     assert_eq!(first_line(&reqs.recv().unwrap()), "GET /v1/games/920587237/private-servers?sortOrder=Desc&excludeFullGames=false HTTP/1.1");
@@ -1234,7 +1179,6 @@ async fn a_friend_request_that_wants_a_captcha_says_so() {
     let (c, _) = client(&base);
     let r = c.friend_request_send(5, &Secret::new("OLD"), 42).await;
     assert!(matches!(r, Err(AppError::Invalid(m)) if m.starts_with("Roblox wants a captcha")));
-    // A quiet refusal is a plain error too, and an empty answer is a success.
     assert!(no_captcha(br#"{"success":false}"#).is_err() && no_captcha(b"").is_ok());
 }
 

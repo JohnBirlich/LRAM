@@ -3,7 +3,7 @@ import { api } from "../../api";
 import { toast, toastError } from "../../ui/Toast";
 import { t } from "../../i18n";
 
-/** The diagnostics report, saved where the user picks it: the one-click "it went wrong" file. */
+// -- Main func
 export async function saveReport(): Promise<void> {
   try {
     const path = await saveFile({

@@ -1,20 +1,3 @@
-//! The FPS cap and graphics of the clients LRAM starts, through Roblox's own settings file
-//! `%LOCALAPPDATA%\Roblox\GlobalBasicSettings_13.xml`: `FramerateCap` (the in-game Maximum Frame
-//! Rate; the client takes any value, not only the menu's) and `GraphicsQualityLevel` /
-//! `SavedQualityLevel` (Graphics Quality, 1 the lowest). Roblox's flag allowlist refuses every
-//! frame-rate flag in `ClientAppSettings.json` (the client logs "Denied local configuration for:
-//! DFIntTaskSchedulerTargetFps"), so the cap can't be a flag.
-//!
-//! Every client shares that file and reads it once, a few seconds after it starts. A launch
-//! writes its values, waits until its client has read them (`wait_until_read`) and puts the
-//! user's own back; launches hold `LOCK` meanwhile, so one never reads another's. A client writes
-//! all its settings back when it closes: `Undo::keep_until` writes a launch's values again when that
-//! happens before its client has read them, and `spawn` watches the file: a setting holding a value a
-//! launch wrote goes back to the user's own (`settle_values`); any other change is the user's
-//! own. The user's values and the ones launches wrote
-//! are kept in the database (`KEPT`), so this holds across restarts. Only these three settings
-//! are touched; a file another process is still writing (no `</roblox>` yet) is left alone.
-
 use std::io::{ErrorKind, Read};
 use std::ops::RangeInclusive;
 use std::path::{Path, PathBuf};
@@ -27,58 +10,30 @@ use crate::App;
 use crate::instances::logwatch;
 use crate::storage::Db;
 
-/// Accepted caps; 0 means "leave Roblox alone".
 pub const RANGE: RangeInclusive<u32> = 5..=360;
 
-/// (element, name) of each setting in the file, in `Values` order: FPS cap, quality level (1..21),
-/// saved quality (0 automatic, 1..10).
 const KEYS: [(&str, &str); 3] = [("int", "FramerateCap"), ("int", "GraphicsQualityLevel"), ("token", "SavedQualityLevel")];
 
-/// What a missing file starts as (Roblox writes its own when a client closes).
 const EMPTY: &str = "<roblox version=\"4\">\n\t<Item class=\"UserGameSettings\" referent=\"RBX0\">\n\t\t<Properties>\n\t\t</Properties>\n\t</Item>\n</roblox>\n";
 
-/// Lines a client logs only after it has read the settings file: its renderer is up (measured on
-/// 0.745: put back at this line, the client still ran at the launch's cap), or it is in a game
-/// (its replicator exists, seconds after the join line). A launch into a game may never log the
-/// first (seen in the wild: every launch waited out `MARK_TIMEOUT`), so the second counts too.
-/// The join line itself is logged earlier than the read, so it proves nothing.
 const READ_MARKS: [&[u8]; 2] = [b"SceneManager: resizing main targets", b"[FLog::Network] Replicator created"];
-/// A margin after that line before the user's values go back.
 const AFTER_READ: Duration = Duration::from_secs(1);
-/// The longest a launch waits for its client's log (a bootstrapper takes a while) ...
 const LOG_TIMEOUT: Duration = Duration::from_secs(60);
-/// ... and then for one of `READ_MARKS`, which comes seconds in; then the user's values go back anyway.
 const MARK_TIMEOUT: Duration = Duration::from_secs(15);
-/// After the client ended before reading: how long a new client may take to show up when
-/// Roblox's installer runs (it updates the client and starts it again) ...
 const UPDATE_TIMEOUT: Duration = Duration::from_secs(180);
-/// ... and when it doesn't.
 const RELAUNCH_GRACE: Duration = Duration::from_secs(3);
-/// How often `spawn` looks at the file.
 const WATCH: Duration = Duration::from_secs(1);
-/// How often a launch looks at the file until its client has read it: a closing client's save must
-/// be undone before that read.
 const KEEP: Duration = Duration::from_millis(100);
-/// How often a read or write is tried while Windows refuses it for a moment (another process has
-/// the file open), and how long apart.
 const TRIES: u32 = 10;
 const RETRY: Duration = Duration::from_millis(50);
 
-/// Database key of `Kept`.
 const KEPT: &str = "roblox_settings";
-/// How many values per setting `Kept` remembers.
 const OURS: usize = 16;
 
-/// Held by each launch from `apply` until its client has read the file (and the user's values
-/// are back), so concurrent launches (batch, rejoin, tray) never cross values. `spawn` leaves
-/// the file alone while it is held.
 pub static LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
-/// The settings as the file has them, in `KEYS` order; None: not in it.
 type Values = [Option<i64>; 3];
 
-/// What the database keeps: the user's own values, and per setting the values launches wrote
-/// that weren't the user's (latest last).
 #[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq)]
 #[serde(default)]
 struct Kept {
@@ -90,7 +45,6 @@ fn file() -> Option<PathBuf> {
     std::env::var_os("LOCALAPPDATA").map(|d| PathBuf::from(d).join("Roblox").join("GlobalBasicSettings_13.xml"))
 }
 
-/// The setting's number in `text` (pure).
 fn get(text: &str, (tag, name): (&str, &str)) -> Option<i64> {
     let open = format!("<{tag} name=\"{name}\">");
     let start = text.find(&open)? + open.len();
@@ -98,8 +52,6 @@ fn get(text: &str, (tag, name): (&str, &str)) -> Option<i64> {
     text[start..end].trim().parse().ok()
 }
 
-/// `text` with the setting set to `v`, or without it for None (pure). One the file lacks goes at
-/// the end of its first `<Properties>`; without one, `text` stays as it is.
 fn set(text: &str, (tag, name): (&str, &str), v: Option<i64>) -> String {
     let (open, close) = (format!("<{tag} name=\"{name}\">"), format!("</{tag}>"));
     let element = v.map(|v| format!("{open}{v}{close}"));
@@ -109,7 +61,6 @@ fn set(text: &str, (tag, name): (&str, &str), v: Option<i64>) -> String {
             None => text.into(),
         },
         None => match (element, text.find("</Properties>")) {
-            // The file's own layout: one tab deeper than `</Properties>`, which keeps its line.
             (Some(e), Some(i)) => format!("{}\t{e}\n\t\t{}", &text[..i], &text[i..]),
             _ => text.into(),
         },
@@ -124,8 +75,6 @@ fn write(text: &str, v: Values) -> String {
     KEYS.iter().zip(v).fold(text.to_owned(), |t, (k, v)| set(&t, *k, v))
 }
 
-/// What a launch gives its client (pure): `fps` (0: the user's own) and, with `low`, the lowest
-/// graphics.
 fn for_launch([fps_now, quality, saved]: Values, fps: u32, low: bool) -> Values {
     [
         if fps == 0 { fps_now } else { Some(fps.into()) },
@@ -134,13 +83,6 @@ fn for_launch([fps_now, quality, saved]: Values, fps: u32, low: bool) -> Values 
     ]
 }
 
-/// Settles what the file holds (`now`) against what is kept (pure): a setting holding a value a
-/// launch wrote was saved by a client that read it (an alt, or a Roblox started while a launch
-/// held the file) and goes back to the user's own; any other value is the user's own from now on.
-/// What the file should hold.
-// ponytail: told apart by value alone; a user who sets exactly a value a launch used (say the
-// lowest graphics) gets their previous one back. The opposite guess would leave an alt's cap and
-// graphics on the user's own Roblox for good; telling writers apart needs Roblox to mark them.
 fn settle_values(kept: &mut Kept, now: Values) -> Values {
     let Some(mut user) = kept.user else {
         kept.user = Some(now);
@@ -174,8 +116,6 @@ fn save(db: &Db, kept: &Kept) {
     }
 }
 
-/// `f`, tried again a few times while Windows refuses it for a moment: access denied, or
-/// another process has the file open (sharing violation, 32).
 pub(super) fn retry<T>(mut f: impl FnMut() -> std::io::Result<T>) -> std::io::Result<T> {
     let mut tries = 1;
     loop {
@@ -189,7 +129,6 @@ pub(super) fn retry<T>(mut f: impl FnMut() -> std::io::Result<T>) -> std::io::Re
     }
 }
 
-/// When the file was last written and its size: it changed when this did.
 type Stamp = (SystemTime, u64);
 
 fn stamp(file: &Path) -> Option<Stamp> {
@@ -197,15 +136,12 @@ fn stamp(file: &Path) -> Option<Stamp> {
     Some((m.modified().ok()?, m.len()))
 }
 
-/// The whole file and its stamp; None while another process is still writing it (no `</roblox>`
-/// at its end yet). Missing: `NotFound`.
 fn read_file(file: &Path) -> std::io::Result<Option<(String, Stamp)>> {
     let seen = stamp(file);
     let text = retry(|| std::fs::read_to_string(file))?;
     Ok(seen.filter(|_| text.trim_end().ends_with("</roblox>")).map(|s| (text, s)))
 }
 
-// Windows: this only clears or sets the read-only attribute.
 #[allow(clippy::permissions_set_readonly_false)]
 pub(super) fn set_readonly(file: &Path, on: bool) -> std::io::Result<()> {
     let mut p = std::fs::metadata(file)?.permissions();
@@ -213,10 +149,6 @@ pub(super) fn set_readonly(file: &Path, on: bool) -> std::io::Result<()> {
     std::fs::set_permissions(file, p)
 }
 
-/// Replaces the file in one step (a starting client never reads half of it), unless it changed
-/// since it was read as `seen` (None: it was missing), `Interrupted` then: read it again. A
-/// read-only file (some tools set that to keep Roblox from overwriting it) stays read-only.
-/// Nothing is left behind when it fails.
 fn replace(file: &Path, text: &str, seen: Option<Stamp>) -> std::io::Result<()> {
     let tmp = file.with_extension("xml.lram");
     let readonly = std::fs::metadata(file).is_ok_and(|m| m.permissions().readonly());
@@ -229,7 +161,6 @@ fn replace(file: &Path, text: &str, seen: Option<Stamp>) -> std::io::Result<()> 
         if readonly {
             set_readonly(file, false)?;
         }
-        // Again before each try: a save made while Windows refused the rename must not be lost.
         retry(|| unchanged().and_then(|()| std::fs::rename(&tmp, file)))
     });
     if readonly && let Err(e) = set_readonly(file, true) {
@@ -244,20 +175,15 @@ fn replace(file: &Path, text: &str, seen: Option<Stamp>) -> std::io::Result<()> 
     done
 }
 
-/// What `apply` gave the client, to put the user's own back once it has read it. Kept is as
-/// `apply` saved it: `LOCK` keeps the watcher out until then, and it saves what this learns.
 pub struct Undo {
     file: PathBuf,
     want: Values,
     kept: Kept,
-    /// What the launch asked for (`for_launch`).
     fps: u32,
     low: bool,
 }
 
 impl Undo {
-    /// Until `stop`: one that closes while this client starts saves its own settings over the
-    /// launch's, and this client would run at those.
     pub fn keep_until(mut self, stop: &std::sync::atomic::AtomicBool) -> Undo {
         while !stop.load(std::sync::atomic::Ordering::Relaxed) {
             self.keep();
@@ -266,8 +192,6 @@ impl Undo {
         self
     }
 
-    /// One look: the launch's values back if something else was saved (`settle_values` tells which
-    /// of that is the user's own). Not there or refused now: the next look tries again.
     fn keep(&mut self) {
         let Ok(Some((text, seen))) = read_file(&self.file) else { return };
         let now = read(&text);
@@ -285,7 +209,6 @@ impl Undo {
         }
     }
 
-    /// Puts the user's values back; a change the user made meanwhile stays (failures are logged).
     pub fn put_back(mut self) {
         for _ in 0..TRIES {
             let (text, seen) = match read_file(&self.file) {
@@ -317,11 +240,7 @@ impl Undo {
     }
 }
 
-/// Writes the launch's values (`fps`, 0 for the user's own; `low` for the lowest graphics) for the
-/// client about to start; what to put back once it has read them. Even a launch that gives the
-/// user's own gets one: holding `LOCK` until its client has read the file keeps the next launch's
-/// values from it. None when the file can't be used (logged); that never stops the launch.
-/// Hold `LOCK`.
+// -- Main func
 pub fn apply(db: &Db, fps: u32, low: bool) -> Option<Undo> {
     let Some(file) = file() else {
         log::warn!("FPS cap and graphics skipped: LOCALAPPDATA isn't set");
@@ -338,7 +257,6 @@ fn apply_at(db: &Db, file: PathBuf, fps: u32, low: bool) -> Option<Undo> {
                 std::thread::sleep(RETRY);
                 continue;
             }
-            // Nothing to give: Roblox's defaults are the user's own.
             Err(e) if e.kind() == ErrorKind::NotFound && fps == 0 && !low => return Some(Undo { file, want: [None; 3], kept: Kept::default(), fps, low }),
             Err(e) if e.kind() == ErrorKind::NotFound => (EMPTY.to_owned(), None),
             Err(e) => {
@@ -348,7 +266,6 @@ fn apply_at(db: &Db, file: PathBuf, fps: u32, low: bool) -> Option<Undo> {
         };
         let now = read(&text);
         let mut kept = load(db);
-        // A launch's values still there were saved by a client LRAM started that closed.
         settle_values(&mut kept, now);
         let user = kept.user.unwrap_or(now);
         let want = for_launch(user, fps, low);
@@ -381,22 +298,15 @@ fn apply_at(db: &Db, file: PathBuf, fps: u32, low: bool) -> Option<Undo> {
     None
 }
 
-/// Whether `log` has one of `READ_MARKS` (pure).
 fn shows_read(log: &[u8]) -> bool {
     READ_MARKS.iter().any(|m| log.windows(m.len()).any(|w| w == *m))
 }
 
-/// Whether the log at `path` shows its client has read the file (its first 4 MB; the mark comes
-/// seconds in).
 fn has_read(path: &Path) -> bool {
     let mut head = Vec::new();
     std::fs::File::open(path).and_then(|f| f.take(4 << 20).read_to_end(&mut head)).is_ok() && shows_read(&head)
 }
 
-/// Waits until the client launched with `browser_tracker_id` at `since` has read the settings
-/// file: the newest log naming that id (`logwatch::find_log`) shows one of `READ_MARKS`. `client` (pid,
-/// start time; None under a bootstrapper, which exits by design) ending first ends the wait,
-/// unless Roblox's installer runs: it updates the client and starts it again, with a new log.
 pub async fn wait_until_read(browser_tracker_id: i64, since: SystemTime, client: Option<(u32, u64)>) {
     use crate::instances::process;
     use tokio::time::Instant;
@@ -406,8 +316,6 @@ pub async fn wait_until_read(browser_tracker_id: i64, since: SystemTime, client:
     };
     let start = Instant::now();
     let mut client = client;
-    // The newest log naming the id, and since when; when the client ended, and whether the
-    // installer took over then.
     let mut log: Option<(PathBuf, Instant)> = None;
     let mut gone: Option<(Instant, bool)> = None;
     loop {
@@ -427,7 +335,6 @@ pub async fn wait_until_read(browser_tracker_id: i64, since: SystemTime, client:
         }
         if let Some(l) = found.filter(|l| log.as_ref().is_none_or(|(known, _)| known != l)) {
             if log.is_some() {
-                // A client the installer started again: its pid is unknown, its log tells.
                 (client, gone) = (None, None);
             }
             log = Some((l, Instant::now()));
@@ -456,9 +363,6 @@ pub async fn wait_until_read(browser_tracker_id: i64, since: SystemTime, client:
     }
 }
 
-/// LRAM is closing: the user's own values go back now (a launch may still be waiting for its
-/// client, and nothing watches the file while LRAM is closed). A client LRAM started that
-/// closes later saves its own again; the watcher puts the user's back when LRAM next starts.
 pub fn restore(db: &Db) {
     if let Some(file) = file() {
         restore_at(db, &file);
@@ -482,15 +386,12 @@ fn restore_at(db: &Db, file: &Path) {
     }
 }
 
-/// One look at the file (`spawn`). False when it should look again: being written, refused for
-/// a moment, or changed under its write.
 fn settle(db: &Db, file: &Path) -> bool {
     let (text, seen) = match read_file(file) {
         Ok(Some(whole)) => whole,
         Ok(None) => return false,
         Err(e) if e.kind() == ErrorKind::NotFound => return true,
         Err(e) => {
-            // Once per distinct error: this is looked at again every `WATCH`.
             static LAST: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
             let why = e.to_string();
             let mut last = LAST.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -518,9 +419,7 @@ fn settle(db: &Db, file: &Path) -> bool {
         }
         Err(e) if e.kind() == ErrorKind::Interrupted => false,
         Err(e) => {
-            // Refused for a moment (another process has it open): look again. Anything else: done.
             let again = e.kind() == ErrorKind::PermissionDenied || e.raw_os_error() == Some(32);
-            // Retried every `WATCH`: only giving up is a warning.
             if again {
                 log::debug!("Roblox settings: couldn't put {} back yet: {e}", file.display());
             } else {
@@ -531,7 +430,6 @@ fn settle(db: &Db, file: &Path) -> bool {
     }
 }
 
-/// Watches the file for the app's lifetime: `settle` when it changed and no launch holds `LOCK`.
 pub fn spawn(app: AppHandle) {
     let watching = std::thread::Builder::new().name("client-settings".into()).spawn(move || {
         let mut seen = None;
@@ -561,7 +459,6 @@ mod tests {
     const MINE: Values = [Some(240), Some(19), Some(9)];
     const LOW: Values = [Some(15), Some(1), Some(1)];
 
-    /// A settings file of its own for each test (they run in parallel).
     struct TestFile(PathBuf);
 
     impl TestFile {
@@ -618,16 +515,12 @@ mod tests {
     #[test]
     fn settles_each_setting_on_its_own() {
         let kept = || Kept { user: Some(MINE), ours: [vec![15], vec![1], vec![1]] };
-        // A client that read a launch's values saved them: they go back, even with a quality
-        // level Roblox rewrote by its own rule (that one is the user's then).
         let mut k = kept();
         assert_eq!(settle_values(&mut k, [Some(15), Some(3), Some(1)]), [Some(240), Some(3), Some(9)]);
         assert_eq!(k.user, Some([Some(240), Some(3), Some(9)]));
-        // The user changed their own: kept.
         let mut k = kept();
         assert_eq!(settle_values(&mut k, [Some(144), Some(19), Some(9)]), [Some(144), Some(19), Some(9)]);
         assert_eq!(k.user, Some([Some(144), Some(19), Some(9)]));
-        // Nothing known yet: what's there is the user's.
         let mut k = Kept::default();
         assert_eq!(settle_values(&mut k, LOW), LOW);
         assert_eq!(k.user, Some(LOW));
@@ -645,29 +538,23 @@ mod tests {
         undo.put_back();
         assert_eq!(f.text(), XML, "the user's own are back");
 
-        // The client closes and saves the launch's values: they go back.
         f.put(&write(XML, LOW));
         assert!(settle(&db, &f.0));
         assert_eq!(f.text(), XML);
-        // A launch finds them still there: it builds on the user's own and puts those back.
         f.put(&write(XML, LOW));
         apply_at(&db, f.0.clone(), 30, false).unwrap().put_back();
         assert_eq!(f.text(), XML);
 
-        // The user changes their own in Roblox: kept as theirs.
         let mine = [Some(144), Some(19), Some(9)];
         f.put(&write(XML, mine));
         assert!(settle(&db, &f.0));
         assert_eq!(read(&f.text()), mine);
         assert_eq!(load(&db).user, Some(mine));
-        // ... also while a launch's client reads its values: put_back leaves it.
         let undo = apply_at(&db, f.0.clone(), 15, true).unwrap();
         f.put(&write(XML, [Some(60), Some(1), Some(1)]));
         undo.put_back();
         assert_eq!(read(&f.text()), [Some(60), Some(19), Some(9)]);
 
-        // A launch that leaves Roblox alone writes nothing, but still holds on until its client
-        // has read the file, and gives it the user's own rather than a closed client's.
         let now = f.text();
         let undo = apply_at(&db, f.0.clone(), 0, false).expect("held until its client has read the file");
         assert_eq!(f.text(), now);
@@ -678,7 +565,6 @@ mod tests {
         assert_eq!(read(&f.text()), [Some(60), Some(19), Some(9)]);
         undo.put_back();
 
-        // LRAM closes while a launch's values are in the file: the user's own go back.
         f.put(&write(XML, LOW));
         restore_at(&db, &f.0);
         assert_eq!(read(&f.text()), [Some(60), Some(19), Some(9)]);
@@ -688,7 +574,6 @@ mod tests {
     fn a_client_closing_during_a_launch_doesnt_change_what_the_new_one_reads() {
         let db = Db::open_in_memory().unwrap();
         let f = TestFile::new("closing", Some(XML));
-        // A launch at 15 and the lowest graphics left those in `ours`; this one is at 30.
         apply_at(&db, f.0.clone(), 15, true).unwrap().put_back();
         let mut undo = apply_at(&db, f.0.clone(), 30, true).unwrap();
         let want = [Some(30), Some(1), Some(1)];
@@ -696,15 +581,12 @@ mod tests {
         undo.keep();
         assert_eq!(read(&f.text()), want, "nothing to do");
 
-        // An alt started at 15 closes and saves that: this launch's are back, the user's stay known.
         f.put(&write(XML, LOW));
         undo.keep();
         assert_eq!(read(&f.text()), want);
         undo.put_back();
         assert_eq!(f.text(), XML);
 
-        // The client that closes was the user's own Roblox, on new settings: the launch's still
-        // win while it starts, and the user's new ones are what goes back.
         let mut undo = apply_at(&db, f.0.clone(), 30, false).unwrap();
         f.put(&write(XML, [Some(144), Some(19), Some(5)]));
         undo.keep();
@@ -712,7 +594,6 @@ mod tests {
         undo.put_back();
         assert_eq!(read(&f.text()), [Some(144), Some(19), Some(5)]);
 
-        // Half written: left alone until it is whole.
         let mut undo = apply_at(&db, f.0.clone(), 30, false).unwrap();
         f.put("<roblox>");
         undo.keep();
@@ -721,7 +602,6 @@ mod tests {
         undo.keep();
         assert_eq!(read(&f.text()), [Some(30), Some(19), Some(5)]);
 
-        // Stops when told, and hands the undo back.
         let stop = std::sync::atomic::AtomicBool::new(true);
         undo.keep_until(&stop).put_back();
         assert_eq!(read(&f.text()), [Some(144), Some(19), Some(5)]);
@@ -764,7 +644,6 @@ mod tests {
         undo.put_back();
         assert_eq!(read(&f.text()), [None; 3], "the user had none of them");
         assert!(f.text().trim_end().ends_with("</roblox>"));
-        // Roblox wrote one meanwhile: a write meant for a missing file stops.
         let roblox = f.text();
         assert_eq!(replace(&f.0, EMPTY, None).unwrap_err().kind(), ErrorKind::Interrupted);
         assert_eq!(f.text(), roblox);

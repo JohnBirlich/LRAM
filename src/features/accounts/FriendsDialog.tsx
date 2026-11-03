@@ -8,8 +8,7 @@ import { friendly, toast, toastError } from "../../ui/Toast";
 import { t } from "../../i18n";
 import { accountName } from "./shared";
 
-/** Incoming friend requests of one account, with accept / decline, plus sending one by username.
- * Both go through the account's own cookie, exactly as on roblox.com. */
+// -- Main func
 export function FriendsDialog({ open, onClose, account }: {
   open: boolean;
   onClose: () => void;

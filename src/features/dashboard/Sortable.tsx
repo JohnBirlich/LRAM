@@ -2,11 +2,9 @@ import type { ReactNode, Ref } from "react";
 import { byOrder, reordered } from "./homeLayout";
 import { useGridDrag } from "./useGridDrag";
 
-/** What a sorted button spreads on itself to be dragged. */
 export type DragProps = ReturnType<ReturnType<typeof useGridDrag>["item"]>;
 
-/** `ids` in the saved `order`, each `render`ed from its `name`; dragging one, or Alt and the arrows on
- * it, saves the new order. `column`: one above the other. Each must render one element, with a key. */
+// -- Main func
 export function Sortable<T extends number | string>({ ids, order, onOrder, name, render, column = false, className }: {
   ids: readonly T[];
   order: T[];

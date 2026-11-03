@@ -1,19 +1,3 @@
-//! Authenticode check of a downloaded installer (Windows), before LRAM ever runs it.
-//!
-//! Two checks, both required:
-//! 1. `WinVerifyTrust` (`WINTRUST_ACTION_GENERIC_VERIFY_V2`, no UI) on the file's own embedded
-//!    signature: the file is unmodified and chains to a trusted root. Revocation is checked for
-//!    the whole chain except the root (`WTD_REVOKE_WHOLECHAIN` +
-//!    `WTD_REVOCATION_CHECK_CHAIN_EXCLUDE_ROOT`), online: the file was just downloaded, so the
-//!    network is up; when the revocation servers can't be reached the check fails and the
-//!    installer is not run (fail closed). A catalog-only signature has no embedded signer and
-//!    fails step 2.
-//! 2. The leaf certificate of the first signer *that `WinVerifyTrust` itself verified* (read
-//!    from its state: `WTHelperProvDataFromStateData` → `WTHelperGetProvSignerFromChain` →
-//!    `WTHelperGetProvCertFromChain(0)`, before the state is closed; never looked up again in the
-//!    file's unauthenticated certificate bag) has the simple display name (its CN) exactly
-//!    `signer`, via `CertGetNameStringW`.
-
 use std::path::Path;
 
 use windows::Win32::Foundation::{HWND, INVALID_HANDLE_VALUE};
@@ -28,11 +12,9 @@ use windows::core::{HSTRING, PCWSTR};
 
 use crate::error::{AppError, Result};
 
-/// The signer every Roblox installer and client carries.
 pub const ROBLOX: &str = "Roblox Corporation";
 
-/// Ok only when `path` has a valid, trusted embedded Authenticode signature whose signer is
-/// exactly `signer` (see the module notes).
+// -- Main func
 pub fn verify(path: &Path, signer: &str) -> Result<()> {
     let refused = |why: String| AppError::Invalid(tr!("The downloaded installer was not run: {why}.", why = why));
     let (status, name) = trust(path);
@@ -46,8 +28,6 @@ pub fn verify(path: &Path, signer: &str) -> Result<()> {
     }
 }
 
-/// `WinVerifyTrust`'s answer for the file's embedded signature (0 = trusted) and, when trusted,
-/// the simple display name of the signer certificate it verified.
 fn trust(path: &Path) -> (i32, Option<String>) {
     let wide = HSTRING::from(path.as_os_str());
     let mut file = WINTRUST_FILE_INFO {
@@ -66,11 +46,8 @@ fn trust(path: &Path) -> (i32, Option<String>) {
         ..Default::default()
     };
     let mut action = WINTRUST_ACTION_GENERIC_VERIFY_V2;
-    // No interactive user: never any UI.
     let hwnd = HWND(INVALID_HANDLE_VALUE.0);
-    // SAFETY: `data` points at `file`, whose path is the live NUL-terminated `wide`; all three
-    // outlive both calls. The provider data, signer and certificate read in between belong to
-    // the state the first call left in `data` and are used only before the second call frees it.
+    // -- SAFETY: `data` points at `file`, whose path is the live NUL-terminated `wide`; all three outlive both calls
     unsafe {
         let status = WinVerifyTrust(hwnd, &mut action, (&raw mut data).cast());
         let name = (status == 0).then(|| verified_signer(&data)).flatten();
@@ -80,12 +57,8 @@ fn trust(path: &Path) -> (i32, Option<String>) {
     }
 }
 
-/// The first signer's leaf certificate name from a successful `WTD_STATEACTION_VERIFY` state.
-///
-/// # Safety
-/// `data.hWVTStateData` is the live state of a verify call, not yet closed.
 unsafe fn verified_signer(data: &WINTRUST_DATA) -> Option<String> {
-    // SAFETY: see the function's contract; each pointer is checked before it is read.
+    // -- SAFETY: see the function's contract; each pointer is checked before it is read
     unsafe {
         let prov = WTHelperProvDataFromStateData(data.hWVTStateData);
         if prov.is_null() {
@@ -106,11 +79,8 @@ unsafe fn verified_signer(data: &WINTRUST_DATA) -> Option<String> {
     }
 }
 
-/// # Safety
-/// `cert` is a live certificate context.
 unsafe fn name_of(cert: *const CERT_CONTEXT) -> Option<String> {
-    // SAFETY: the first call asks for the length (with the NUL), the second writes at most
-    // `name.len()` characters.
+    // -- SAFETY: the first call asks for the length (with the NUL), the second writes at most `name.len()` characters
     let name = unsafe {
         let n = CertGetNameStringW(cert, CERT_NAME_SIMPLE_DISPLAY_TYPE, 0, None, None);
         let mut name = vec![0u16; n.max(1) as usize];
@@ -148,7 +118,6 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-    /// explorer.exe: a trusted signature, but Microsoft's, so not run.
     #[test]
     fn system_exe_is_refused() {
         let explorer = PathBuf::from(std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into())).join("explorer.exe");
@@ -158,8 +127,6 @@ mod tests {
         assert!(e.contains("\"Microsoft Windows\", not Roblox Corporation"), "{e}");
     }
 
-    /// An embedded-signed Microsoft program (the WebView2 runtime LRAM needs anyway) is
-    /// trusted, but isn't Roblox's.
     #[test]
     fn signed_by_someone_else_is_refused() {
         let pf = std::env::var("ProgramFiles(x86)").unwrap_or_else(|_| r"C:\Program Files (x86)".into());
@@ -176,7 +143,6 @@ mod tests {
         assert!(e.contains("Microsoft Corporation"), "{e}");
     }
 
-    /// Roblox's own installed client (read only, never run), when this PC has one.
     #[test]
     fn installed_roblox_client_verifies() {
         let local = std::env::var("LOCALAPPDATA").unwrap_or_default();

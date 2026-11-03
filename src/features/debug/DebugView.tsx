@@ -6,19 +6,16 @@ import { toast, toastError } from "../../ui/Toast";
 import { t } from "../../i18n";
 import { saveReport as saveReportFile } from "./report";
 
-/** Lines kept in view; older ones stay in lram.log. */
 const KEEP = 5000;
-/** History read from lram.log when the tab opens. */
+
 const HISTORY = 2000;
 
 const LEVELS = ["error", "warn", "info", "debug"] as const;
 type Level = (typeof LEVELS)[number];
 type Line = { id: number; level: Level; text: string };
 
-/** tauri-plugin-log's numeric levels (Trace 1 … Error 5). */
 const BY_NUMBER: Record<number, Level> = { 1: "debug", 2: "debug", 3: "info", 4: "warn", 5: "error" };
 
-/** The `[LEVEL]` tag of a lram.log line; lines without one (a panic's next lines) follow `prev`. */
 function levelOf(text: string, prev: Level): Level {
   const m = /\[(TRACE|DEBUG|INFO|WARN|ERROR)\]/.exec(text);
   if (!m) return text.startsWith("[fatal]") ? "error" : prev;
@@ -29,8 +26,6 @@ const COLOR: Record<Level, string> = { error: "text-err", warn: "text-warn", inf
 
 let nextId = 0;
 
-/** The newest line Clear hid. lram.log keeps everything (the diagnostics report reads it), so what
- * the history shows starts after this line, across tab switches and restarts. */
 const CLEARED_KEY = "roalt.debug.clearedAfter";
 function clearedAfter(): string | null {
   try {
@@ -43,25 +38,21 @@ function setClearedAfter(line: string) {
   try {
     localStorage.setItem(CLEARED_KEY, line);
   } catch {
-    // Then Clear lasts until the tab closes.
   }
 }
 
-/** The lines after the last `marker`; all of them when it has aged out of `lines`, as they are then
- * all newer than it. */
 function afterMarker(lines: string[], marker: string | null): string[] {
   const at = marker === null ? -1 : lines.lastIndexOf(marker);
   return at < 0 ? lines : lines.slice(at + 1);
 }
 
-/** Everything LRAM logs (lram.log), live, terminal-style. */
+// -- Main func
 export function DebugView() {
   const [lines, setLines] = useState<Line[]>([]);
   const [shown, setShown] = useState<Record<Level, boolean>>({ error: true, warn: true, info: true, debug: false });
   const [query, setQuery] = useState("");
   const [paused, setPaused] = useState(false);
   const box = useRef<HTMLDivElement>(null);
-  // Lines that arrived while paused, added on resume.
   const held = useRef<Line[]>([]);
   const pausedRef = useRef(paused);
   pausedRef.current = paused;
@@ -69,7 +60,6 @@ export function DebugView() {
   useEffect(() => {
     let live = true;
     const add = (more: Line[]) => setLines((l) => [...l, ...more].slice(-KEEP));
-    // Live lines first, so none are lost while the history loads.
     const early: Line[] = [];
     let loaded = false;
     const un = events.onLog((p) => {
@@ -119,14 +109,12 @@ export function DebugView() {
     return c;
   }, [lines]);
 
-  // Follows the newest line unless paused.
   useEffect(() => {
     if (!paused && box.current) box.current.scrollTop = box.current.scrollHeight;
   }, [visible, paused]);
 
   const clear = () => {
     const newest = held.current.at(-1) ?? lines.at(-1);
-    // A live line can span several of the file's.
     if (newest) setClearedAfter(newest.text.split("\n").at(-1) ?? newest.text);
     held.current = [];
     setLines([]);

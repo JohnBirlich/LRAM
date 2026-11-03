@@ -7,13 +7,13 @@ import { t } from "../i18n";
 export const PRODUCT = "LRAM";
 export const TAGLINE = "Local Roblox Account Manager";
 
-/** Custom title bar (window decorations are off). Empty space drags; double-click maximizes. */
+// -- Main func
 export function TitleBar({ dark, onToggleTheme, onLock, onRefresh, sideTabs, onToggleTabs }: {
   dark: boolean;
   onToggleTheme?: () => void;
   onLock?: () => void;
   onRefresh?: () => void;
-  /** Accounts are on the side; `onToggleTabs` moves them. */
+
   sideTabs?: boolean;
   onToggleTabs?: () => void;
 }) {
@@ -29,7 +29,6 @@ export function TitleBar({ dark, onToggleTheme, onLock, onRefresh, sideTabs, onT
   }, [win]);
 
   return (
-    // Left to right in every language: the window's keys stay where Windows has them.
     <header dir="ltr" data-tauri-drag-region="deep" className="titlebar flex-none flex items-center gap-3 ps-3.5">
       <Logo />
       <div className="brand">
@@ -47,7 +46,7 @@ export function TitleBar({ dark, onToggleTheme, onLock, onRefresh, sideTabs, onT
         )}
         {onToggleTabs && (
           <button className="wc" aria-label={sideTabs ? t("ui.accountsTop") : t("ui.accountsSide")} title={sideTabs ? t("ui.accountsTop") : t("ui.accountsSide")} onClick={onToggleTabs}>
-            {/* What a click gives. */}
+            {}
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true">
               <rect x="1.5" y="2.5" width="13" height="11" rx="2" />
               <path d={sideTabs ? "M1.5 6h13" : "M6 2.5v11"} />

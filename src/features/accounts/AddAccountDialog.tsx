@@ -12,6 +12,9 @@ export type Tab = "login" | "cookie" | "many";
 
 const RAM_FILTER = [{ name: "Roblox Account Manager", extensions: ["json"] }];
 
+const CREDENTIALS = /^\s*[^\s:@]{1,64}\s*:\s*[^\s:]+/m;
+const looksLikeCredentials = (text: string) => !text.includes("_|WARNING:-DO-NOT-SHARE-THIS.") && CREDENTIALS.test(text);
+
 // -- Main func
 export function AddAccountDialog({ open, startOn = "login", onClose, onAdded }: {
   open: boolean;
@@ -73,6 +76,10 @@ export function AddAccountDialog({ open, startOn = "login", onClose, onAdded }: 
     setCookie("");
     if (!value.trim() || busy) return;
     setError(null);
+    if (looksLikeCredentials(value)) {
+      setError(t("accounts.add.credentialsNotCookie"));
+      return;
+    }
     setBusy(true);
     try {
       added(await api.accountAddCookie(value));
@@ -113,6 +120,10 @@ export function AddAccountDialog({ open, startOn = "login", onClose, onAdded }: 
     const value = many;
     setMany("");
     if (!value.trim() || busy) return;
+    if (looksLikeCredentials(value)) {
+      setError(t("accounts.add.credentialsNotCookie"));
+      return;
+    }
     runImport(() => api.accountsImportCookies(value));
   }
 

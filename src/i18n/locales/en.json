@@ -531,6 +531,7 @@
   "accounts.add.cookieLabel": ".ROBLOSECURITY cookie",
   "accounts.add.cookiePlaceholder": "Paste the value here",
   "accounts.add.cookieHelp": "The raw value or <mono>.ROBLOSECURITY=…</mono> both work. LRAM checks it with Roblox, then keeps it encrypted on this PC. Anyone with this cookie can sign in as you; never paste it anywhere else.",
+  "accounts.add.credentialsNotCookie": "A username and password won't work here: Roblox signs in through its own window. Use \"Sign in with Roblox\", or paste the .ROBLOSECURITY cookie of a browser where the account is signed in.",
   "accounts.detail.noAnswer": "Roblox didn't answer",
   "accounts.detail.robux": "Robux",
   "accounts.detail.friends": "Friends",

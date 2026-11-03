@@ -20,6 +20,7 @@ const STUCK_TRIES: u32 = 3;
 const MAX_ENDED: usize = 30;
 const TELEPORT_MS: i64 = 60_000;
 const LOG_SKEW_SECS: u64 = 3;
+const LATE_REBIND_MS: i64 = 600_000;
 pub fn wrong_account() -> String {
     tr!("Signed in as another account")
 }
@@ -815,7 +816,7 @@ impl Tracker {
         if work.is_empty() {
             return Vec::new();
         }
-        let mut taken: Vec<u32> = work.iter().filter(|e| e.adopted).map(|e| e.inst.pid).collect();
+        let mut taken: Vec<u32> = work.iter().map(|e| e.inst.pid).collect();
         let mut roblox = None;
         let mut installer = None;
         for e in &mut work {
@@ -1133,6 +1134,15 @@ fn observe(
         log::info!("instance {}: rebound from process {} to {} (it writes its log)", e.inst.id, e.inst.pid, p.pid);
         adopt(e, p, taken);
     }
+    if !e.alive
+        && !e.closing
+        && !may_appear(e, now)
+        && (e.window_seen || e.adopted)
+        && let Some(p) = pick_late(roblox.get_or_insert_with(|| procs.roblox()), after, e.inst.started_at, taken)
+    {
+        log::info!("instance {}: rebound from process {} to {} (it is still running)", e.inst.id, e.inst.pid, p.pid);
+        adopt(e, p, taken);
+    }
 }
 
 fn arranges(auto_tile: bool, launched: bool) -> bool {
@@ -1153,6 +1163,17 @@ fn adopt(e: &mut Entry, p: ProcInfo, taken: &mut Vec<u32>) {
 fn pick_client(procs: &[ProcInfo], log_created: Option<u64>, after: u64, taken: &[u32]) -> Option<ProcInfo> {
     let c = log_created?;
     procs.iter().filter(|p| p.start_time >= after && !taken.contains(&p.pid) && p.start_time.abs_diff(c) <= LOG_SKEW_SECS).min_by_key(|p| p.start_time.abs_diff(c)).cloned()
+}
+
+fn pick_late(procs: &[ProcInfo], after: u64, launched_ms: i64, taken: &[u32]) -> Option<ProcInfo> {
+    let launched = u64::try_from(launched_ms.max(0) / 1000).unwrap_or(0);
+    let span = u64::try_from(LATE_REBIND_MS / 1000).unwrap_or(0);
+    let latest = launched.max(after) + span;
+    procs
+        .iter()
+        .filter(|p| !taken.contains(&p.pid) && p.start_time + LOG_SKEW_SECS >= after && p.start_time <= latest)
+        .min_by_key(|p| p.start_time.abs_diff(launched))
+        .cloned()
 }
 
 fn created_secs(path: &Path) -> Option<u64> {
@@ -1220,6 +1241,10 @@ fn settle(e: &mut Entry, now: i64) -> Option<CrashKind> {
     }
     if e.facts.job_id.is_some() {
         e.inst.job_id.clone_from(&e.facts.job_id);
+    }
+    if ended && e.inst.ended_at.is_none() {
+        let why = if e.window_seen || e.adopted { "no process and no window" } else { "never showed a window" };
+        log::info!("instance {}: gone: {why}, {} s after its launch", e.inst.id, (now - e.inst.started_at) / 1000);
     }
     if ended {
         e.inst.ended_at = Some(now);

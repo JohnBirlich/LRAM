@@ -159,6 +159,9 @@ pub async fn account_add_cookie(app: AppHandle, s: State<'_, App>, cookie: Strin
     if s.vault.is_locked() {
         return Err(AppError::Locked);
     }
+    if !cookie.contains(COOKIE_MARK) && looks_like_credentials(&cookie) {
+        return Err(AppError::Invalid(not_a_cookie()));
+    }
     add_account(&app, &s, normalize_cookie(&cookie)?).await
 }
 
@@ -172,6 +175,22 @@ pub async fn account_add_login(app: AppHandle, s: State<'_, App>) -> Result<Acco
 }
 
 const COOKIE_MARK: &str = "_|WARNING:-DO-NOT-SHARE-THIS.";
+
+fn not_a_cookie() -> String {
+    tr!("That is a username and password, not a cookie: Roblox no longer signs in from those. Use \"Sign in with Roblox\", or paste the .ROBLOSECURITY cookie of a browser where the account is signed in.")
+}
+
+fn looks_like_credentials(text: &str) -> bool {
+    text.lines().filter(|line| !line.contains(COOKIE_MARK)).any(|line| {
+        let Some((user, rest)) = line.trim().split_once(':') else { return false };
+        let (user, pass) = (user.trim(), rest.trim());
+        !user.is_empty()
+            && !pass.is_empty()
+            && user.len() <= 64
+            && !user.contains(char::is_whitespace)
+            && !pass.contains(char::is_whitespace)
+    })
+}
 
 fn find_cookies(text: &str) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
@@ -234,7 +253,11 @@ pub async fn accounts_import_cookies(app: AppHandle, s: State<'_, App>, text: St
     }
     let found = find_cookies(&text);
     if found.is_empty() {
-        return Err(AppError::Invalid(tr!("No .ROBLOSECURITY cookies found. Each starts with _|WARNING:-DO-NOT-SHARE-THIS.")));
+        return Err(AppError::Invalid(if looks_like_credentials(&text) {
+            not_a_cookie()
+        } else {
+            tr!("No .ROBLOSECURITY cookies found. Each starts with _|WARNING:-DO-NOT-SHARE-THIS.")
+        }));
     }
     let total = text.matches(COOKIE_MARK).count();
     let cookies = found.iter().map(|c| normalize_cookie(c).map(|c| (c, ImportExtras::default()))).collect::<Result<Vec<_>>>()?;
@@ -2311,7 +2334,7 @@ mod tests {
         }
     }
 
-    use super::{GameDetails, GameInfo, find_cookies, game_info_of, is_image, normalize_cookie, ram_accounts, shutdown_secs};
+    use super::{GameDetails, GameInfo, find_cookies, game_info_of, is_image, looks_like_credentials, normalize_cookie, ram_accounts, shutdown_secs};
 
     #[test]
     fn knows_images_by_their_bytes() {
@@ -2340,6 +2363,18 @@ nothing here
         assert_eq!(find_cookies(&format!("{a}:user:pass")), std::slice::from_ref(&a));
         assert_eq!(find_cookies(&format!("{a}\u{201d}\u{200b}")), [a], "a smart quote or zero-width space ends it");
         assert!(find_cookies("no cookies").is_empty());
+    }
+
+    #[test]
+    fn tells_a_login_and_password_from_a_cookie() {
+        assert!(looks_like_credentials("coolguy:hunter2"));
+        assert!(looks_like_credentials("  farm3 : s3cret!  \n"));
+        assert!(looks_like_credentials("user:pass:cookie-value"), "the shared list format is recognised too");
+        assert!(!looks_like_credentials(&format!("{W}CAEaAh+/x=")), "a cookie has no colon");
+        assert!(!looks_like_credentials("nothing here"));
+        assert!(!looks_like_credentials("user:"));
+        assert!(!looks_like_credentials(":pass"));
+        assert!(!looks_like_credentials("two words:pass"), "a space before the colon is prose, not a login");
     }
 
     #[test]

@@ -57,6 +57,24 @@ The palette comes from the reference:
 - `src/ui/DirectionSwitcher.tsx` — a dev switch `LRAM ↔ Soft Deck`; built only in dev and never
   shipped.
 
+## Following a client across a pid change
+
+Roblox moves its client to a new process on an update, and a launcher hands over to the real client
+a second after the launch. The tracker keeps the record of a client alive as long as any of these
+holds: its pid still reads back with the same start time, Windows refuses to tell (`unreadable`), or
+a window of that pid is on screen.
+
+When none of them holds, the record may still be waiting for a client to appear — 120 s after the
+launch, 10 min when a launch log of that client turned up, 15 min while the Roblox installer runs.
+Inside that window a new pid is claimed through the launch log, the updater relaunch or a growing log.
+
+Past the window, one last check runs before the record is written off: if the client had shown a
+window and an unclaimed Roblox process started within 10 min of the launch is still there, the record
+rebinds to it and the preview comes back. Nothing is claimed twice: every pid already followed by a
+live record is out of reach, and a record being closed never rebinds. The log names what happened —
+`rebound from process N to M (it is still running)`, then, when the client is really gone,
+`gone: no process and no window, N s after its launch`.
+
 ## Checked
 
 `npx tsc --noEmit` is clean; `npx vite build` builds; `node scripts/check-i18n.mjs` finds every key

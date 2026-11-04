@@ -586,7 +586,6 @@ fn main() {
             commands::bandwidth_apply,
             commands::multi_instance_status,
             commands::multi_instance_set,
-            commands::multi_instance_take_over,
             commands::roblox_close_all,
             commands::panic_kill,
             commands::crashes_list,

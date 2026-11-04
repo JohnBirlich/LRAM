@@ -15,6 +15,51 @@ actually removes the flags.
 Every one of them is an unsigned-binary or entropy heuristic, not a detection of a known threat. A
 typical scan shows 3-6 of about 70 engines, all of them the same names, on every release.
 
+## Windows Defender: `Behavior:Win32/DefenseEvasion.A!ml`
+
+This one is different from the table above. `Behavior:` means Defender judged what the program did,
+`!ml` means a cloud machine-learning model made the guess — there is no signature and no family
+name. Two consequences matter:
+
+- The verdict is pinned to the exact build. Once a file is convicted, that file stays convicted
+  (it is blocked even when it is not running, with `ERROR_VIRUS_INFECTED` / "virus or potentially
+  unwanted software"), while a rebuilt file has a different hash and is judged again from scratch.
+- Rebuilding, renaming or repacking does not clear the old hash. Nothing clears a hash except
+  Microsoft.
+
+Why an unsigned account manager looks like this at all: it reads and DPAPI-decrypts another
+application's cookie store, starts and stops other processes, moves and resizes their windows, and
+installs a low-level mouse hook for free resizing. Each of those is ordinary for this program and
+ordinary for an infostealer, and the model cannot tell the difference without a publisher name and a
+reputation.
+
+The one piece that was genuinely tampering-shaped is gone: with Roblox already running, LRAM used to
+read the system's whole handle table, open the Roblox process with `PROCESS_DUP_HANDLE` and close
+`ROBLOX_singletonEvent` inside it. That is handle manipulation inside another process, and it also
+risked a ban under Hyperion, so it was removed rather than kept. Multi-instance now only holds the
+name before Roblox starts; a client that is already running has to be closed first. LRAM no longer
+touches another process's handles or memory: the only cross-process handles left are read-only ones
+for metrics and the job object for the CPU cap.
+
+To clear it:
+
+1. Windows Security → **Virus & threat protection → Protection history**, open the entry →
+   **Actions → Restore**. If the file was already deleted, install the current release again.
+2. If you are the one building it, rebuild — the new hash is judged on its own.
+3. Report it to Microsoft as the developer: <https://www.microsoft.com/en-us/wdsi/filesubmission>,
+   choose **Software developer**, attach the file, name the detection
+   (`Behavior:Win32/DefenseEvasion.A!ml`), link the repository and say what the app does and that
+   the handle-taking code was removed. This is the only thing that clears a hash, and it clears it
+   for everyone, usually within a day or two.
+4. On your own machine, if you trust the build: **Windows Security → Virus & threat protection →
+   Manage settings → Exclusions → Add an exclusion → File** for `LRAM.exe`. Excluding it globally is
+   not something to recommend to other users, and it is not needed once Microsoft clears the hash
+   or the build is signed.
+
+Signing matters more here than for the static engines: the behaviour model weighs publisher
+reputation heavily, and a signed binary from a known publisher stops looking like an unknown that
+decrypts cookies and kills processes.
+
 ## What removes them
 
 1. **Code signing with a trusted certificate.** This is the only thing that removes them at the
@@ -28,6 +73,9 @@ typical scan shows 3-6 of about 70 engines, all of them the same names, on every
 
 What does **not** help: rebuilding, renaming the file, changing the icon, uploading it again, or
 wrapping it in another archive. A different packer can even make it worse.
+
+Behaviour verdicts (the Defender one below) are a separate matter: they need the behaviour gone, not
+a signature.
 
 ## Where this project stands
 

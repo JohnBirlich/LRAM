@@ -1,15 +1,11 @@
-use std::ffi::c_void;
 use std::fs::{File, OpenOptions};
 use std::os::windows::fs::OpenOptionsExt;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Mutex, MutexGuard};
 
-use windows::Win32::Foundation::{
-    CompareObjectHandles, DUPLICATE_CLOSE_SOURCE, DUPLICATE_HANDLE_OPTIONS, DuplicateHandle, ERROR_INVALID_HANDLE, GENERIC_READ, HANDLE,
-    STATUS_INFO_LENGTH_MISMATCH,
-};
-use windows::Win32::System::Threading::{CreateMutexW, GetCurrentProcess, OpenProcess, PROCESS_DUP_HANDLE};
+use windows::Win32::Foundation::{ERROR_INVALID_HANDLE, GENERIC_READ, HANDLE};
+use windows::Win32::System::Threading::CreateMutexW;
 use windows::core::{HSTRING, Owned};
 
 use super::process;
@@ -57,11 +53,6 @@ impl Multi {
 
     pub fn enable(&self) -> Result<()> {
         self.take(SINGLETON_NAME)
-    }
-
-    pub fn take_over(&self) -> Result<()> {
-        let pids: Vec<u32> = process::roblox_processes().iter().map(|p| p.pid).collect();
-        self.take_over_at(SINGLETON_NAME, &pids)
     }
 
     pub fn disable(&self) {
@@ -146,32 +137,6 @@ impl Multi {
         Ok(())
     }
 
-    fn take_over_at(&self, name: &str, pids: &[u32]) -> Result<()> {
-        if self.is_active() {
-            return Ok(());
-        }
-        let suffix = format!("\\{name}");
-        let table = handle_table(pids)?;
-        let mut failed = None;
-        for &pid in pids {
-            match close_in(pid, &table, &suffix) {
-                Ok(n) => log::info!("multi-instance take-over: closed {n} singleton handle(s) in process {pid}"),
-                Err(e) => {
-                    log::warn!("multi-instance take-over: process {pid}: {e}");
-                    failed.get_or_insert(e);
-                }
-            }
-        }
-        self.take(name).map_err(|e| match (e, failed) {
-            (e, Some(f)) => {
-                log::debug!("multi-instance take-over: {name} still taken: {e}");
-                f
-            }
-            (AppError::Invalid(_), None) => AppError::Invalid(still_running()),
-            (e, None) => e,
-        })
-    }
-
     fn held(&self) -> MutexGuard<'_, Option<Held>> {
         self.inner.lock().unwrap_or_else(|e| e.into_inner())
     }
@@ -206,136 +171,6 @@ fn create_mutex(name: &str) -> Result<Singleton> {
     })?;
     // -- SAFETY: as above
     Ok(Singleton { _handle: unsafe { Owned::new(h) } })
-}
-
-fn still_running() -> String {
-    tr!("Roblox's lock is still there after the take-over (a client may have just started). Close Roblox instead.")
-}
-
-const SYSTEM_EXTENDED_HANDLE_INFORMATION: u32 = 64;
-const OBJECT_NAME_INFORMATION: u32 = 1;
-const OBJECT_TYPE_INFORMATION: u32 = 2;
-
-#[link(name = "ntdll")]
-unsafe extern "system" {
-    fn NtQuerySystemInformation(class: u32, info: *mut c_void, len: u32, ret_len: *mut u32) -> i32;
-    fn NtQueryObject(handle: HANDLE, class: u32, info: *mut c_void, len: u32, ret_len: *mut u32) -> i32;
-}
-
-#[repr(C)]
-#[allow(dead_code)]
-struct HandleEntry {
-    object: *mut c_void,
-    pid: usize,
-    handle: usize,
-    access: u32,
-    backtrace: u16,
-    type_index: u16,
-    attributes: u32,
-    reserved: u32,
-}
-
-#[repr(C)]
-#[allow(dead_code)]
-struct UnicodeString {
-    length: u16,
-    max: u16,
-    buffer: *const u16,
-}
-
-fn handle_table(pids: &[u32]) -> Result<Vec<(u32, usize)>> {
-    let mut size = 1usize << 20;
-    loop {
-        let mut buf = vec![0u64; size / 8];
-        let mut need = 0u32;
-        // -- SAFETY: `buf` is writable for the length given; `need` is a local
-        let st = unsafe {
-            NtQuerySystemInformation(SYSTEM_EXTENDED_HANDLE_INFORMATION, buf.as_mut_ptr().cast(), size as u32, &mut need)
-        };
-        if st == STATUS_INFO_LENGTH_MISMATCH.0 {
-            size = (need as usize + (1 << 16)).max(size * 2);
-            if size > 1 << 30 {
-                return Err(AppError::Internal(tr!("The system's handle table is too large to read.")));
-            }
-            continue;
-        }
-        if st < 0 {
-            return Err(AppError::Internal(tr!("Could not read the system's handle table (NTSTATUS {status}).", status = format!("{st:#x}"))));
-        }
-        let count = buf[0] as usize;
-        if count.saturating_mul(size_of::<HandleEntry>()).saturating_add(16) > size {
-            return Err(AppError::Internal(tr!("The system's handle table came back truncated.")));
-        }
-        // -- SAFETY: the kernel wrote `count` entries right after the two-word header, inside `buf` (checked above); HandleEntry …
-        let entries = unsafe { std::slice::from_raw_parts(buf.as_ptr().add(2).cast::<HandleEntry>(), count) };
-        return Ok(entries
-            .iter()
-            .filter_map(|e| u32::try_from(e.pid).ok().filter(|p| pids.contains(p)).map(|p| (p, e.handle)))
-            .collect());
-    }
-}
-
-// -- Main func
-fn close_in(pid: u32, table: &[(u32, usize)], suffix: &str) -> Result<usize> {
-    // -- SAFETY: opens the process with the one right DuplicateHandle needs; closed on drop
-    let proc = unsafe { OpenProcess(PROCESS_DUP_HANDLE, false, pid) }
-        // -- SAFETY: as above
-        .map(|h| unsafe { Owned::new(h) })
-        .map_err(|e| AppError::Invalid(tr!("Windows wouldn't let LRAM into Roblox (process {pid}): {why}", pid = pid, why = crate::error::windows_error(&e))))?;
-    let mut closed = 0;
-    for &(_, value) in table.iter().filter(|(p, _)| *p == pid) {
-        let source = HANDLE(value as *mut c_void);
-        let mut copy = HANDLE::default();
-        // -- SAFETY: `proc` has PROCESS_DUP_HANDLE; `source` is a handle value in that process (one closed since just fails); the …
-        let ok = unsafe { DuplicateHandle(*proc, source, GetCurrentProcess(), &mut copy, 0, false, DUPLICATE_HANDLE_OPTIONS(0)) };
-        if ok.is_err() {
-            continue;
-        }
-        // -- SAFETY: as above
-        let copy = unsafe { Owned::new(copy) };
-        if !matches!(object_string(*copy, OBJECT_TYPE_INFORMATION).as_deref(), Some("Event" | "Mutant")) {
-            continue;
-        }
-        if !object_string(*copy, OBJECT_NAME_INFORMATION).is_some_and(|n| n.ends_with(suffix)) {
-            continue;
-        }
-        let mut again = HANDLE::default();
-        // -- SAFETY: as the first copy
-        if unsafe { DuplicateHandle(*proc, source, GetCurrentProcess(), &mut again, 0, false, DUPLICATE_HANDLE_OPTIONS(0)) }.is_err() {
-            continue;
-        }
-        // -- SAFETY: as above
-        let again = unsafe { Owned::new(again) };
-        // -- SAFETY: both are our own handles
-        if !unsafe { CompareObjectHandles(*copy, *again) }.as_bool() {
-            continue;
-        }
-        // -- SAFETY: closes `source` inside `proc` (DUPLICATE_CLOSE_SOURCE, no copy is made); no memory of the process is touched
-        let r = unsafe { DuplicateHandle(*proc, source, HANDLE::default(), std::ptr::null_mut(), 0, false, DUPLICATE_CLOSE_SOURCE) };
-        match r {
-            Ok(()) => closed += 1,
-            Err(e) => log::warn!("multi-instance take-over: could not close a handle in process {pid}: {e}"),
-        }
-    }
-    Ok(closed)
-}
-
-fn object_string(h: HANDLE, class: u32) -> Option<String> {
-    let mut buf = vec![0u64; 512];
-    let mut len = 0u32;
-    // -- SAFETY: `h` is our own handle; `buf` is writable and pointer-aligned for the length given
-    let st = unsafe { NtQueryObject(h, class, buf.as_mut_ptr().cast(), (buf.len() * 8) as u32, &mut len) };
-    if st < 0 {
-        return None;
-    }
-    // -- SAFETY: on success both classes start with a UNICODE_STRING whose buffer (if any) points into `buf`, which is alive …
-    unsafe {
-        let us = &*buf.as_ptr().cast::<UnicodeString>();
-        if us.buffer.is_null() {
-            return Some(String::new());
-        }
-        Some(String::from_utf16_lossy(std::slice::from_raw_parts(us.buffer, usize::from(us.length) / 2)))
-    }
 }
 
 fn lock_files(paths: &[PathBuf]) -> Vec<File> {
@@ -407,22 +242,6 @@ mod tests {
         let err = m.take(&name).unwrap_err();
         assert!(matches!(err, AppError::Invalid(ref s) if *s == running()), "{err}");
         assert!(!m.is_active());
-    }
-
-    #[test]
-    fn take_over_closes_the_event_in_its_owner_only() {
-        let (name, other) = (test_name(), test_name());
-        std::mem::forget(event(&name).unwrap());
-        let _kept = event(&other).unwrap();
-        let m = Multi::new();
-        assert!(m.take(&name).is_err());
-        m.take_over_at(&name, &[std::process::id()]).unwrap();
-        assert!(m.is_active());
-        assert!(matches!(create_mutex(&other), Err(AppError::Invalid(ref s)) if *s == running()));
-        m.disable();
-        let _roblox = event(&name).unwrap();
-        let err = Multi::new().take_over_at(&name, &[]).unwrap_err();
-        assert!(matches!(err, AppError::Invalid(ref s) if *s == still_running()), "{err}");
     }
 
     #[test]

@@ -1524,22 +1524,6 @@ pub fn multi_instance_set(s: State<'_, App>, enabled: bool) -> Result<MultiInsta
 }
 
 #[tauri::command]
-pub async fn multi_instance_take_over(app: AppHandle) -> Result<MultiInstanceStatus> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let s = app.state::<App>();
-        let v = s.db.settings()?;
-        if !v.multi_instance {
-            return Err(AppError::Invalid(tr!("Turn on multi-instance first.")));
-        }
-        s.multi.take_over()?;
-        protect_running(&s, &v);
-        Ok(s.multi.status(v.multi_instance, v.protect_shared_login))
-    })
-    .await
-    .map_err(|e| AppError::Internal(e.to_string()))?
-}
-
-#[tauri::command]
 pub async fn roblox_close_all(s: State<'_, App>, force: bool) -> Result<MultiInstanceStatus> {
     close_roblox(&s, force, false).await
 }

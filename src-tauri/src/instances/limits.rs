@@ -336,13 +336,13 @@ pub fn plan(
     free: &[String],
     uncapped: &[String],
 ) -> Vec<(String, u32, u64, Limits)> {
-    let mut effective = v.clone();
+    let mut policy = v.clone();
     if v.ultra_cpu.enabled {
-        effective.fair_cap = false;
-        effective.adaptive.enabled = true;
-        effective.adaptive.background.cpu_cap = Some(v.ultra_cpu.cap);
+        policy.fair_cap = false;
+        policy.adaptive.enabled = true;
+        policy.adaptive.background.cpu_cap = Some(v.ultra_cpu.cap);
     }
-    let v = &effective;
+    let v = &policy;
     let n = clients.len() as u32;
     let fair = v.fair_cap.then(|| fair_cap(n, cores));
     clients

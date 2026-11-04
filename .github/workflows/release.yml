@@ -145,6 +145,11 @@ jobs:
           cat > ../notes.md <<EOF
           ## LRAM $VERSION
 
+          - Process verification before declaring an unexpected exit; duplicate launches/rejoins paused while checking.
+          - Identity-safe recovery of recently lost Roblox clients without restarting: exact PID/start time or unique owner of the tracker-matched log; never nearest-window guessing.
+          - ULTRA adaptive background CPU ceiling: selectable 1/2/3%, default 3%, never divided by client count. No background cap during loading/teleport or focus; 60–90s warm-up after confirmed game entry, default 90s. Explicit manual CPU limits survive.
+          - Client cards and Monitor explain loading, warm-up countdown, focus, checking and applied background/manual caps. Other ULTRA FPS/graphics/window/preview/memory settings are unchanged.
+          - Regression tests cover temporary process loss, recovery identity, duplicate suppression, warm-up, teleport and focus. Real tenth-client reproduction still requires testing on the affected PC; its exact original cause is not established.
           - Adaptive layouts across Play, Performance, Monitor, Discord Alerts and Settings.
           - Monitor: local CPU/motherboard/GPU/RAM inventory, SMBIOS memory data rates and explicit IP/country lookup via ipwho.is (display only).
           - 60-second measured CPU/RAM capacity projection with reserve; per-client CPU/RAM/GPU/VRAM ranges. GPU capacity is not guaranteed or used as a bound. No fixed client count is promised.

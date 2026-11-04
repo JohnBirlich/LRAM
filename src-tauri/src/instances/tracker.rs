@@ -892,7 +892,7 @@ impl Tracker {
             observe(e, dir, procs, &mut roblox, &mut installer, &mut taken, now);
         }
         // Match claim() lock order, so an in-flight/new launch cannot race a late recovery.
-        let launching = self.launching.lock().unwrap_or_else(|e| e.into_inner());
+        let launching = self.claimed.lock().unwrap_or_else(|e| e.into_inner());
         let mut entries = self.entries();
         let mut moved = Vec::new();
         for w in work {
@@ -2008,7 +2008,7 @@ mod tests {
 
         procs.set(&[(200, created_secs(&log).unwrap())]);
         procs.owners(&log, &[(200, created_secs(&log).unwrap())]);
-        t.poll(Some(&dir), &procs, &user_of, gone + WRITER_AFTER_MS + 1_000);
+        t.poll(Some(&dir), &procs, &user_of, gone + WRITER_AFTER_MS + 6_000);
         assert_eq!(state(&t, &id), (InGame, None, 200));
         std::fs::remove_dir_all(&dir).unwrap();
     }
@@ -2591,7 +2591,9 @@ mod tests {
     fn ownership_recovery_is_unique_identity_checked_and_never_nearest_window() {
         let procs = Fake::new(&[(101, 100), (102, 100)]);
         let path = PathBuf::from("test-log");
-        let mut e = Entry::new(info(900, 100_000, true), target());
+        let tracker = Tracker::new();
+        tracker.register(&info(900, 100_000, true), target());
+        let mut e = tracker.entries()[0].clone();
         e.log = Some(path.clone());
         e.expected_user = Some(USER);
         let find = |e: &mut Entry, taken: &[u32]| { e.owner_checked_at = None; owned_client(e, &procs, &mut None, taken, 101_000) };

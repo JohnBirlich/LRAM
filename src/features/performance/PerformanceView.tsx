@@ -15,7 +15,7 @@ import { BandwidthRow, Row } from "../settings/SettingsView";
 import { PREVIEW_FPS, setPreviewFps, storedFps, usePreviewFps, type PreviewFps } from "../dashboard/previewFps";
 
 const profileFilter = () => [{ name: t("performance.profileFilter"), extensions: ["json"] }];
-/** A share code: this prefix, then the profile's JSON as base64url. */
+
 const CODE = "LRAM-PERF:";
 
 function toCode(json: string) {
@@ -23,7 +23,6 @@ function toCode(json: string) {
   return CODE + btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-/** The profile's JSON in a share code; null when it isn't one. */
 function fromCode(code: string): string | null {
   const body = code.trim();
   if (!body.startsWith(CODE)) return null;
@@ -35,16 +34,13 @@ function fromCode(code: string): string | null {
   }
 }
 
-/** The accounts with an FPS cap of their own, in words; empty with none. */
 const ownCaps = (accounts: AccountSummary[]) => fmtList(accounts.filter((a) => a.fpsCap).map((a) => `${accountName(a)} (${a.fpsCap})`));
 
-/** The FPS cap: a slider for the feel of it and a field for the exact number. Saved on release. */
 function FpsRow({ settings }: { settings: Settings }) {
   const set = useSetSettings();
   const [fps, setFps] = useState(settings.fpsCap);
   useEffect(() => setFps(settings.fpsCap), [settings.fpsCap]);
   const commit = () => fps !== settings.fpsCap && set.mutate({ fpsCap: fps });
-  // An account's own cap wins over this one.
   const own = ownCaps(useAccounts().data ?? []);
   return (
     <div className="setting" title={t("settings.fpsCapHint")}>
@@ -85,7 +81,6 @@ function SwitchRow({ title, hint, more, checked, onChange }: { title: string; hi
   );
 }
 
-/** A Fine-tune line. `.setting` rules sit on top, so these stack with SwitchRow; Settings' Row rules sit below. */
 function TuneRow({ title, hint, children }: { title: string; hint: string; children: ReactNode }) {
   return (
     <div className="setting">
@@ -108,7 +103,6 @@ function Choice<V extends string>({ label, hint, value, options, onChange }: { l
   );
 }
 
-/** What "Lighter rendering" writes, one choice each. */
 function RenderFlagRows({ settings }: { settings: Settings }) {
   const set = useSetSettings();
   const r = settings.renderFlags;
@@ -142,14 +136,12 @@ function RenderFlagRows({ settings }: { settings: Settings }) {
   );
 }
 
-/** Everything that changes how much the clients and LRAM itself use, and profiles to share it. */
+// -- Main func
 export function PerformanceView({ settings }: { settings: Settings }) {
   const set = useSetSettings();
   const [previewFps, setFps] = usePreviewFps();
   const [incoming, setIncoming] = useState<Profile | null>(null);
-  // Enter held on Apply lands on the preset that opened it.
   const closedAt = useRef(0);
-  // An account's own cap beats a preset's, so it isn't what those clients get.
   const active = ownCaps(useAccounts().data ?? []) ? undefined : PRESETS.find((p) => isApplied(p.profile, settings));
   const using = <span className="text-[13px] text-dim">{active ? t("performance.using", { name: t(active.label) }) : t("performance.custom")}</span>;
 
@@ -171,7 +163,7 @@ export function PerformanceView({ settings }: { settings: Settings }) {
               <span className="font-normal text-dim">{t(p.tag)}</span>
               <span className="flex flex-col gap-1 text-[13px] font-normal">
                 {p.facts().slice(0, FACTS_SHOWN).map((f) => <span key={f}>{f}</span>)}
-                {/* The rest are in the review, and the tooltip. */}
+                {}
                 {p.facts().length > FACTS_SHOWN && <span aria-hidden="true" className="text-dim">+{p.facts().length - FACTS_SHOWN}</span>}
                 <span className="sr-only">{p.facts().slice(FACTS_SHOWN).join(". ")}</span>
               </span>
@@ -179,7 +171,7 @@ export function PerformanceView({ settings }: { settings: Settings }) {
           ))}
         </section>
 
-        {/* Most useful first; what can disconnect a client last. */}
+        {}
         <section aria-labelledby="perf-cpu" className="panel p-5 [&>*:last-child]:border-b-0">
           <div className="flex flex-wrap items-center justify-between gap-2 pb-3.5">
             <h2 id="perf-cpu" className="section-title">{t("performance.section.cpuMemory")}</h2>
@@ -195,9 +187,10 @@ export function PerformanceView({ settings }: { settings: Settings }) {
                   mono
                   label={t("settings.adaptiveBgCpu")}
                   value={settings.adaptive.background.cpuCap ?? 0}
-                  options={[0, 50, 25, 10, 5].map((c) => ({ value: c, label: c ? t("settings.percent", { n: c }) : t("common.off") }))}
+                  options={[0, 50, 25, 10, 5, 2, 1].map((c) => ({ value: c, label: c ? t("settings.percent", { n: c }) : t("common.off") }))}
                   onChange={(c) => set.mutate({ adaptive: { ...settings.adaptive, background: { ...settings.adaptive.background, cpuCap: c || null } } })}
                 />
+                {tight(settings.adaptive.background.cpuCap) && <p className="basis-full state text-orange">{t("settings.cpuTinyHint")}</p>}
                 <label className="flex items-center gap-2">
                   <span className="text-xs text-dim">{t("settings.efficiency")}</span>
                   <Switch
@@ -268,7 +261,7 @@ export function PerformanceView({ settings }: { settings: Settings }) {
             </div>
           </TuneRow>
           <SwitchRow title={t("performance.autoTile")} hint={t("performance.hintAutoTile")} more={t("performance.hintAutoTile")} checked={settings.autoTile} onChange={(autoTile) => set.mutate({ autoTile })} />
-          <h3 id="perf-roalt" className="font-semibold pt-5 pb-2">{t("performance.section.roalt")}</h3>
+          <h3 id="perf-lram" className="font-semibold pt-5 pb-2">{t("performance.section.lram")}</h3>
           <TuneRow title={t("dashboard.previewFps")} hint={t("dashboard.previewFpsHint")}>
             <Segmented mono label={t("dashboard.previewFps")} value={previewFps} options={PREVIEW_FPS.map((f) => ({ value: f, label: t("dashboard.fps", { fps: f }) }))} onChange={setFps} />
           </TuneRow>
@@ -285,14 +278,15 @@ export function PerformanceView({ settings }: { settings: Settings }) {
   );
 }
 
-/** What a preset's card lists, so the settings below it stay in reach. */
 const FACTS_SHOWN = 3;
-/** Only Roblox defaults names these: the others leave a user's own memory limits alone. */
+
+const tight = (cap: number | null | undefined) => !!cap && cap < 5;
+
 const noThrottle = { mb: 0, cpuCap: 10 };
 const lightest: RenderFlags = { msaa: "x1", texture: "lowest", mode: "default", graySky: false, noGrass: true, lowestFrm: true, pauseVoxelizer: false };
-/** What leaving Max alts must undo: a profile only changes what it names. */
+
 const normalWindows = { tinyOnLaunch: false, microWidth: 320, microHeight: 240, fairCap: false, liveHiddenPreviews: true };
-/** One-click setups: a profile each, reviewed like any other. */
+
 const PRESETS: readonly { label: Key; tag: Key; facts: () => string[]; profile: Profile }[] = [
   {
     label: "performance.preset.maxAlts",
@@ -326,12 +320,10 @@ const PRESETS: readonly { label: Key; tag: Key; facts: () => string[]; profile: 
   },
 ];
 
-/** Every setting the profile names is already so. */
 function isApplied(profile: Profile, settings: Settings) {
   return (Object.keys(LABELS) as Field[]).every((k) => profile[k] === undefined || profile[k] === null || JSON.stringify(profile[k]) === JSON.stringify(settings[k]));
 }
 
-/** Export, import and share the settings above. */
 function ShareRow({ onProfile }: { onProfile: (p: Profile) => void }) {
   const [pasteOpen, setPasteOpen] = useState(false);
 
@@ -455,7 +447,6 @@ const LABELS: Record<Field, Key> = {
 const capitalize = (s: string) => s[0].toUpperCase() + s.slice(1);
 const pct = (n: number | null) => (n ? t("settings.percent", { n }) : t("common.off"));
 
-/** A setting's value as the review shows it. */
 function shown(k: Field, v: Profile[Field] | Settings[Field]): string {
   if (v === undefined || v === null) return "";
   if (typeof v === "boolean") return v ? t("common.on") : t("common.off");
@@ -488,18 +479,13 @@ function ReviewDialog({ profile, settings, onClose }: { profile: Profile | null;
   if (fps !== undefined && fps !== null && fps !== storedFps()) {
     changes.push({ label: t("dashboard.previewFps"), from: t("dashboard.fps", { fps: storedFps() }), to: t("dashboard.fps", { fps }) });
   }
-  // A profile's FPS cap is what its clients get: an account's own would win over it at launch.
   const clearing = typeof profile?.fpsCap === "number" ? accounts.filter((a) => a.fpsCap) : [];
   if (clearing.length) changes.push({ label: t("performance.accountCaps"), from: ownCaps(clearing), to: t("performance.capsCleared") });
-  // Windows change now; what a client reads at its start waits for its next launch.
   const running = (useInstances().data ?? []).filter(isLive);
-  // One still loading gets these when it reaches a game.
   const reshape = running.filter((i) => i.state === "inGame" && !accounts.find((a) => a.id === i.accountId)?.fullQuality);
-  // Only when this turns them on: a client since brought back stays so when nothing changes.
   const makeTiny = !!profile?.tinyOnLaunch && !settings.tinyOnLaunch;
   const hide = !!profile?.minimizeOnLaunch && !settings.minimizeOnLaunch;
   if (reshape.length && (makeTiny || hide)) changes.push({ label: t("performance.runningClients"), from: "", to: t("performance.runningNow") });
-  // What its card had no room for.
   const presetFacts = PRESETS.find((p) => p.profile === profile)?.facts().slice(FACTS_SHOWN) ?? [];
   const nextLaunch = (["fpsCap", "lowGraphics", "lighterRendering", "renderFlags"] as const).some((k) => profile?.[k] !== undefined && JSON.stringify(profile[k]) !== JSON.stringify(settings[k]));
 

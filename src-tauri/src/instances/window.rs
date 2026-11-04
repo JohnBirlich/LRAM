@@ -1,17 +1,3 @@
-//! A client's window as the dashboard sees it: a small picture of it (`preview`, through
-//! Windows.Graphics.Capture, `capture`, which copies what the compositor already has, so
-//! nothing is read from the client's memory) and showing, minimizing or bringing it to the front
-//! (`show`), making it small (`micro`, back with the window placement it had) and laying all
-//! of them out in a grid (`tile`). Window calls only (`SetWindowPos` and friends, as dragging a
-//! window's edge does). `free_resize` gets past the minimum size Roblox holds its window to;
-//! `resize` makes that work for a drag.
-//!
-//! Hiding a client makes it a ghost (`ghost`): it stays where it is, invisible and click-through,
-//! and goes on drawing, so its preview stays live. A minimized client draws nothing, so one nobody
-//! watches goes to sleep that way (`sweep`) and comes back when its preview is asked for (`wake`).
-//! The user gets one back from Home, the taskbar or Alt-Tab (`resize`). A ghost left by a hard kill
-//! stays invisible until LRAM starts again (`recover`).
-
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard};
@@ -30,26 +16,20 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use super::{afk, process};
 use crate::error::{AppError, Result};
 
-/// One picture: `width` × `height` pixels, RGBA, rows top-down (as canvas `ImageData` wants).
 pub struct Thumb {
     pub width: u32,
     pub height: u32,
     pub rgba: Vec<u8>,
 }
 
-/// What `show` does with a client's window.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Show {
-    /// Shown if hidden or minimized, then brought to the front.
     Focus,
-    /// Hidden: a ghost, not really minimized (`ghost`).
     Minimize,
-    /// Shown if hidden or minimized, without taking the focus.
     Restore,
 }
 
-/// A window's newest picture: which one (`seq`, never 0) and when it was taken.
 #[derive(Clone)]
 pub struct Shot {
     pub thumb: Arc<Thumb>,
@@ -57,22 +37,15 @@ pub struct Shot {
     pub at: Instant,
 }
 
-/// Where a client's preview stands; the number is what the dashboard gets.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Status {
-    /// It has a window and a picture. The picture may be old: the dashboard gets its age.
     Live = 0,
-    /// Really minimized (`IsIconic`) and not coming back for now: it isn't responding, or capturing
-    /// doesn't work here. It draws nothing.
     Minimized = 1,
     NoWindow = 2,
-    /// It has a window but no picture yet.
     Pending = 3,
-    /// No picture, and capturing doesn't work here.
     Unsupported = 4,
 }
 
-/// `minimized`: None without a window (pure).
 pub fn status_of(minimized: Option<bool>, has_shot: bool, unsupported: bool) -> Status {
     match (minimized, has_shot, unsupported) {
         (None, ..) => Status::NoWindow,
@@ -90,9 +63,6 @@ pub struct Preview {
 }
 
 impl Preview {
-    /// Width, height, status, 1 if hidden else 0, picture number and its age in ms (u32
-    /// little-endian each; the size, number and age are 0 without a picture), then RGBA rows
-    /// top-down, unless the picture is `known` already.
     pub fn to_bytes(&self, known: u32) -> Vec<u8> {
         let (w, h, seq, age) = self.shot.as_ref().map_or((0, 0, 0, 0), |s| {
             (s.thumb.width, s.thumb.height, s.seq, u32::try_from(s.at.elapsed().as_millis()).unwrap_or(u32::MAX))
@@ -107,17 +77,11 @@ impl Preview {
     }
 }
 
-/// The client's preview, asking for a newer picture at most `max_w` pixels wide (its aspect kept).
-/// Never waits, for the capture or the client. A minimized client that is asked for comes back as
-/// a ghost (`wake`), and until then shows its last picture; only one that can't (hung, or capturing
-/// doesn't work here, so waking it would buy nothing) says minimized. `pid`: None while only its
-/// bootstrapper is seen.
 pub fn preview(pid: Option<u32>, max_w: u32) -> Preview {
     let Some((pid, hwnd, iconic)) = pid.and_then(|pid| process::main_window(pid).map(|(hwnd, iconic)| (pid, hwnd, iconic))) else {
         return Preview { status: status_of(None, false, false), hidden: false, shot: None };
     };
     let unsupported = super::capture::unsupported();
-    // Nothing asked of a hidden client: it goes to sleep, and its last picture stays.
     if !LIVE_HIDDEN.load(Ordering::Relaxed) && (iconic || is_hidden(hwnd)) {
         let shot = super::capture::last(hwnd);
         return Preview { status: status_of(Some(iconic), shot.is_some(), unsupported), hidden: is_hidden(hwnd), shot };
@@ -133,45 +97,26 @@ pub fn preview(pid: Option<u32>, max_w: u32) -> Preview {
     Preview { status: status_of(Some(iconic && !waking), shot.is_some(), unsupported), hidden: is_hidden(hwnd), shot }
 }
 
-/// A ghost: on-screen but drawn at alpha 1 of 255, clicks going through. It keeps drawing, so its
-/// preview stays live (an off-screen client stops delivering pictures; measured).
 const GHOST: u32 = WS_EX_LAYERED.0 | WS_EX_TRANSPARENT.0;
 const GHOST_ALPHA: u8 = 1;
-/// An older LRAM parked clients this far left. Only ever read, to bring them back.
 const OLD_PARK_LEFT: i32 = -15_000;
 const OLD_PARK_BACK: (i32, i32) = (100, 100);
-/// A hidden client with no preview request for this long goes to sleep (really minimized).
 const WATCH: Duration = Duration::from_secs(5);
-/// After a minimize starts it may still land, so a restore is sent this many times, this far apart.
 const RESTORE_TRIES: u32 = 3;
 const RESTORE_GAP: Duration = Duration::from_millis(30);
-/// Then this many more gaps for the client to answer before giving up (about 2 s).
 const RESTORE_WAITS: u32 = 66;
-/// Clients coming back to drawing at one time; the rest wait for their next preview request.
-/// ponytail: a client that freezes mid-wake holds its place until it answers; a queue if that bites.
 const MOST_WAKING: usize = 4;
-/// How long Minimize all and Restore all hold their answer back; the clients go on regardless.
 const SHOW_ALL_WAIT: Duration = Duration::from_secs(3);
 
-/// When each window's preview was last asked for, by window.
 static WANTED: LazyLock<Mutex<HashMap<isize, Instant>>> = LazyLock::new(Mutex::default);
-/// Windows `wake` is at, so a client that answers late doesn't get a thread per preview request.
 static WAKING: Mutex<Vec<isize>> = Mutex::new(Vec::new());
-/// The client-area size of each client that is tiny (pid, size): coming back from a minimize
-/// grows it to Roblox's minimum (816 x 638, measured), so it is made tiny again.
 static TINY: Mutex<Vec<(u32, (u32, u32))>> = Mutex::new(Vec::new());
 
-/// `Settings.live_hidden_previews`.
 static LIVE_HIDDEN: AtomicBool = AtomicBool::new(true);
-/// When each client's size was last set on purpose, by pid: `keep_tiny` leaves it alone for
-/// `TINY_RETRY` after that, as what it sees may be on its way.
 static TINY_TRIED: LazyLock<Mutex<HashMap<u32, Instant>>> = LazyLock::new(Mutex::default);
 const TINY_RETRY: Duration = Duration::from_secs(60);
-/// Windows `keep_tiny` is putting back, each on a thread of its own: `sweep` must not wait for a client.
 static TINY_FIXING: Mutex<Vec<isize>> = Mutex::new(Vec::new());
-/// Windows `free_resize` is at.
 static RESIZING: Mutex<Vec<isize>> = Mutex::new(Vec::new());
-/// How long a `free_resize` waits for one already at its window.
 const RESIZE_WAITS: u32 = 100;
 const RESIZE_GAP: Duration = Duration::from_millis(20);
 
@@ -192,7 +137,6 @@ fn tiny() -> MutexGuard<'static, Vec<(u32, (u32, u32))>> {
 }
 
 fn set_tiny(pid: u32, size: Option<(u32, u32)>) {
-    // `sweep` may still have a list saying tiny, and would bring this one back small.
     size_set_now(pid);
     let mut t = tiny();
     t.retain(|e| e.0 != pid);
@@ -201,23 +145,18 @@ fn set_tiny(pid: u32, size: Option<(u32, u32)>) {
     }
 }
 
-/// These extended style bits and this alpha are a ghost's (pure).
 fn ghostly(ex: u32, alpha: u8) -> bool {
     ex & GHOST == GHOST && alpha == GHOST_ALPHA
 }
 
-/// Both ghost bits, whatever the alpha: a ghost half made (or half undone) draws nothing or takes no
-/// clicks too, so what brings clients back goes by this.
 fn has_ghost_bits(hwnd: HWND) -> bool {
-    // SAFETY: reads one window's style; no message reaches the client.
+    // -- SAFETY: reads one window's style; no message reaches the client
     unsafe { GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32 & GHOST == GHOST }
 }
 
-/// Whether the window is a ghost, asleep or not. Read from the window itself, so it survives a
-/// restart of LRAM.
 pub fn is_hidden(hwnd: HWND) -> bool {
     let (mut alpha, mut flags) = (0u8, LAYERED_WINDOW_ATTRIBUTES_FLAGS(0));
-    // SAFETY: reads one window's style and layering into locals; no message reaches the client.
+    // -- SAFETY: reads one window's style and layering into locals; no message reaches the client
     unsafe {
         let ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32;
         ex & GHOST == GHOST
@@ -227,14 +166,12 @@ pub fn is_hidden(hwnd: HWND) -> bool {
     }
 }
 
-/// Makes the window a ghost, at the bottom of the z-order. Changing the style waits for the client.
-/// False if it couldn't be: then it is really minimized, never half a ghost.
 fn ghost(hwnd: HWND) -> bool {
     if is_hidden(hwnd) {
         return true;
     }
     let_go_of_focus(hwnd);
-    // SAFETY: window-manager calls on a top-level window.
+    // -- SAFETY: window-manager calls on a top-level window
     unsafe {
         SetWindowLongPtrW(hwnd, GWL_EXSTYLE, (GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32 | GHOST) as isize);
         if let Err(e) = SetLayeredWindowAttributes(hwnd, COLORREF(0), GHOST_ALPHA, LWA_ALPHA) {
@@ -248,14 +185,11 @@ fn ghost(hwnd: HWND) -> bool {
     true
 }
 
-/// To the bottom of the z-order, so that nothing lands on it when the window above goes away.
 fn sink(hwnd: HWND) {
-    // SAFETY: a window-manager call on a top-level window; queued.
+    // -- SAFETY: a window-manager call on a top-level window; queued
     let _ = unsafe { SetWindowPos(hwnd, Some(HWND_BOTTOM), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS) };
 }
 
-/// A ghost that came up in the z-order or to the front (anti-AFK, Windows activating the next
-/// window) goes back down and gives up the focus. Nothing for any other window.
 pub fn back_down(hwnd: HWND) {
     if is_hidden(hwnd) {
         let_go_of_focus(hwnd);
@@ -263,25 +197,20 @@ pub fn back_down(hwnd: HWND) {
     }
 }
 
-/// Fully drawn again, whatever becomes of the ghost bits. Doesn't wait for the client (a test says
-/// so), which is why a LRAM that is ending does this first.
 fn opaque(hwnd: HWND) {
-    // SAFETY: a window-manager call on a top-level layered window.
+    // -- SAFETY: a window-manager call on a top-level layered window
     if let Err(e) = unsafe { SetLayeredWindowAttributes(hwnd, COLORREF(0), 255, LWA_ALPHA) } {
         log::debug!("alpha not reset: {e}");
     }
 }
 
-/// Takes both ghost bits off, leaving the rest of the style. Waits for the client.
 fn clear_ghost(hwnd: HWND) {
-    // SAFETY: changes one top-level window's extended style.
+    // -- SAFETY: changes one top-level window's extended style
     unsafe { SetWindowLongPtrW(hwnd, GWL_EXSTYLE, (GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32 & !GHOST) as isize) };
 }
 
-/// A ghost that holds the focus would swallow what the user types: the focus goes to the next
-/// ordinary window down, or the desktop if there is none. ponytail: a cloaked window counts as ordinary, then the focus just stays.
 fn let_go_of_focus(hwnd: HWND) {
-    // SAFETY: reads windows' state only.
+    // -- SAFETY: reads windows' state only
     unsafe {
         if GetForegroundWindow() != hwnd {
             return;
@@ -301,30 +230,23 @@ fn let_go_of_focus(hwnd: HWND) {
     }
 }
 
-/// Hides the client. One that doesn't respond is minimized instead, since changing its style would
-/// wait until it does.
 fn hide(pid: u32, hwnd: HWND) {
     if process::hung(pid) {
-        // SAFETY: a window-manager call on a top-level window; posted.
+        // -- SAFETY: a window-manager call on a top-level window; posted
         let _ = unsafe { ShowWindowAsync(hwnd, SW_SHOWMINNOACTIVE) };
         return;
     }
     ghost(hwnd);
 }
 
-/// Whether a minimized client should come back for its preview: one not responding couldn't, and
-/// where capturing doesn't work it would buy nothing.
 fn may_wake(pid: u32) -> bool {
     !super::capture::unsupported() && !process::hung(pid)
 }
 
-/// Out of minimized without taking the focus, as it was before (maximized stays so), then waits
-/// for the client. `landing`: a minimize has only just started, so a window that isn't minimized yet
-/// is watched for the first tries and sent the restore as soon as it is.
 fn un_iconify(hwnd: HWND, landing: bool) {
     for n in 0..RESTORE_TRIES + RESTORE_WAITS {
         let trying = n < RESTORE_TRIES;
-        // SAFETY: reads one window's state, and a window-manager call on it; posted.
+        // -- SAFETY: reads one window's state, and a window-manager call on it; posted
         unsafe {
             let iconic = IsIconic(hwnd).as_bool();
             if !iconic && !(landing && trying) {
@@ -338,23 +260,24 @@ fn un_iconify(hwnd: HWND, landing: bool) {
     }
 }
 
-/// The user sized a tiny client by hand: that is its tiny size now, so coming back doesn't undo it.
 pub fn user_sized(pid: u32, hwnd: HWND) {
-    // SAFETY: reads one window's state.
+    // -- SAFETY: reads one window's state
     if unsafe { IsIconic(hwnd).as_bool() || IsZoomed(hwnd).as_bool() } {
         return;
     }
-    if let Some(size) = client_size(hwnd)
-        && let Some(e) = tiny().iter_mut().find(|e| e.0 == pid)
-    {
+    let Some(size) = client_size(hwnd) else { return };
+    if let Some(e) = tiny().iter_mut().find(|e| e.0 == pid) {
         e.1 = size;
+    }
+    if let Some(e) = normal_size().iter_mut().find(|e| e.pid == pid) {
+        e.size = size;
+        e.full = false;
     }
 }
 
-/// Back to the size "Make it tiny" gave it, unless the user maximized it since. Waits for the client.
 fn back_to_tiny(pid: u32, hwnd: HWND) {
     let Some(size) = tiny().iter().find(|e| e.0 == pid).map(|e| e.1) else { return };
-    // SAFETY: reads one window's state.
+    // -- SAFETY: reads one window's state
     if unsafe { IsIconic(hwnd).as_bool() || IsZoomed(hwnd).as_bool() } || client_size(hwnd) == Some(size) {
         return;
     }
@@ -367,10 +290,6 @@ fn waking() -> MutexGuard<'static, Vec<isize>> {
     WAKING.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// Brings a minimized client back to drawing, as a ghost first so that it can't flash on screen.
-/// On a thread of its own: this waits for the client, and a preview request must not. `landing`: see
-/// `un_iconify`. `unhide` takes a window out of `WAKING`: if the user asked for it while the style
-/// change waited, the user wins.
 pub fn wake(pid: u32, hwnd: HWND, landing: bool) {
     let h = hwnd.0 as isize;
     {
@@ -395,9 +314,6 @@ pub fn wake(pid: u32, hwnd: HWND, landing: bool) {
     });
 }
 
-/// Brings a minimized client back as a ghost for anti-AFK's press, and waits for it. `sweep` puts it
-/// back to sleep afterwards. False if it can't be pressed now: not responding, still minimized, or
-/// the user asked for it meanwhile.
 pub fn wake_for_press(pid: u32, hwnd: HWND) -> bool {
     let h = hwnd.0 as isize;
     if process::hung(pid) {
@@ -416,30 +332,24 @@ pub fn wake_for_press(pid: u32, hwnd: HWND) -> bool {
         back_to_tiny(pid, hwnd);
     }
     waking().retain(|w| *w != h);
-    // `sweep` leaves it alone for the press itself.
     wanted().insert(h, Instant::now());
-    // SAFETY: reads one window's state.
+    // -- SAFETY: reads one window's state
     woke && !unsafe { IsIconic(hwnd) }.as_bool()
 }
 
-/// Whether someone looked at this window's preview lately.
 pub fn watched(hwnd: HWND) -> bool {
     asked_within(wanted().get(&(hwnd.0 as isize)).copied())
 }
 
-/// `at` is less than `WATCH` ago.
 fn asked_within(at: Option<Instant>) -> bool {
     at.is_some_and(|t| t.elapsed() < WATCH)
 }
 
-/// A tiny client not at its size (a launch's resize that failed, a wake that gave up waiting) goes
-/// back to it, unless the user may be sizing it, it doesn't respond or its size was only just set.
-/// On a thread of its own. If it won't go that small, what it stays at is its tiny size from then on.
 fn keep_tiny(pid: u32, hwnd: HWND) {
     let Some(size) = tiny().iter().find(|e| e.0 == pid).map(|e| e.1) else { return };
     let h = hwnd.0 as isize;
     let recent = TINY_TRIED.lock().unwrap_or_else(|e| e.into_inner()).get(&pid).is_some_and(|t| t.elapsed() < TINY_RETRY);
-    // SAFETY: reads which window is in front and one window's state.
+    // -- SAFETY: reads which window is in front and one window's state
     if recent || client_size(hwnd) == Some(size) || unsafe { GetForegroundWindow() == hwnd || IsZoomed(hwnd).as_bool() } || waking().contains(&h) || process::hung(pid) {
         return;
     }
@@ -464,14 +374,11 @@ fn keep_tiny(pid: u32, hwnd: HWND) {
     });
 }
 
-/// One round of the tracker's sweep over its clients (pid, tiny size if it is tiny): hidden clients
-/// nobody watches go to sleep. Not on the poll's thread.
 pub fn sweep(clients: &[(u32, Option<(u32, u32)>)]) {
     {
         let mut t = tiny();
         t.retain(|e| clients.iter().any(|c| c.0 == e.0 && c.1.is_some()));
         for &(pid, size) in clients {
-            // A size of its own (`micro`) stays; else it is a client from before LRAM restarted.
             if let Some(size) = size
                 && !t.iter().any(|e| e.0 == pid)
             {
@@ -479,59 +386,54 @@ pub fn sweep(clients: &[(u32, Option<(u32, u32)>)]) {
             }
         }
     }
-    // SAFETY: only asks whether a handle still is a window.
+    // -- SAFETY: only asks whether a handle still is a window
     wanted().retain(|h, _| unsafe { IsWindow(Some(HWND(*h as *mut _))) }.as_bool());
     TINY_TRIED.lock().unwrap_or_else(|e| e.into_inner()).retain(|pid, _| clients.iter().any(|c| c.0 == *pid));
+    normal_size().retain(|e| clients.iter().any(|c| c.0 == e.pid));
     for &(pid, _) in clients {
         if let Some((hwnd, false)) = process::main_window(pid) {
             keep_tiny(pid, hwnd);
+            note_size(pid, hwnd);
         }
         if let Some((hwnd, iconic)) = process::main_window(pid)
             && !iconic
             && is_hidden(hwnd)
             && !watched(hwnd)
-            // SAFETY: reads which window is in front.
+            // -- SAFETY: reads which window is in front
             && unsafe { GetForegroundWindow() } != hwnd
         {
             log::debug!("client {pid}: hidden and nobody watches its preview: going to sleep (anti-AFK's Focus mode skips it now)");
-            // SAFETY: a window-manager call on a top-level window; posted.
+            // -- SAFETY: a window-manager call on a top-level window; posted
             let _ = unsafe { ShowWindowAsync(hwnd, SW_SHOWMINNOACTIVE) };
         }
     }
 }
 
-/// Shows a client that may be hidden or minimized, without taking the focus. Doing it twice is
-/// doing it once. Waits for the client, except one not responding: what it can't do yet is left
-/// to a thread, which finishes when the client answers.
 pub fn unhide(pid: u32, hwnd: HWND) {
     waking().retain(|w| *w != hwnd.0 as isize);
-    // SAFETY: reads one window's state.
+    // -- SAFETY: reads one window's state
     let iconic = unsafe { IsIconic(hwnd) }.as_bool();
     if !iconic && !has_ghost_bits(hwnd) {
         return;
     }
     if process::hung(pid) {
         if iconic {
-            // SAFETY: a window-manager call on a top-level window; posted.
+            // -- SAFETY: a window-manager call on a top-level window; posted
             let _ = unsafe { ShowWindowAsync(hwnd, SW_SHOWNOACTIVATE) };
         }
         let h = hwnd.0 as isize;
         std::thread::spawn(move || clear_ghost(HWND(h as *mut _)));
         return;
     }
-    // In this order: a preview asked for a minimized client that is no ghost makes it one again,
-    // and a tiny one comes back big and shrinks while it still can't be seen.
     un_iconify(hwnd, false);
     back_to_tiny(pid, hwnd);
-    // Once more: a preview may have started a wake while it was still minimized.
+    back_to_cell(pid, hwnd);
     waking().retain(|w| *w != hwnd.0 as isize);
     clear_ghost(hwnd);
-    // SAFETY: a window-manager call on a top-level window; queued.
+    // -- SAFETY: a window-manager call on a top-level window; queued
     let _ = unsafe { SetWindowPos(hwnd, Some(HWND_TOP), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS) };
 }
 
-/// Runs `each` for every item, each on a thread of its own: a client that doesn't answer holds up
-/// only itself. True if all were done within `limit`; the rest go on regardless.
 fn all_at_once<T: Send + 'static>(items: Vec<T>, limit: Duration, each: fn(T)) -> bool {
     let (done, finished) = std::sync::mpsc::channel();
     let left = items.len();
@@ -546,7 +448,6 @@ fn all_at_once<T: Send + 'static>(items: Vec<T>, limit: Duration, each: fn(T)) -
     (0..left).all(|_| finished.recv_timeout(until.saturating_duration_since(Instant::now())).is_ok())
 }
 
-/// Hides or restores these clients (Minimize all, Restore all).
 pub fn show_all(pids: &[u32], what: Show) {
     let items: Vec<(u32, Show)> = pids.iter().map(|&pid| (pid, what)).collect();
     all_at_once(items, SHOW_ALL_WAIT, |(pid, what)| {
@@ -556,9 +457,6 @@ pub fn show_all(pids: &[u32], what: Show) {
     });
 }
 
-/// LRAM is ending: nothing else could find these clients. All are drawn again at once, which needs
-/// no answer from them; a client that answers within `limit` also takes clicks again. Sleeping ones
-/// stay minimized, for the taskbar to bring back.
 pub fn unhide_quickly(pids: &[u32], limit: Duration) {
     let ghosts: Vec<isize> = pids
         .iter()
@@ -574,9 +472,6 @@ pub fn unhide_quickly(pids: &[u32], limit: Duration) {
     }
 }
 
-/// At startup, for what a crash or a kill left behind: ghosts not followed again (`followed`: their
-/// pids) and half-made ones are made plain, and clients an older LRAM parked off-screen come back,
-/// followed or not, since nothing else here could. Each waits for its own client only.
 pub fn recover(followed: &[u32]) {
     let clients: Vec<(u32, bool)> = process::roblox_processes().into_iter().map(|p| (p.pid, followed.contains(&p.pid))).collect();
     all_at_once(clients, Duration::ZERO, recover_one);
@@ -589,9 +484,8 @@ fn recover_one((pid, followed): (u32, bool)) {
         clear_ghost(hwnd);
     }
     if iconic {
-        // A minimized window's rectangle says nothing: where it comes back to is in its placement.
         let mut wp = WINDOWPLACEMENT { length: size_of::<WINDOWPLACEMENT>() as u32, ..Default::default() };
-        // SAFETY: reads and sets one window's placement, through a local with length set.
+        // -- SAFETY: reads and sets one window's placement, through a local with length set
         unsafe {
             if GetWindowPlacement(hwnd, &mut wp).is_ok() && wp.rcNormalPosition.left <= OLD_PARK_LEFT {
                 log::info!("client {pid} would come back off-screen: moving it back");
@@ -603,22 +497,20 @@ fn recover_one((pid, followed): (u32, bool)) {
         return;
     }
     let mut r = RECT::default();
-    // SAFETY: reads one window's rectangle into a local.
+    // -- SAFETY: reads one window's rectangle into a local
     if unsafe { GetWindowRect(hwnd, &mut r) }.is_ok() && r.left <= OLD_PARK_LEFT {
         log::info!("client {pid} was left off-screen: moving it back");
-        // SAFETY: a window-manager call on a top-level window; queued.
+        // -- SAFETY: a window-manager call on a top-level window; queued
         let _ = unsafe { SetWindowPos(hwnd, None, OLD_PARK_BACK.0, OLD_PARK_BACK.1, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS) };
     }
 }
 
-/// The same size where a parked window comes back to (pure).
 fn back_from_park(r: RECT) -> RECT {
     let (x, y) = OLD_PARK_BACK;
     RECT { left: x, top: y, right: x + r.right - r.left, bottom: y + r.bottom - r.top }
 }
 
-/// Hides, shows or focuses the client's window. Hide and Restore hold nothing up for a client that
-/// doesn't respond; Focus refuses one.
+// -- Main func
 pub fn show(pid: u32, what: Show) -> Result<()> {
     let (hwnd, _) = process::main_window(pid).ok_or_else(|| AppError::Invalid(tr!("That client has no window yet.")))?;
     match what {
@@ -635,25 +527,111 @@ pub fn show(pid: u32, what: Show) -> Result<()> {
     Ok(())
 }
 
-/// Where each window LRAM resized was before, by (instance id, pid), so "Normal size" puts it
-/// back exactly; the first resize's wins. In memory only: after LRAM restarts, a small window
-/// stays small.
 static SAVED: Mutex<Vec<(String, u32, WINDOWPLACEMENT)>> = Mutex::new(Vec::new());
 
 fn saved() -> MutexGuard<'static, Vec<(String, u32, WINDOWPLACEMENT)>> {
     SAVED.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// Hides the client without taking the focus (Minimize on launch); nothing if it has no window or
-/// is minimized already. Waits for the client.
+static NORMAL_SIZE: Mutex<Vec<Normal>> = Mutex::new(Vec::new());
+
+struct Normal {
+    pid: u32,
+    size: (u32, u32),
+    full: bool,
+}
+
+fn normal_size() -> MutexGuard<'static, Vec<Normal>> {
+    NORMAL_SIZE.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+static RESTORING: Mutex<Vec<isize>> = Mutex::new(Vec::new());
+
+fn restoring() -> MutexGuard<'static, Vec<isize>> {
+    RESTORING.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+const SANE: u32 = 64;
+const FULL: i32 = 2;
+
+fn fullscreen(hwnd: HWND) -> bool {
+    if (style_of(hwnd) as u32) & WS_CAPTION.0 != 0 {
+        return false;
+    }
+    let Some((w, h)) = client_size(hwnd) else { return false };
+    let mut mi = MONITORINFO { cbSize: size_of::<MONITORINFO>() as u32, ..Default::default() };
+    // -- SAFETY: reads the monitor nearest to a window into a local with cbSize set; with MONITOR_DEFAULTTONEAREST there …
+    if !unsafe { GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &mut mi) }.as_bool() {
+        return false;
+    }
+    let (mw, mh) = (mi.rcMonitor.right - mi.rcMonitor.left, mi.rcMonitor.bottom - mi.rcMonitor.top);
+    (w as i32 - mw).abs() <= FULL && (h as i32 - mh).abs() <= FULL
+}
+
+fn note_size(pid: u32, hwnd: HWND) {
+    // -- SAFETY: reads one window's state
+    if unsafe { IsZoomed(hwnd) }.as_bool() || is_hidden(hwnd) || process::hung(pid) || waking().contains(&(hwnd.0 as isize)) {
+        return;
+    }
+    let Some(size) = client_size(hwnd).filter(|s| s.0 >= SANE && s.1 >= SANE) else { return };
+    let full = fullscreen(hwnd);
+    let mut all = normal_size();
+    let Some(at) = all.iter().position(|e| e.pid == pid) else {
+        all.push(Normal { pid, size, full });
+        return;
+    };
+    if full {
+        all[at].full = true;
+        return;
+    }
+    let (want, was_full) = (all[at].size, all[at].full);
+    if !was_full {
+        all[at].size = size;
+        return;
+    }
+    all[at].full = false;
+    if !needs_restore(was_full, want, size) {
+        return;
+    }
+    log::info!("client {pid}: out of fullscreen at {size:?}, putting its {want:?} back");
+    drop(all);
+    restore_size(pid, hwnd, want);
+}
+
+fn needs_restore(was_full: bool, before: (u32, u32), now: (u32, u32)) -> bool {
+    was_full && before != now
+}
+
+fn restore_size(pid: u32, hwnd: HWND, size: (u32, u32)) {
+    let h = hwnd.0 as isize;
+    {
+        let mut r = restoring();
+        if r.contains(&h) {
+            return;
+        }
+        r.push(h);
+    }
+    std::thread::spawn(move || {
+        let hwnd = HWND(h as *mut _);
+        let (fw, fh) = frame(hwnd).unwrap_or((0, 0));
+        // -- SAFETY: a window-manager call on a top-level window: only its size changes
+        let _ = unsafe {
+            SetWindowPos(hwnd, None, 0, 0, size.0 as i32 + fw, size.1 as i32 + fh, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE)
+        };
+        match client_size(hwnd) {
+            Some(now) => log::info!("client {pid}: asked for {size:?}, it has {now:?}"),
+            None => log::debug!("client {pid}: window went away before its size came back"),
+        }
+        restoring().retain(|x| *x != h);
+    });
+}
+
 pub fn hide_on_launch(pid: u32) {
     if let Some((hwnd, false)) = process::main_window(pid) {
         hide(pid, hwnd);
     }
 }
 
-/// The client's main window, for changing it: an error while it has none or doesn't respond
-/// (sizing a hung window would wait until it does).
 fn window_to_change(pid: u32) -> Result<HWND> {
     let (hwnd, _) = process::main_window(pid).ok_or_else(|| AppError::Invalid(tr!("That client has no window yet.")))?;
     if process::hung(pid) {
@@ -662,35 +640,26 @@ fn window_to_change(pid: u32) -> Result<HWND> {
     Ok(hwnd)
 }
 
-/// A window's style for one resize. Windows only holds a window to the minimum size the program
-/// asks for (`WM_GETMINMAXINFO`) when it has a sizing frame or isn't a popup (pure).
 fn borderless(style: u32) -> u32 {
     (style & !(WS_CAPTION | WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX).0) | WS_POPUP.0
 }
 
-/// A window's style while it is dragged by its title bar: it keeps the title bar, and Windows
-/// doesn't throw it back up to the minimum size (pure).
 pub fn drag_style(style: u32) -> u32 {
     (style & !WS_THICKFRAME.0) | WS_POPUP.0
 }
 
 pub fn style_of(hwnd: HWND) -> isize {
-    // SAFETY: reads one window's style.
+    // -- SAFETY: reads one window's style
     unsafe { GetWindowLongPtrW(hwnd, GWL_STYLE) }
 }
 
-/// Sets a window's style; the frame follows with the next SWP_FRAMECHANGED.
 pub fn set_style(hwnd: HWND, style: isize) {
-    // SAFETY: changes one top-level window's style; it answers with a message, as to a theme change.
+    // -- SAFETY: changes one top-level window's style; it answers with a message, as to a theme change
     unsafe { SetWindowLongPtrW(hwnd, GWL_STYLE, style) };
 }
 
-/// Sets a window to `rect` (x, y, width, height; `keep_place`: only the size), below the minimum
-/// Roblox asks for if need be: the style changes only for this one call, so the window keeps its
-/// title bar and edges. Waits for the client, so it must have answered before the style goes back.
 pub fn free_resize(hwnd: HWND, (x, y, w, h): (i32, i32, i32, i32), keep_place: bool) {
     super::resize::mark_small(hwnd);
-    // One at a time per window: the second would save the first's borderless style, and put it back for good.
     let id = hwnd.0 as isize;
     for _ in 0..RESIZE_WAITS {
         {
@@ -703,22 +672,27 @@ pub fn free_resize(hwnd: HWND, (x, y, w, h): (i32, i32, i32, i32), keep_place: b
         std::thread::sleep(RESIZE_GAP);
     }
     let style = style_of(hwnd);
-    set_style(hwnd, borderless(style as u32) as isize);
     let place = if keep_place { SWP_NOMOVE } else { Default::default() };
-    // SAFETY: window-manager calls on a top-level window.
+    set_style(hwnd, borderless(style as u32) as isize);
+    // -- SAFETY: window-manager calls on a top-level window
     if let Err(e) = unsafe { SetWindowPos(hwnd, None, x, y, w, h, SWP_NOZORDER | SWP_NOACTIVATE | place) } {
         log::debug!("resize failed: {e}");
     }
+    if ask_not_met(hwnd, w, h) {
+        log::info!("client at {} px won't take {w}x{h}: restoring it and asking again", hwnd.0 as isize);
+        normal(hwnd, false);
+        // -- SAFETY: as above
+        let _ = unsafe { SetWindowPos(hwnd, None, x, y, w, h, SWP_NOZORDER | SWP_NOACTIVATE | place) };
+        if ask_not_met(hwnd, w, h) {
+            log::warn!("client at {} still won't take {w}x{h}: Roblox keeps its own size", hwnd.0 as isize);
+        }
+    }
     set_style(hwnd, style);
-    // SAFETY: as above; only makes the frame follow the style again.
+    // -- SAFETY: as above; only makes the frame follow the style again
     let _ = unsafe { SetWindowPos(hwnd, None, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED) };
     RESIZING.lock().unwrap_or_else(|e| e.into_inner()).retain(|b| *b != id);
 }
 
-/// `on`: remembers where the window is (once per client), then sets its client area to `size`;
-/// off: puts back what was remembered, or 1280 x 720 for a hidden client when nothing was (it stays
-/// hidden). Returns the client area it ended up with: Roblox may still
-/// resize itself, and then it stays bigger than asked; the caller says so.
 pub fn micro(id: &str, pid: u32, on: bool, size: (u32, u32)) -> Result<(u32, u32)> {
     let hwnd = window_to_change(pid)?;
     size_set_now(pid);
@@ -727,7 +701,6 @@ pub fn micro(id: &str, pid: u32, on: bool, size: (u32, u32)) -> Result<(u32, u32
         normal(hwnd, false);
         let (fw, fh) = frame(hwnd).unwrap_or((0, 0));
         free_resize(hwnd, (0, 0, size.0 as i32 + fw, size.1 as i32 + fh), true);
-        // Only now: until the tracker has it as tiny too, `sweep` would drop it.
         set_tiny(pid, Some(size));
     } else {
         set_tiny(pid, None);
@@ -739,9 +712,8 @@ pub fn micro(id: &str, pid: u32, on: bool, size: (u32, u32)) -> Result<(u32, u32
         };
         if let Some(mut wp) = before {
             wp.showCmd = restore_cmd(wp.showCmd, (wp.flags & WPF_RESTORETOMAXIMIZED).0 != 0);
-            // SAFETY: `wp` was filled by GetWindowPlacement for this window, its length set.
+            // -- SAFETY: `wp` was filled by GetWindowPlacement for this window, its length set
             unsafe { SetWindowPlacement(hwnd, &wp) }.map_err(|e| AppError::Internal(tr!("Could not resize that window: {why}", why = crate::error::windows_error(&e))))?;
-            // Coming back maximized takes the focus.
             if hidden {
                 let_go_of_focus(hwnd);
             }
@@ -752,71 +724,118 @@ pub fn micro(id: &str, pid: u32, on: bool, size: (u32, u32)) -> Result<(u32, u32
             if (style_of(hwnd) as u32) & WS_POPUP.0 != 0 {
                 set_style(hwnd, (((style_of(hwnd) as u32) & !WS_POPUP.0) | WS_OVERLAPPEDWINDOW.0) as isize);
             }
-            // SAFETY: as above.
+            // -- SAFETY: as above
             let _ = unsafe { SetWindowPos(hwnd, None, 0, 0, 1280, 720, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED) };
         }
     }
     client_size(hwnd).ok_or_else(|| AppError::Invalid(tr!("That client's window has closed.")))
 }
 
-/// Lays the clients (instance id, pid) out in a grid on the work area (taskbar left free) of
-/// the monitor `near` is on: with `micro`, client areas of that size left to right and top to
-/// bottom (more than fit start over at the top, overlapping), each remembered as `micro` does;
-/// else cells sized so all fit, each as big as a 4:3 picture can be, and that is its normal size
-/// from then on (what `micro` remembered is dropped). Hidden and minimized clients stay so (Restore
-/// all first to include them), as do ones without a window or not responding. Returns the ids laid
-/// out.
 pub fn tile(clients: &[(String, u32)], near: HWND, micro: Option<(u32, u32)>) -> Vec<String> {
     let mut mi = MONITORINFO { cbSize: size_of::<MONITORINFO>() as u32, ..Default::default() };
-    // SAFETY: reads the monitor nearest to a window into a local with cbSize set; with
-    // MONITOR_DEFAULTTONEAREST there always is one.
+    // -- SAFETY: reads the monitor nearest to a window into a local with cbSize set; with MONITOR_DEFAULTTONEAREST there …
     if !unsafe { GetMonitorInfoW(MonitorFromWindow(near, MONITOR_DEFAULTTONEAREST), &mut mi) }.as_bool() {
         log::warn!("tile: monitor info unreadable, nothing laid out: {}", std::io::Error::last_os_error());
         return Vec::new();
     }
     let w = mi.rcWork;
-    let wins: Vec<(&str, u32, HWND)> = clients
-        .iter()
-        .filter_map(|(id, pid)| match process::main_window(*pid) {
-            Some((hwnd, false)) if !is_hidden(hwnd) && !process::hung(*pid) => Some((id.as_str(), *pid, hwnd)),
-            _ => None,
-        })
-        .collect();
-    // One frame size for all: Roblox windows share a style.
-    let cell = micro.and_then(|(w, h)| wins.first().and_then(|c| frame(c.2)).map(|(fw, fh)| (w as i32 + fw, h as i32 + fh)));
-    let cells = grid(wins.len(), (w.left, w.top, w.right - w.left, w.bottom - w.top), cell);
-    for (&(id, pid, hwnd), &(x, y, cw, ch)) in wins.iter().zip(&cells) {
-        set_tiny(pid, micro);
+    let mut laid = Vec::new();
+    let size = micro.and_then(|(mw, mh)| {
+        clients
+            .iter()
+            .find_map(|(_, pid)| resizable(*pid).and_then(frame).map(|(fw, fh)| (mw as i32 + fw, mh as i32 + fh)))
+    });
+    let cells = grid(clients.len(), (w.left, w.top, w.right - w.left, w.bottom - w.top), size);
+    for ((id, pid), &slot) in clients.iter().zip(&cells) {
+        let Some(hwnd) = resizable(*pid) else { continue };
+        set_tiny(*pid, micro);
         if micro.is_some() {
-            remember(id, pid, hwnd);
+            remember(id, *pid, hwnd);
         } else {
-            saved().retain(|(i, p, _)| !(i == id && *p == pid));
+            saved().retain(|(i, p, _)| !(i == id && *p == *pid));
         }
         normal(hwnd, false);
-        free_resize(hwnd, (x, y, cw, ch), false);
+        free_resize(hwnd, slot, false);
+        laid.push(id.clone());
     }
-    wins.into_iter().map(|w| w.0.to_owned()).collect()
+    let mut plan = placed();
+    plan.clear();
+    plan.extend(clients.iter().zip(&cells).map(|((_, pid), slot)| (*pid, *slot)));
+    laid
 }
 
-/// Cells (x, y, w, h) for `n` windows in `area` (x, y, w, h): `cell`-sized ones left to right,
-/// top to bottom, starting over at the top once the area is full; else the column count whose
-/// cells hold the biggest 4:3 picture, fewer columns on a tie (pure).
-pub fn grid(n: usize, area: (i32, i32, i32, i32), cell: Option<(i32, i32)>) -> Vec<(i32, i32, i32, i32)> {
+fn resizable(pid: u32) -> Option<HWND> {
+    match process::main_window(pid) {
+        Some((hwnd, false)) if !is_hidden(hwnd) && !process::hung(pid) => Some(hwnd),
+        _ => None,
+    }
+}
+
+type Cell = (i32, i32, i32, i32);
+
+static PLACED: Mutex<Vec<(u32, Cell)>> = Mutex::new(Vec::new());
+
+fn placed() -> MutexGuard<'static, Vec<(u32, Cell)>> {
+    PLACED.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+fn back_to_cell(pid: u32, hwnd: HWND) {
+    let Some(cell) = placed().iter().find(|(p, _)| *p == pid).map(|(_, c)| *c) else { return };
+    if !left_cell(hwnd, cell) {
+        return;
+    }
+    log::debug!("client {pid}: back to its cell {cell:?}");
+    free_resize(hwnd, cell, false);
+}
+
+pub fn cell_of(pid: u32) -> Option<Cell> {
+    placed().iter().find(|(p, _)| *p == pid).map(|(_, c)| *c)
+}
+
+pub fn report_state(pid: u32) -> Option<String> {
+    let (hwnd, iconic) = process::main_window(pid)?;
+    let mut r = RECT::default();
+    // -- SAFETY: reads one window's rectangle into a local
+    let (w, h, x, y) = match unsafe { GetWindowRect(hwnd, &mut r) } {
+        Ok(()) => (r.right - r.left, r.bottom - r.top, r.left, r.top),
+        Err(_) => (0, 0, 0, 0),
+    };
+    let how = match (iconic, is_hidden(hwnd)) {
+        (true, _) => "minimized",
+        (_, true) => "ghost",
+        _ if process::hung(pid) => "not responding",
+        _ => "visible",
+    };
+    Some(format!("{w}x{h} at {x},{y} {how}"))
+}
+
+fn left_cell(hwnd: HWND, (x, y, w, h): Cell) -> bool {
+    let mut r = RECT::default();
+    // -- SAFETY: reads one window's rectangle into a local
+    if unsafe { GetWindowRect(hwnd, &mut r) }.is_err() {
+        return false;
+    }
+    (r.left - x).abs() > 2 || (r.top - y).abs() > 2 || ((r.right - r.left) - w).abs() > 2 || ((r.bottom - r.top) - h).abs() > 2
+}
+
+pub fn grid(n: usize, area: Cell, cell: Option<(i32, i32)>) -> Vec<Cell> {
     let (ax, ay, aw, ah) = area;
     if n == 0 || aw <= 0 || ah <= 0 {
         return Vec::new();
     }
+    let fit = || {
+        let picture = |c: usize| (aw / c as i32).min(ah / n.div_ceil(c) as i32 * 4 / 3);
+        let cols = (1..=n).fold(1, |best, c| if picture(c) > picture(best) { c } else { best });
+        (cols, aw / cols as i32, ah / n.div_ceil(cols) as i32, n)
+    };
     let (cols, cw, ch, per) = match cell {
         Some((cw, ch)) => {
             let (cw, ch) = (cw.max(1), ch.max(1));
             let cols = (aw / cw).max(1) as usize;
-            (cols, cw, ch, cols * (ah / ch).max(1) as usize)
+            let per = cols * (ah / ch).max(1) as usize;
+            if per >= n { (cols, cw, ch, per) } else { fit() }
         }
-        None => {
-            let picture = |c: usize| (aw / c as i32).min(ah / n.div_ceil(c) as i32 * 4 / 3);
-            let cols = (1..=n).fold(1, |best, c| if picture(c) > picture(best) { c } else { best });
-            (cols, aw / cols as i32, ah / n.div_ceil(cols) as i32, n)
-        }
+        None => fit(),
     };
     (0..n)
         .map(|i| {
@@ -826,32 +845,26 @@ pub fn grid(n: usize, area: (i32, i32, i32, i32), cell: Option<(i32, i32)>) -> V
         .collect()
 }
 
-/// What a remembered placement is shown with again (pure): maximized stays maximized, a
-/// minimized one comes back as it would have on its own, else normal; without taking the focus
-/// unless maximized.
 pub fn restore_cmd(show_cmd: u32, to_maximized: bool) -> u32 {
     let max = SW_SHOWMAXIMIZED.0 as u32;
     if show_cmd == max || (show_cmd == SW_SHOWMINIMIZED.0 as u32 && to_maximized) { max } else { SW_SHOWNOACTIVATE.0 as u32 }
 }
 
-/// Keeps the window's placement unless one is kept for this client already.
 fn remember(id: &str, pid: u32, hwnd: HWND) {
     let mut s = saved();
     if s.iter().any(|(i, p, _)| i == id && *p == pid) {
         return;
     }
     let mut wp = WINDOWPLACEMENT { length: size_of::<WINDOWPLACEMENT>() as u32, ..Default::default() };
-    // SAFETY: reads one window's placement into a local with length set.
+    // -- SAFETY: reads one window's placement into a local with length set
     match unsafe { GetWindowPlacement(hwnd, &mut wp) } {
         Ok(()) => s.push((id.to_owned(), pid, wp)),
         Err(e) => log::debug!("instance {id}: window placement not remembered: {e}"),
     }
 }
 
-/// Out of maximized or minimized, without taking the focus, so it can be sized; `queued`
-/// posts it (ahead of a queued resize) instead of waiting for the client.
 fn normal(hwnd: HWND, queued: bool) {
-    // SAFETY: reads and sets one top-level window's state.
+    // -- SAFETY: reads and sets one top-level window's state
     unsafe {
         if IsIconic(hwnd).as_bool() || IsZoomed(hwnd).as_bool() {
             let _ = if queued { ShowWindowAsync(hwnd, SW_SHOWNOACTIVATE) } else { ShowWindow(hwnd, SW_SHOWNOACTIVATE) };
@@ -859,10 +872,18 @@ fn normal(hwnd: HWND, queued: bool) {
     }
 }
 
-/// How much bigger the window is than its client area (its borders and title bar).
+fn ask_not_met(hwnd: HWND, w: i32, h: i32) -> bool {
+    let mut r = RECT::default();
+    // -- SAFETY: reads one window's rectangle into a local
+    if unsafe { GetWindowRect(hwnd, &mut r) }.is_err() {
+        return false;
+    }
+    ((r.right - r.left) - w).abs() > 2 || ((r.bottom - r.top) - h).abs() > 2
+}
+
 fn frame(hwnd: HWND) -> Option<(i32, i32)> {
     let (mut w, mut c) = (RECT::default(), RECT::default());
-    // SAFETY: reads one window's rectangles into locals.
+    // -- SAFETY: reads one window's rectangles into locals
     unsafe {
         GetWindowRect(hwnd, &mut w).ok()?;
         GetClientRect(hwnd, &mut c).ok()?;
@@ -872,12 +893,11 @@ fn frame(hwnd: HWND) -> Option<(i32, i32)> {
 
 fn client_size(hwnd: HWND) -> Option<(u32, u32)> {
     let mut r = RECT::default();
-    // SAFETY: reads one window's client size into a local.
+    // -- SAFETY: reads one window's client size into a local
     unsafe { GetClientRect(hwnd, &mut r) }.ok()?;
     Some(((r.right - r.left).max(0) as u32, (r.bottom - r.top).max(0) as u32))
 }
 
-/// BGRX to opaque RGBA (pure).
 pub fn to_rgba(bgra: &[u8]) -> Vec<u8> {
     bgra.as_chunks::<4>().0.iter().flat_map(|p| [p[2], p[1], p[0], 255]).collect()
 }
@@ -886,25 +906,22 @@ pub fn to_rgba(bgra: &[u8]) -> Vec<u8> {
 mod tests {
     use super::*;
 
-    /// A window that insists on 800 x 600, as Roblox's does.
     unsafe extern "system" fn insists(hwnd: HWND, msg: u32, w: windows::Win32::Foundation::WPARAM, l: windows::Win32::Foundation::LPARAM) -> windows::Win32::Foundation::LRESULT {
         use windows::Win32::UI::WindowsAndMessaging::{DefWindowProcW, MINMAXINFO, WM_GETMINMAXINFO};
         if msg == WM_GETMINMAXINFO {
-            // SAFETY: for this message `l` points at the MINMAXINFO to fill in.
+            // -- SAFETY: for this message `l` points at the MINMAXINFO to fill in
             unsafe { (*(l.0 as *mut MINMAXINFO)).ptMinTrackSize = windows::Win32::Foundation::POINT { x: 800, y: 600 } };
             return windows::Win32::Foundation::LRESULT(0);
         }
-        // SAFETY: the default for everything else.
+        // -- SAFETY: the default for everything else
         unsafe { DefWindowProcW(hwnd, msg, w, l) }
     }
 
-    /// Windows' own move loop, driven by keys, on a window below its minimum. Needs a desktop of
-    /// its own: `hidden-launch`, then this test by name with --ignored --exact.
     fn moved_size(toggle: bool, size_loop: bool, start: (i32, i32)) -> (i32, i32) {
         use windows::Win32::Foundation::{LPARAM, WPARAM};
         use windows::Win32::UI::WindowsAndMessaging::{CreateWindowExW, DestroyWindow, PostMessageW, RegisterClassW, SC_MOVE, SC_SIZE, SendMessageW, WINDOW_EX_STYLE, WM_KEYDOWN, WM_SYSCOMMAND, WNDCLASSW, WS_VISIBLE};
         use windows::core::w;
-        // SAFETY: a private window of this thread, destroyed at the end.
+        // -- SAFETY: a private window of this thread, destroyed at the end
         unsafe {
             let class = WNDCLASSW { lpfnWndProc: Some(insists), lpszClassName: w!("lram-test-moveloop"), ..Default::default() };
             RegisterClassW(&class);
@@ -917,14 +934,13 @@ mod tests {
                 if toggle {
                     set_style(hwnd, drag_style(style_of(hwnd) as u32) as isize);
                 }
-                // In the size loop the first Right picks the right edge, then Left takes it in.
                 let _ = PostMessageW(Some(hwnd), WM_KEYDOWN, WPARAM(0x27), LPARAM(0));
                 for _ in 0..5 {
                     std::thread::sleep(std::time::Duration::from_millis(100));
                     let _ = PostMessageW(Some(hwnd), WM_KEYDOWN, WPARAM(if size_loop { 0x25 } else { 0x27 }), LPARAM(0));
                 }
                 std::thread::sleep(std::time::Duration::from_millis(100));
-                let _ = PostMessageW(Some(hwnd), WM_KEYDOWN, WPARAM(0x0D), LPARAM(0)); // Return
+                let _ = PostMessageW(Some(hwnd), WM_KEYDOWN, WPARAM(0x0D), LPARAM(0));
             });
             SendMessageW(hwnd, WM_SYSCOMMAND, Some(WPARAM(if size_loop { SC_SIZE } else { SC_MOVE } as usize)), Some(LPARAM(0)));
             keys.join().unwrap();
@@ -967,7 +983,7 @@ mod tests {
     fn goes_below_the_windows_minimum_and_keeps_its_frame() {
         use windows::Win32::UI::WindowsAndMessaging::{CreateWindowExW, DestroyWindow, RegisterClassW, WINDOW_EX_STYLE, WNDCLASSW};
         use windows::core::w;
-        // SAFETY: a private hidden window of this thread, destroyed at the end.
+        // -- SAFETY: a private hidden window of this thread, destroyed at the end
         unsafe {
             let class = WNDCLASSW { lpfnWndProc: Some(insists), lpszClassName: w!("lram-test-minsize"), ..Default::default() };
             RegisterClassW(&class);
@@ -985,7 +1001,6 @@ mod tests {
             assert_eq!(style_of(hwnd), before, "title bar and edges are back");
             assert!(frame(hwnd).unwrap().0 > 0, "and drawn");
 
-            // Moving it doesn't throw it back to the minimum.
             SetWindowPos(hwnd, None, 50, 50, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE).unwrap();
             GetWindowRect(hwnd, &mut r).unwrap();
             assert_eq!((r.right - r.left, r.bottom - r.top), (200, 150));
@@ -998,11 +1013,11 @@ mod tests {
         use windows::Win32::UI::WindowsAndMessaging::{CreateWindowExW, DefWindowProcW, DestroyWindow, RegisterClassW, WNDCLASSW, WS_EX_TOOLWINDOW};
         use windows::core::w;
         unsafe extern "system" fn plain(hwnd: HWND, msg: u32, w: windows::Win32::Foundation::WPARAM, l: windows::Win32::Foundation::LPARAM) -> windows::Win32::Foundation::LRESULT {
-            // SAFETY: the default for everything.
+            // -- SAFETY: the default for everything
             unsafe { DefWindowProcW(hwnd, msg, w, l) }
         }
         let pid = std::process::id();
-        // SAFETY: a private hidden window of this thread, destroyed at the end.
+        // -- SAFETY: a private hidden window of this thread, destroyed at the end
         unsafe {
             let class = WNDCLASSW { lpfnWndProc: Some(plain), lpszClassName: w!("lram-test-ghost"), ..Default::default() };
             RegisterClassW(&class);
@@ -1022,13 +1037,11 @@ mod tests {
             unhide(pid, hwnd);
             assert_eq!(ex(), before, "twice is once");
 
-            // Half made: nothing says hidden, and it still comes back.
             SetWindowLongPtrW(hwnd, GWL_EXSTYLE, (before | GHOST) as isize);
             assert!(!is_hidden(hwnd));
             unhide(pid, hwnd);
             assert_eq!(ex(), before, "by the bits alone");
 
-            // Layered for a reason of its own: no ghost.
             SetWindowLongPtrW(hwnd, GWL_EXSTYLE, (before | GHOST) as isize);
             SetLayeredWindowAttributes(hwnd, COLORREF(0), 200, LWA_ALPHA).unwrap();
             assert!(!is_hidden(hwnd));
@@ -1041,13 +1054,12 @@ mod tests {
         use windows::Win32::UI::WindowsAndMessaging::{CreateWindowExW, DefWindowProcW, DestroyWindow, RegisterClassW, WINDOW_EX_STYLE, WNDCLASSW};
         use windows::core::w;
         unsafe extern "system" fn plain(hwnd: HWND, msg: u32, w: windows::Win32::Foundation::WPARAM, l: windows::Win32::Foundation::LPARAM) -> windows::Win32::Foundation::LRESULT {
-            // SAFETY: the default for everything.
+            // -- SAFETY: the default for everything
             unsafe { DefWindowProcW(hwnd, msg, w, l) }
         }
         let (tx, rx) = std::sync::mpsc::channel();
-        // A window whose thread pumps no messages, as a stalled client's.
         let stalled = std::thread::spawn(move || {
-            // SAFETY: a private hidden window of this thread, destroyed at the end.
+            // -- SAFETY: a private hidden window of this thread, destroyed at the end
             unsafe {
                 let class = WNDCLASSW { lpfnWndProc: Some(plain), lpszClassName: w!("lram-test-stalled"), ..Default::default() };
                 RegisterClassW(&class);
@@ -1107,7 +1119,6 @@ mod tests {
 
     #[test]
     fn the_sweep_keeps_a_tiny_size_of_its_own_and_forgets_the_rest() {
-        // Pids no window has: nothing is touched.
         set_tiny(4_000_001, Some((100, 80)));
         sweep(&[(4_000_001, Some((320, 240))), (4_000_002, Some((320, 240))), (4_000_003, None)]);
         let of = |pid| tiny().iter().find(|e| e.0 == pid).map(|e| e.1);
@@ -1161,16 +1172,45 @@ mod tests {
         let area = (0, 40, 1920, 1000);
         assert_eq!(grid(0, area, None), []);
         assert_eq!(grid(1, area, None), [(0, 40, 1920, 1000)]);
-        // Two side by side beat two stacked on a wide screen.
         assert_eq!(grid(2, area, None), [(0, 40, 960, 1000), (960, 40, 960, 1000)]);
         assert_eq!(grid(4, area, None)[3], (960, 540, 960, 500), "2 x 2");
         assert!(grid(12, area, None).iter().all(|&(x, y, w, h)| x >= 0 && x + w <= 1920 && y >= 40 && y + h <= 1040));
-        // Fixed cells: 5 across, 3 down; the 16th starts over at the top left.
-        let micro = grid(16, area, Some((336, 279)));
+        let micro = grid(15, area, Some((336, 279)));
         assert_eq!(micro[4], (1344, 40, 336, 279));
         assert_eq!(micro[5], (0, 319, 336, 279));
-        assert_eq!(micro[15], (0, 40, 336, 279));
-        assert_eq!(grid(2, (0, 0, 100, 100), Some((300, 300))), [(0, 0, 300, 300), (0, 0, 300, 300)]);
+        assert_eq!(micro[14], (1344, 598, 336, 279));
+        let full = grid(16, area, Some((336, 279)));
+        assert_eq!((full[0], full[15]), ((0, 40, 480, 250), (1440, 790, 480, 250)), "4 x 4 of the work area");
+        assert_no_overlap(&full);
+        assert_no_overlap(&grid(2, (0, 0, 100, 100), Some((300, 300))));
+    }
+
+    fn assert_no_overlap(cells: &[(i32, i32, i32, i32)]) {
+        for (i, &(ax, ay, aw, ah)) in cells.iter().enumerate() {
+            for &(bx, by, bw, bh) in &cells[i + 1..] {
+                let apart = ax + aw <= bx || bx + bw <= ax || ay + ah <= by || by + bh <= ay;
+                assert!(apart, "({ax},{ay},{aw},{ah}) covers ({bx},{by},{bw},{bh})");
+            }
+        }
+    }
+
+    #[test]
+    fn every_window_gets_a_cell_of_its_own() {
+        let areas = [(0, 40, 1920, 1000), (0, 0, 2560, 1040), (0, 0, 1024, 768), (-1280, 0, 1280, 720)];
+        for area in areas {
+            for n in 1..=40 {
+                let cells = grid(n, area, None);
+                assert_eq!(cells.len(), n);
+                assert_no_overlap(&cells);
+            }
+            for size in [(320, 240), (336, 279), (800, 600)] {
+                for n in 1..=40 {
+                    let cells = grid(n, area, Some(size));
+                    assert_eq!(cells.len(), n, "{area:?} {size:?} x {n}");
+                    assert_no_overlap(&cells);
+                }
+            }
+        }
     }
 
     #[test]
@@ -1181,5 +1221,12 @@ mod tests {
         assert_eq!(restore_cmd(min, true), max);
         assert_eq!(restore_cmd(min, false), quiet);
         assert_eq!(restore_cmd(normal, false), quiet);
+    }
+
+    #[test]
+    fn only_a_fullscreen_trip_puts_a_size_back() {
+        assert!(needs_restore(true, (1280, 720), (1024, 768)));
+        assert!(!needs_restore(true, (1280, 720), (1280, 720)));
+        assert!(!needs_restore(false, (1280, 720), (1024, 768)));
     }
 }

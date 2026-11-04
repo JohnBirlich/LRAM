@@ -9,13 +9,14 @@ import { toast } from "../../ui/Toast";
 import { AccountMenu, type MenuAt } from "./AccountMenu";
 import { isLive } from "../launch/Running";
 import { DetailPanel } from "./DetailPanel";
+import { FriendsDialog } from "./FriendsDialog";
+import { ExportProfilesDialog, ImportProfilesDialog } from "./Profiles";
 import { GroupChips } from "./GroupsNav";
 import { accountName, ago, Avatar, Status } from "./shared";
 import { t, tx, type Key } from "../../i18n";
 import { Divider, usePanelWidth } from "../../ui/Resizer";
 
 type Filter = "all" | "inGame" | "online" | "offline" | Exclude<AccountStatus, "valid"> | "fav";
-// The chips match what the Status column shows.
 const FILTERS: { key: Filter; label: Key }[] = [
   { key: "all", label: "accounts.filter.all" },
   { key: "inGame", label: "accounts.presence.inGame" },
@@ -36,7 +37,6 @@ const STRIP: { filter: Filter; label: Key; tone?: "ok" | "bad" | "warn" }[] = [
   { filter: "unknown", label: "accounts.status.unknown", tone: "warn" },
 ];
 
-/** What the Status cell shows: presence for a valid cookie (Studio counts as online), else the cookie status. */
 const shownKey = (a: AccountSummary, p?: Presence): Filter | "valid" => {
   if (a.status !== "valid") return a.status;
   if (!p || p.kind === "unknown") return "valid";
@@ -47,10 +47,10 @@ const inFilter = (a: AccountSummary, f: Filter, p?: Presence) =>
 const isTyping = (el: EventTarget | null) =>
   el instanceof HTMLElement &&
   (el.matches("textarea, select, input:not([type=checkbox]):not([type=radio])") || el.isContentEditable);
-// Cookies are checked once per app session, when the list first shows (after unlock in master mode).
 let validatedThisSession = false;
 const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+// -- Main func
 export function AccountsView({ accounts, groups, density, vaultMode, clipboardSeconds, group, setGroup, selected, setSelected, onAdd, onLaunch }: {
   accounts: AccountSummary[];
   groups: Group[];
@@ -72,8 +72,11 @@ export function AccountsView({ accounts, groups, density, vaultMode, clipboardSe
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [checked, setChecked] = useState<Set<number>>(new Set());
+  const [exportIds, setExportIds] = useState<number[] | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
   const [removeIds, setRemoveIds] = useState<number[]>([]);
   const [removeOpen, setRemoveOpen] = useState(false);
+  const [friends, setFriends] = useState<AccountSummary | null>(null);
   const [drag, setDrag] = useState<{ id: number; over: number } | null>(null);
   const [order, setOrder] = useState<number[] | null>(null);
   const [moved, setMoved] = useState("");
@@ -83,28 +86,22 @@ export function AccountsView({ accounts, groups, density, vaultMode, clipboardSe
   const flip = useRef<Map<number, number> | null>(null);
   const seen = useRef(new Set<number>());
   const compact = density === "compact";
-  // An account with a client on its way or in a game can't start another.
   const live = new Set((useInstances().data ?? []).filter(isLive).map((i) => i.accountId));
 
   useEffect(() => {
     const timer = setInterval(tick, 60_000);
     return () => clearInterval(timer);
   }, []);
-  // A local order bridges the gap until the optimistic cache update arrives.
   useEffect(() => setOrder(null), [accounts]);
 
   const byId = useMemo(() => new Map(accounts.map((a) => [a.id, a])), [accounts]);
   const groupById = useMemo(() => new Map(groups.map((g) => [g.id, g])), [groups]);
   const ordered = order ? order.flatMap((id) => byId.get(id) ?? []) : accounts;
-  // A group deleted while it was the filter means no filter.
   const inGroup = group === null || !groupById.has(group) ? ordered : ordered.filter((a) => a.groupIds.includes(group));
   const needle = q.trim().toLowerCase();
   const matching = inGroup.filter(
     (a) => !needle || `${a.alias}\n${a.displayName}\n@${a.username}\n${a.userId}`.toLowerCase().includes(needle),
   );
-  // Presence only for rows that can be on screen, and only for valid cookies (DESIGN: visible rows only).
-  // Not per search: a new sweep for each result. ponytail: the first 100 unless a status filter
-  // needs them all (one request per account each minute); past that, rows show Ready.
   const presenceIds = useMemo(
     () => {
       const ids = inGroup.filter((a) => a.status === "valid").map((a) => a.id).sort((x, y) => x - y);
@@ -128,7 +125,6 @@ export function AccountsView({ accounts, groups, density, vaultMode, clipboardSe
     onSuccess: ({ started, list }, ids) => {
       qc.setQueryData(qk.accounts, list);
       const asked = ids ? list.filter((a) => ids.includes(a.id)) : list;
-      // Accounts Roblox couldn't be asked about (network, rate limit) keep their old stamp.
       const done = asked.filter((a) => (a.statusCheckedAt ?? 0) >= started - 1000);
       const missed = asked.length - done.length;
       const bad = done.filter((a) => a.status === "invalid").length;
@@ -157,7 +153,6 @@ export function AccountsView({ accounts, groups, density, vaultMode, clipboardSe
     mutationFn: (ids: number[]) => api.accountsRemove(ids),
     onSuccess: (_, ids) => {
       setAccounts(qc, (list) => list.filter((a) => !ids.includes(a.id)));
-      // Ids can be reused by the next account added: drop what belonged to these.
       for (const id of ids) qc.removeQueries({ queryKey: qk.info(id) });
       setChecked(new Set());
       setRemoveOpen(false);
@@ -178,8 +173,6 @@ export function AccountsView({ accounts, groups, density, vaultMode, clipboardSe
     if (!validate.isPending && accounts.length) validate.mutate(checkedIds.length ? checkedIds : undefined);
   };
 
-  // ---------- reorder (pointer drag on the grip, or arrow keys on it) ----------
-
   function snapshot() {
     const m = new Map<number, number>();
     for (const r of tbody.current?.rows ?? []) m.set(Number(r.dataset.id), r.getBoundingClientRect().top);
@@ -193,7 +186,6 @@ export function AccountsView({ accounts, groups, density, vaultMode, clipboardSe
     reorder.mutate(ids);
   }
 
-  /** Moves `id` so it sits before shown[over] (or after the last shown row). */
   function dropAt(id: number, over: number) {
     const from = shown.findIndex((a) => a.id === id);
     if (from < 0 || over < 0 || over > shown.length || over === from || over === from + 1) return false;
@@ -204,7 +196,6 @@ export function AccountsView({ accounts, groups, density, vaultMode, clipboardSe
     return true;
   }
 
-  // FLIP: rows glide from where they were to where the new order puts them.
   useLayoutEffect(() => {
     const before = flip.current;
     const rows = tbody.current ? [...tbody.current.rows] : [];
@@ -223,12 +214,10 @@ export function AccountsView({ accounts, groups, density, vaultMode, clipboardSe
     }
   });
 
-  // New rows rise in. Done with WAAPI because a CSS animation restarts whenever React moves the row.
   useLayoutEffect(() => {
     const rows = tbody.current ? [...tbody.current.rows] : [];
     const fresh = rows.filter((r) => !seen.current.has(Number(r.dataset.id)));
     seen.current = new Set(rows.map((r) => Number(r.dataset.id)));
-    // A whole list coming back at once is no new row, and would animate thousands of elements.
     if (reducedMotion() || fresh.length > 40) return;
     fresh.forEach((r, i) =>
       r.animate([{ opacity: 0, transform: "translateY(8px)" }, { opacity: 1, transform: "none" }], {
@@ -276,7 +265,7 @@ export function AccountsView({ accounts, groups, density, vaultMode, clipboardSe
     if (!d) return;
     dragging.current = null;
     setDrag(null);
-    if (cancel || !dropAt(d.id, d.over)) snapshot(); // glide back home
+    if (cancel || !dropAt(d.id, d.over)) snapshot();
   }
 
   function gripKey(e: ReactKeyboardEvent, id: number) {
@@ -292,8 +281,6 @@ export function AccountsView({ accounts, groups, density, vaultMode, clipboardSe
 
   const from = drag ? shown.findIndex((a) => a.id === drag.id) : -1;
   const dropLine = drag && drag.over !== from && drag.over !== from + 1 ? drag.over : -1;
-
-  // ---------- selection and shortcuts ----------
 
   const toggle = (id: number) =>
     setChecked((s) => {
@@ -340,7 +327,6 @@ export function AccountsView({ accounts, groups, density, vaultMode, clipboardSe
       for (const a of targets) await update.mutateAsync({ id: a.id, patch: { groupIds: [...a.groupIds, g.id] } });
       toast(t("accounts.toast.addedToGroup", { count: checkedIds.length, group: g.name }));
     } catch {
-      // The mutation cache already showed the error.
     }
   }
 
@@ -363,6 +349,10 @@ export function AccountsView({ accounts, groups, density, vaultMode, clipboardSe
               <Icon name="refresh" size={14} className={validate.isPending ? "spin" : ""} />
               {validate.isPending ? t("accounts.validating") : t("accounts.validateAll")}
             </button>
+            <button className="btn" onClick={() => setImportOpen(true)} title={t("accounts.profiles.importHint")}>
+              <Icon name="download" size={14} />
+              {t("accounts.profiles.import")}
+            </button>
             <button className="btn btn-primary" onClick={onAdd} title={t("accounts.addHint", { keys: "Ctrl+N" })}>
               <Icon name="plus" size={14} />
               {t("accounts.add.title")}
@@ -372,7 +362,7 @@ export function AccountsView({ accounts, groups, density, vaultMode, clipboardSe
 
         {accounts.length === 0 ? (
           <>
-            {/* Left over from accounts that are gone: they can still be edited or deleted. */}
+            {}
             {groups.length > 0 && (
               <div className="flex flex-wrap items-center gap-3">
                 <GroupChips groups={groups} accounts={accounts} active={activeGroup?.id ?? null} onPick={setGroup} />
@@ -526,7 +516,7 @@ export function AccountsView({ accounts, groups, density, vaultMode, clipboardSe
                                 {name}
                               </button>
                               <span className="mono text-xs text-dim truncate hidden @3xl:block">@{a.username}</span>
-                              {/* No room for the Status column. */}
+                              {}
                               <span className="flex min-w-0 text-xs @3xl:hidden">
                                 <Status status={a.status} presence={presence?.get(a.id)} checking={isChecking(a.id)} />
                               </span>
@@ -543,7 +533,7 @@ export function AccountsView({ accounts, groups, density, vaultMode, clipboardSe
                         </td>
                         <td className="pe-3 hidden @5xl:table-cell">
                           <div className="flex flex-wrap gap-1">
-                            {a.groupIds.flatMap((gid) => groupById.get(gid) ?? []).map((g) => (
+                            {groups.filter((g) => a.groupIds.includes(g.id)).map((g) => (
                               <span key={g.id} className="tag">
                                 <span aria-hidden="true" className="w-1.5 h-1.5 rounded-full" style={{ background: groupColor(g) }} />
                                 {g.name}
@@ -613,8 +603,6 @@ export function AccountsView({ accounts, groups, density, vaultMode, clipboardSe
       {current && (
         <aside
           key={current.id}
-          // Pin the panel to this account once it is used, so an edit that drops it from the
-          // filtered list can't swap the panel to another account under the next click.
           onFocusCapture={() => setSelected(current.id)}
           aria-label={t("accounts.details")}
           style={{ width: detail.width, maxWidth: "40cqw" }}
@@ -668,6 +656,10 @@ export function AccountsView({ accounts, groups, density, vaultMode, clipboardSe
                 </button>
               ))}
             </div>
+            <button className="btn" onClick={() => setExportIds(checkedIds)} title={t("accounts.profiles.exportHint")}>
+              <Icon name="download" size={14} />
+              {t("accounts.profiles.export")}
+            </button>
             <button className="btn btn-danger" onClick={() => askRemove(checkedIds)}>
               <Icon name="trash" size={14} />
               {t("common.remove")}
@@ -687,7 +679,11 @@ export function AccountsView({ accounts, groups, density, vaultMode, clipboardSe
         onLaunch={onLaunch}
         onValidate={(ids) => validate.mutate(ids)}
         onRemove={askRemove}
+        onFriends={setFriends}
       />
+      <FriendsDialog open={friends !== null} onClose={() => setFriends(null)} account={friends} />
+      <ExportProfilesDialog ids={exportIds ?? []} open={exportIds !== null} onClose={() => setExportIds(null)} vaultMode={vaultMode} />
+      <ImportProfilesDialog open={importOpen} onClose={() => setImportOpen(false)} />
       <ConfirmDialog
         open={removeOpen}
         onClose={() => setRemoveOpen(false)}

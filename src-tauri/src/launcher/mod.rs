@@ -1,7 +1,3 @@
-//! Launching one account into a target, the way roblox.com's Play button does:
-//! resolve the target with that account's cookie, get an authentication ticket, build the
-//! `roblox-player:` URI and start the client. Tickets and URIs are secrets: never logged.
-
 pub mod authenticode;
 pub mod bulk;
 pub mod client;
@@ -21,24 +17,17 @@ use crate::roblox_api::Client;
 use crate::roblox_api::types::{ShareLinkResolution, ShareLinkV2, ShareTarget};
 use crate::vault::{Secret, cookie_aad};
 
-/// Roblox's limit on launch data, in bytes.
 const MAX_LAUNCH_DATA: usize = 200;
 
-/// A target resolved for one account: what PlaceLauncher is asked for.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Join {
-    /// `RequestGame`.
     Game { place_id: i64, launch_data: Option<String> },
-    /// `RequestGameJob` (`gameId` = job id).
     Job { place_id: i64, job_id: String },
-    /// `RequestPrivateGame`; share-link and `privateServerLinkCode` joins send only the link code.
     Private { place_id: i64, link_code: Option<String>, access_code: Option<String> },
-    /// `RequestFollowUser`.
     Follow { user_id: i64 },
 }
 
 impl Join {
-    /// The place the client goes to, when known before it starts.
     pub fn place_id(&self) -> Option<i64> {
         match self {
             Join::Game { place_id, .. } | Join::Job { place_id, .. } | Join::Private { place_id, .. } => Some(*place_id),
@@ -47,20 +36,6 @@ impl Join {
     }
 }
 
-/// Resolves `target` with the account's own cookie into a `Join`:
-/// - `ShareLink` → `POST apis.roblox.com/sharelinks/v1/resolve-link`. Server links use
-///   `privateServerInviteData` (`placeId` + `linkCode`; universe → root place only when
-///   `placeId` is missing). `Invalid` status → `AppError::Invalid("This share link is no
-///   longer valid.")`; `Expired` still joins, as the website does, with a warning.
-///   ExperienceInvite / NotificationExperienceInvite with an instance → `Job`; ExperienceDetails /
-///   Affiliate / Event / Screenshot → the game (root place, launch data when given); Profile →
-///   `Follow`; other types → `Invalid`.
-/// - `ShareLinkV2` → `POST apis.roblox.com/deeplinks/v2/resolve`; `Experience` → `Game`
-///   (`targetId` place, `customData` as launch data); other link types → `Invalid`.
-/// - `Universe` → its root place (`games.roblox.com/v1/games?universeIds=`).
-/// - Launch data over 200 bytes is dropped (Roblox's limit) with a warning.
-///
-/// The second value is a warning for the user (expired link, dropped launch data).
 pub async fn resolve(
     api: &Client,
     account_id: i64,
@@ -104,10 +79,6 @@ fn expired_warning() -> String {
 const MAX_ARGS_LEN: usize = 512;
 const MAX_ARGS: usize = 32;
 
-/// Extra client arguments typed by the user, split on whitespace. Refused (`Invalid`): over
-/// 512 characters or 32 arguments, quotes, control characters (newlines), `& | < > ^` (a
-/// bootstrapper may hand them to a shell), and anything starting with `roblox-player:` (a
-/// second launch URI). They go after the launch URI as typed; never logged.
 pub fn launch_args(text: &str) -> Result<Vec<String>> {
     let invalid = |why: String| Err(AppError::Invalid(why));
     if text.chars().count() > MAX_ARGS_LEN {
@@ -130,31 +101,18 @@ pub fn launch_args(text: &str) -> Result<Vec<String>> {
     Ok(args)
 }
 
-/// The account's own launch arguments, else the default from settings (`launch_args`).
 fn args_for(s: &App, account_id: i64) -> Result<Vec<String>> {
     let own = s.db.account(account_id)?.launch_args;
     launch_args(&own.map_or_else(|| s.db.settings().map(|v| v.launch_args), Ok)?)
 }
 
-/// One launch: resolve → `client-assertion` (failure ignored) → `authentication-ticket` →
-/// URI with a fresh `browsertrackerid` → start the client (`update::launch_client` + `client::start`,
-/// with the account's or the default launch arguments after the URI). Just before the client
-/// starts, `fps_cap`, else the account's or the default FPS cap, and the lowest graphics when
-/// `Settings.low_graphics` is on, go into Roblox's settings file (`client_settings`). It returns
-/// once the client has started; a task keeps `client_settings::LOCK` until the client has read
-/// the file and the user's own are back, so the next launch waits for that, not the caller.
-/// `AppError::Locked` when the vault is locked; cookie errors as the API client maps them.
+// -- Main func
 pub async fn launch(s: &App, account_id: i64, target: &LaunchTarget, fps_cap: Option<u32>) -> Result<LaunchInfo> {
-    // First: the previous launch's client may still be reading the settings file, and this
-    // launch's exe, ticket and start time should come after that wait, not before it.
     let held = client_settings::LOCK.lock().await;
     let cookie = account_cookie(s, account_id)?;
-    // Before any cookie call: no ticket is fetched when Roblox isn't installed or the arguments
-    // are refused.
     let (exe, production) = update::launch_client(s).await?;
     let args = args_for(s, account_id)?;
     let (join, warning) = resolve(&s.api, account_id, &cookie, target).await?;
-    // Read again before each call: Roblox can rotate the cookie in any answer, and the old one stops working.
     let assertion = s
         .api
         .client_assertion(account_id, &account_cookie(s, account_id)?)
@@ -189,7 +147,6 @@ pub async fn launch(s: &App, account_id: i64, target: &LaunchTarget, fps_cap: Op
     let started = client::start(&exe, &uri::player_uri(&ticket, started_at, &place, production), &args);
     match &started {
         Ok((pid, pid_start)) if waiting => {
-            // A bootstrapper's own process exits by design: only the log tells then.
             let client = (!exe.bootstrapper).then_some((*pid, *pid_start));
             tauri::async_runtime::spawn(async move {
                 let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -234,9 +191,6 @@ pub async fn launch(s: &App, account_id: i64, target: &LaunchTarget, fps_cap: Op
     })
 }
 
-/// The account's decrypted cookie (`Locked` when the vault is locked).
-/// Would `launch` get past Roblox now? Everything it asks for before starting a client, the login
-/// ticket too (unused, it just expires). For a relaunch, before the old client is closed for it.
 pub async fn launch_check(s: &App, account_id: i64, target: &LaunchTarget) -> Result<()> {
     let cookie = account_cookie(s, account_id)?;
     client::find()?;
@@ -258,8 +212,6 @@ enum ShareKind {
     Profile,
 }
 
-/// The filled `*Data` object of a share-link answer, mapped as `resolve` describes, and
-/// whether the link has expired.
 async fn share_join(api: &Client, r: ShareLinkResolution) -> Result<(Join, bool)> {
     let filled = [
         (ShareKind::Server, r.private_server_invite_data),
@@ -277,7 +229,6 @@ async fn share_join(api: &Client, r: ShareLinkResolution) -> Result<(Join, bool)
     if is_status(&t.status, "Invalid") {
         return Err(no_longer_valid());
     }
-    // As the website does, an invite joins its server only while it is Valid.
     let job = match kind {
         ShareKind::Invite if t.status.is_none() || is_status(&t.status, "Valid") => code(t.instance_id.clone()),
         _ => None,
@@ -300,7 +251,6 @@ async fn share_join(api: &Client, r: ShareLinkResolution) -> Result<(Join, bool)
     Ok((join, expired))
 }
 
-/// `deeplinks/v2/resolve`: only `Experience` links launch a game.
 fn v2_join(v: ShareLinkV2) -> Result<Join> {
     if is_status(&v.status, "Invalid") {
         return Err(no_longer_valid());
@@ -313,7 +263,6 @@ fn v2_join(v: ShareLinkV2) -> Result<Join> {
     }
 }
 
-/// The payload's place, else its universe's root place.
 async fn share_place(api: &Client, t: &ShareTarget) -> Result<i64> {
     match (t.place_id, t.universe_id) {
         (Some(place_id), _) => Ok(place_id),
@@ -328,7 +277,6 @@ pub(crate) async fn root_place(api: &Client, universe_id: i64) -> Result<i64> {
     place.ok_or_else(|| AppError::Invalid(tr!("This game no longer exists.")))
 }
 
-/// Drops launch data over Roblox's 200-byte limit (true when it did). Its content is never logged.
 fn cap_launch_data(join: Join) -> (Join, bool) {
     match join {
         Join::Game { place_id, launch_data: Some(d) } if d.len() > MAX_LAUNCH_DATA => {
@@ -339,12 +287,10 @@ fn cap_launch_data(join: Join) -> (Join, bool) {
     }
 }
 
-/// A link code or job id from Roblox, kept only if it is a plain token (letters, digits, `-`).
 fn code(v: Option<String>) -> Option<String> {
     v.filter(|c| !c.is_empty() && c.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '-'))
 }
 
-/// Launch data as Roblox hands it over: a string as is, other JSON as its text.
 fn text(v: &Value) -> Option<String> {
     match v {
         Value::Null => None,
@@ -379,7 +325,6 @@ mod tests {
         assert!(launch_args(&"x ".repeat(33)).is_err(), "33 words");
         assert!(launch_args(&"x".repeat(513)).is_err());
         assert!(launch_args(&"x".repeat(512)).is_ok());
-        // The message never echoes what was typed, beyond the one refused character.
         let e = launch_args("secret&").unwrap_err().to_string();
         assert!(!e.contains("secret") && e.contains('&'), "{e}");
     }

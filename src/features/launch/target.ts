@@ -1,20 +1,18 @@
-// The Launch composer's state and how a target reads in the UI. Shell owns the draft, so it
-// survives switching views and is dropped with everything else when the vault locks.
 import type { Dispatch, SetStateAction } from "react";
 import { api, type ErrorPayload, type LaunchTarget, type ParsedInput, type UserRef } from "../../api";
 import { t } from "../../i18n";
 
 export type Draft = {
   text: string;
-  /** Place ID typed for a bare job ID. */
+
   place: string;
-  /** The parse of `parsed.text`; lags `text` by the debounce. */
+
   parsed: { text: string; value: ParsedInput } | null;
-  /** A username already looked up (`name` as typed), so launching need not ask again. */
+
   user: { name: string; ref: UserRef } | null;
-  /** Filled from this favourite; typing clears it. */
+
   favId: number | null;
-  /** Where the target came from (a favourite's name, "with @friend"); typing clears it. */
+
   note: string | null;
 };
 
@@ -22,7 +20,6 @@ export const EMPTY_DRAFT: Draft = { text: "", place: "", parsed: null, user: nul
 
 const WEB = "https://www.roblox.com";
 
-/** Text the parser reads back as the same target. */
 export function targetText(t: LaunchTarget): string {
   switch (t.kind) {
     case "place":
@@ -46,19 +43,16 @@ export function targetText(t: LaunchTarget): string {
   }
 }
 
-/** A draft holding a known target (no parse round trip needed). */
 export function draftFor(target: LaunchTarget, favId: number | null = null, note: string | null = null): Draft {
   const text = targetText(target);
   return { ...EMPTY_DRAFT, text, parsed: { text, value: { kind: "target", target } }, favId, note };
 }
 
-/** A draft that joins this user (already known, so no lookup). */
 export function draftForUser(ref: UserRef): Draft {
   const text = `@${ref.username}`;
   return { ...EMPTY_DRAFT, text, parsed: { text, value: { kind: "username", name: ref.username } }, user: { name: ref.username, ref } };
 }
 
-/** Digits, or a roblox.com game link. */
 export function placeOf(s: string): number | null {
   const m = /^\s*(\d{1,19})\s*$/.exec(s) ?? /roblox\.com\/(?:[a-z]{2}(?:-[a-z0-9]{2,4})?\/)?games\/(\d{1,19})/i.exec(s);
   const n = m ? Number(m[1]) : 0;
@@ -71,7 +65,6 @@ export type Look = { kind: string; detail: string; tone: Tone };
 const job = (j: string) => `${j.slice(0, 8)}…${j.slice(-4)}`;
 const ok = (kind: string, detail: string): Look => ({ kind, detail, tone: "ok" });
 
-/** "Game · place 1818"; link and access codes never show. */
 export function describeTarget(tg: LaunchTarget): Look {
   switch (tg.kind) {
     case "place":
@@ -110,12 +103,9 @@ export function describe(p: ParsedInput, place: number | null, user: UserRef | n
   }
 }
 
-/** The looked-up user for this name, if any. */
 export const userFor = (d: Draft, name: string) =>
   d.user && d.user.name.toLowerCase() === name.toLowerCase() ? d.user.ref : null;
 
-/** How a draft reads now. `pending`: the parse hasn't caught up, which is still launchable because
- * `resolveTarget` parses again. */
 export function readDraft(d: Draft) {
   const parsed = d.text.trim() ? d.parsed?.value ?? null : null;
   const place = placeOf(d.place);
@@ -127,7 +117,7 @@ export function readDraft(d: Draft) {
 
 const invalid = (message: string): ErrorPayload => ({ kind: "invalid", message });
 
-/** What the draft launches; parses again if the debounce hasn't caught up, looks a username up. */
+// -- Main func
 export async function resolveTarget(d: Draft, setDraft: Dispatch<SetStateAction<Draft>>, onLookup?: (name: string) => void): Promise<LaunchTarget> {
   const p = d.parsed?.text === d.text ? d.parsed.value : await api.targetParse(d.text);
   switch (p.kind) {

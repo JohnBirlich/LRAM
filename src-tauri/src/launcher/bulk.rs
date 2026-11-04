@@ -1,40 +1,3 @@
-//! Bulk launch: one batch at a time, strictly one account after another (DESIGN.md §6).
-//!
-//! The runner, per batch:
-//! 1. Same server (both modes): resolve the target with the first account's cookie
-//!    (`super::resolve`); a `Join::Game` means a public game. Any other `Join` (a job, a
-//!    private server, a user) already is one server: same-server is ignored. A target that
-//!    can't be resolved here: ignored, with a note.
-//!    `PickFirst`: `pick_server` reads one page of the place's servers (Recommended, 100, full
-//!    ones left out, first account's cookie; OccupancyDesc if Roblox refuses Recommended) and
-//!    `choose_server` picks one; every account is
-//!    sent there as `LaunchTarget::Server { place_id, job_id }` (launch data is dropped,
-//!    RequestGameJob has none). No server with room, or no list → `FollowFirst`, with a note.
-//!    `FollowFirst`: the first account that starts a client launches with the target as given;
-//!    its server is read from its tracked instance (`Instance.job_id`, up to 90 s), else from
-//!    its own presence (its own cookie, `game_id`); the rest are sent there. Not found → the
-//!    rest launch with the target as given, with a note.
-//! 2. Per account: stage `Ticket`, then `commands::launch_tracked` (the favourite is touched
-//!    for the first started client only), then `Starting` with its instance id; later stages
-//!    mirror that instance (`stage_of`; a disconnect is `Done` for an account that allows it).
-//! 3. Between launches: wait until the previous client is through signing in and joining (its
-//!    instance left `starting` and `joining`, at most 30 s), then `delay_ms` ± 1 s (`jittered`).
-//!    After the last launch, keep mirroring until every started client is in game or ended (at
-//!    most 120 s), then `done = true`.
-//!    Roblox refusing an account with a 403 (its ticket, or its client's sign-in: that client is
-//!    closed) doubles the delay for the rest of the batch (`Pace`) and tries that account once
-//!    more; a second 403 in a row stops the batch.
-//! 4. Stops: `AppError::Challenge`, `AppError::Locked` (the vault locked mid-batch),
-//!    multi-instance turned off mid-batch, or an instance note saying it signed in as another
-//!    account or that Roblox wants a human check → that item `Failed`, the rest `Cancelled`,
-//!    `stopped` says why and what to do. An account removed, replaced (same id, another user) or
-//!    signed out (Invalid) mid-batch fails only its item; one found Challenged stops the batch.
-//!    `CookieInvalid` and other errors fail only that item; the batch goes on. Cancel stops
-//!    after the current step (never mid-launch): the rest `Cancelled`, `stopped = "Cancelled"`.
-//!    A stopped batch is done at once (its started clients stay in the instances list).
-//! 5. Every change emits `bulk://progress` with the whole `BulkProgress`, and `Bulk` keeps the
-//!    latest copy for `bulk_current`.
-
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
@@ -66,39 +29,27 @@ fn rejoining() -> String {
 fn launching() -> String {
     tr!("Another launch is in progress, try again in a moment.")
 }
-/// How often a wait looks at the clients and the cancel flag.
 const TICK: Duration = Duration::from_millis(500);
 const BIND_WAIT: Duration = Duration::from_secs(30);
 const FOLLOW_WAIT: Duration = Duration::from_secs(90);
 const SETTLE_WAIT: Duration = Duration::from_secs(120);
-/// For a client closed after a 403 to count as gone, so that its account can launch again.
 const CLOSE_WAIT: Duration = Duration::from_secs(10);
-/// How long a 403 from Roblox keeps launches slower when nothing has got through since.
 const REFUSAL_LASTS: Duration = Duration::from_secs(10 * 60);
 
-/// The running or last batch.
 pub struct Bulk {
     inner: Mutex<Option<Batch>>,
-    /// Auto-rejoins closing or launching (set and checked under `inner`'s lock, so a batch and
-    /// a rejoin never overlap).
     rejoining: AtomicUsize,
-    /// Launches in flight (`commands::launch_tracked`).
     launches: AtomicUsize,
-    /// When the last launch was let through (`cooldown`).
     last_launch: Mutex<Option<Instant>>,
-    /// Bumped by Kill all (`kill`): a launch or rejoin that saw another value stops.
     kills: AtomicU64,
-    /// Roblox's 403s since a client last reached a game, and the last one's time.
     refusals: Mutex<(u32, Option<Instant>)>,
 }
 
-/// A launch slot taken by `cooldown`; give it back with `release` when no client started.
 pub struct Slot {
     at: Instant,
     prev: Option<Instant>,
 }
 
-/// Holds a count of `Bulk` up while alive.
 pub struct Busy<'a>(&'a AtomicUsize);
 
 impl Drop for Busy<'_> {
@@ -129,19 +80,15 @@ impl Bulk {
         }
     }
 
-    /// Roblox refused a launch with a 403, from any path: the next ones of any path wait longer.
     pub fn refused(&self) {
         let mut r = self.refusals.lock().unwrap_or_else(|e| e.into_inner());
         *r = (r.0.saturating_add(1), Some(Instant::now()));
     }
 
-    /// A client reached a game: launches go at their usual pace again.
     pub fn got_through(&self) {
         *self.refusals.lock().unwrap_or_else(|e| e.into_inner()) = (0, None);
     }
 
-    /// The time between launches for a delay of `delay_ms`: doubled per recent 403 (`refused`), up to
-    /// the most a delay can be, less the jitter's second, so a batch's own jittered wait never adds to it.
     pub fn launch_gap(&self, delay_ms: u32, now: Instant) -> Duration {
         let (n, at) = *self.refusals.lock().unwrap_or_else(|e| e.into_inner());
         let n = if at.is_some_and(|t| now.duration_since(t) < REFUSAL_LASTS) { n } else { 0 };
@@ -149,9 +96,6 @@ impl Bulk {
         Duration::from_millis(u64::from(wanted.saturating_sub(1_000)))
     }
 
-    /// The launch cooldown: reserves the next launch slot at least `gap` after the last one and
-    /// returns how long to wait for it (zero when the gap already passed). Every launch takes a
-    /// slot (`commands::launch_tracked`), so launches from any path are spaced out.
     pub fn cooldown(&self, gap: Duration) -> (Duration, Slot) {
         self.reserve(Instant::now(), gap)
     }
@@ -163,8 +107,6 @@ impl Bulk {
         (at - now, Slot { at, prev })
     }
 
-    /// Gives back a slot whose launch failed before its client started, unless a later launch
-    /// already queued behind it.
     pub fn release(&self, slot: Slot) {
         let mut last = self.last_launch.lock().unwrap_or_else(|e| e.into_inner());
         if *last == Some(slot.at) {
@@ -172,8 +114,6 @@ impl Bulk {
         }
     }
 
-    /// Panic button: the running batch (if any) stops after its current step, and launches or
-    /// rejoins in flight stop at their next check (`kills`).
     pub fn kill(&self) {
         self.kills.fetch_add(1, Ordering::SeqCst);
         if let Some(b) = self.batch().as_ref() {
@@ -181,33 +121,27 @@ impl Bulk {
         }
     }
 
-    /// How many times Kill all was pressed.
     pub fn kills(&self) -> u64 {
         self.kills.load(Ordering::SeqCst)
     }
 
-    /// A copy of the running or last batch.
     pub fn current(&self) -> Option<BulkProgress> {
         self.batch().as_ref().map(|b| b.progress.clone())
     }
 
-    /// A batch is still running.
     pub fn running(&self) -> bool {
         self.batch().as_ref().is_some_and(|b| !b.progress.done)
     }
 
-    /// Marks an auto-rejoin in flight until the guard drops; None while a batch runs.
     pub fn begin_rejoin(&self) -> Option<Busy<'_>> {
         let batch = self.batch();
         (!batch.as_ref().is_some_and(|b| !b.progress.done)).then(|| busy(&self.rejoining))
     }
 
-    /// Marks a launch in flight until the guard drops.
     pub fn begin_launch(&self) -> Busy<'_> {
         busy(&self.launches)
     }
 
-    /// Why a single launch can't start now: a batch or an auto-rejoin is running.
     pub fn check_single_launch(&self) -> Result<()> {
         if self.running() {
             Err(AppError::Invalid(tr!("A batch is still running.")))
@@ -218,22 +152,16 @@ impl Bulk {
         }
     }
 
-    /// Starts a single launch (button, tray): refused while a batch, an auto-rejoin or another
-    /// launch runs, so launches go one at a time (DESIGN §6). In flight until the guard drops.
     pub fn begin_single_launch(&self) -> Result<Busy<'_>> {
         self.check_single_launch()?;
-        // Taken atomically, so two launches asked for at once can't both start.
         self.launches.compare_exchange(0, 1, Ordering::SeqCst, Ordering::SeqCst).map_err(|_| AppError::Invalid(launching()))?;
         Ok(Busy(&self.launches))
     }
 
-    /// A batch, launch or auto-rejoin is running.
     pub fn any_busy(&self) -> bool {
         self.running() || self.rejoining.load(Ordering::SeqCst) > 0 || self.launches.load(Ordering::SeqCst) > 0
     }
 
-    /// Asks the running batch to stop after its current step. `NotFound` when `batch_id` isn't
-    /// the current batch; Ok (no-op) when it already finished.
     pub fn cancel(&self, batch_id: &str) -> Result<()> {
         match self.batch().as_ref() {
             Some(b) if b.progress.batch_id == batch_id => {
@@ -255,20 +183,7 @@ impl Default for Bulk {
     }
 }
 
-/// Validates `req` and starts the runner (module docs) on the async runtime; returns the new
-/// batch id (a UUID). Fails before anything starts when:
-/// - `account_ids` is empty or has duplicates → `Invalid`;
-/// - an id isn't a stored account with a valid cookie → `Invalid("<name> can't launch: ...")`
-///   (`NotFound` for an unknown id);
-/// - a batch is still running → `Invalid("A batch is already running.")`;
-/// - an auto-rejoin is closing or launching → `Invalid("A rejoin is in progress, ...")`;
-/// - an account already has a client starting, joining or in game → `Invalid`;
-/// - more than one account while multi-instance isn't active (after trying to take it, see
-///   `commands::retake_multi`) → `Invalid("Turn on multi-instance to launch several accounts.")`
-///   or the lock's own message when Roblox is running;
-/// - the vault is locked → `Locked`.
-///
-/// `delay_ms` is clamped to 2 000..=60 000.
+// -- Main func
 pub fn start(app: AppHandle, mut req: BulkRequest) -> Result<String> {
     req.fps_cap = crate::commands::launch_fps(req.fps_cap)?;
     let s = app.state::<App>();
@@ -316,7 +231,6 @@ pub fn start(app: AppHandle, mut req: BulkRequest) -> Result<String> {
             return Err(AppError::Invalid(rejoining()));
         }
         let last = batch.replace(Batch { progress: progress.clone(), cancel: cancel.clone() });
-        // After registering: an install starting now sees this batch, one already running is seen here.
         if s.update.installing() {
             *batch = last;
             return Err(AppError::Invalid(crate::commands::installing()));
@@ -329,8 +243,6 @@ pub fn start(app: AppHandle, mut req: BulkRequest) -> Result<String> {
     Ok(progress.batch_id)
 }
 
-/// The fullest server that still fits `n` more players with one seat to spare; else the
-/// fullest that fits exactly; None when none fits. Ids that aren't GUIDs are skipped.
 pub fn choose_server(servers: &[GameServer], n: usize) -> Option<String> {
     let n = i64::try_from(n).ok()?;
     let fullest = |spare: i64| {
@@ -343,17 +255,12 @@ pub fn choose_server(servers: &[GameServer], n: usize) -> Option<String> {
     fullest(1).or_else(|| fullest(0)).map(|s| s.id.clone())
 }
 
-/// `delay_ms` (clamped 2 000..=60 000) plus a random ±1 s, never below 1 s.
 pub fn jittered(delay_ms: u32) -> Duration {
     let jitter = (Uuid::new_v4().as_u128() % 2_001) as i64 - 1_000;
     let ms = i64::from(delay_ms.clamp(MIN_DELAY, MAX_DELAY)) + jitter;
     Duration::from_millis(ms.max(1_000) as u64)
 }
 
-/// The batch stage a started client is at: `starting` → `Starting`, `joining` → `Joining`,
-/// `inGame` → `InGame`, `disconnected` → `Done` when its account allows disconnects, else
-/// `Failed` with the instance's note (or "Disconnected"); `exited` → `Failed` with the note
-/// (or "Closed").
 pub fn stage_of(instance: &Instance, allow_disconnect: bool) -> BulkStage {
     let failed = |default: fn() -> String| BulkStage::Failed { message: instance.note.clone().unwrap_or_else(default) };
     match instance.state {
@@ -366,13 +273,9 @@ pub fn stage_of(instance: &Instance, allow_disconnect: bool) -> BulkStage {
     }
 }
 
-/// How a batch answers Roblox's 403s (pure). ponytail: only this batch slows down, not the launches
-/// and rejoins after it; a shared cooldown if logs show those get refused too.
 #[derive(Default)]
 struct Pace {
-    /// Refusals so far: the delay stays doubled for each.
     refusals: u32,
-    /// Refusals since an account last got through.
     in_a_row: u32,
 }
 
@@ -381,7 +284,6 @@ impl Pace {
         backoff(delay_ms, self.refusals)
     }
 
-    /// One more refusal; true when the batch has to stop.
     fn refused(&mut self) -> bool {
         self.refusals += 1;
         self.in_a_row += 1;
@@ -393,7 +295,6 @@ impl Pace {
     }
 }
 
-/// One account of a batch, as the runner needs it.
 struct Account {
     id: i64,
     user_id: i64,
@@ -401,7 +302,6 @@ struct Account {
     allow_disconnect: bool,
 }
 
-/// A running batch: owns nothing but its id; progress lives in `App.bulk`.
 struct Run {
     app: AppHandle,
     batch_id: String,
@@ -429,7 +329,6 @@ impl Run {
         }
     }
 
-    /// Every launch in order; `Some(why)` when the batch has to stop.
     async fn launch_all(&self, req: &BulkRequest) -> Option<String> {
         let (mut server, mut follow) = (None, None);
         if req.same_server != SameServer::Off {
@@ -453,7 +352,6 @@ impl Run {
             if i > 0 && !s.multi.is_active() {
                 return Some(tr!("Multi-instance was turned off. Turn it on."));
             }
-            // Ids are reused: the account picked must still be this one, with a valid cookie.
             match s.db.account(a.id) {
                 Ok(x) if x.user_id == a.user_id => {
                     if let Some(why) = cant_launch(x.status) {
@@ -499,7 +397,6 @@ impl Run {
                             }
                             true
                         } else {
-                            // The first client that gets through leads when the rest follow it.
                             if let Some(place_id) = follow.take() {
                                 match self.followed(a, &inst.id, place_id).await {
                                     Err(why) => return Some(why),
@@ -545,8 +442,6 @@ impl Run {
         None
     }
 
-    /// Closes a client Roblox refused and waits until it counts as gone, so that its account can
-    /// launch again. `Some(why)` when the batch has to stop meanwhile.
     async fn close_refused(&self, i: usize, id: &str) -> Option<String> {
         self.update(|p| p.items[i].instance_id = None);
         let s = self.app.state::<App>();
@@ -560,8 +455,6 @@ impl Run {
         self.wait(CLOSE_WAIT, || self.instance(id).is_none_or(|x| x.state == InstanceState::Exited)).await
     }
 
-    /// The server everyone is sent to (`PickFirst`), or the place whose server the rest follow
-    /// the first started client into (module docs, step 1).
     async fn same_server(&self, req: &BulkRequest) -> (Option<(i64, String)>, Option<i64>) {
         let s = self.app.state::<App>();
         let first = &self.accounts[0];
@@ -590,9 +483,6 @@ impl Run {
         (None, Some(place_id))
     }
 
-    /// The server the leading client went to: from its log (up to 90 s), else from its own
-    /// presence, only when that shows it in game in `place_id`'s game (it may be playing
-    /// something else elsewhere). `Err(why)` when the batch has to stop meanwhile.
     async fn followed(
         &self,
         a: &Account,
@@ -619,8 +509,6 @@ impl Run {
         Ok(rows.iter().find(|p| p.user_id == a.user_id).and_then(|p| presence_server(p, place_id)))
     }
 
-    /// Mirrors the started clients until `done()` or `max`; `Some(why)` on cancel or when a
-    /// client signed in as another account.
     async fn wait(&self, max: Duration, done: impl Fn() -> bool) -> Option<String> {
         let end = Instant::now() + max;
         loop {
@@ -638,7 +526,6 @@ impl Run {
         }
     }
 
-    /// Every started client's state into its item; `Some(why)` when one must stop the batch.
     fn mirror(&self) -> Option<String> {
         let s = self.app.state::<App>();
         let mut stop = None;
@@ -649,7 +536,6 @@ impl Run {
                         let why = mirror_item(item, &inst, a);
                         stop = stop.take().or(why);
                     }
-                    // Only ended entries leave the tracker (Clear ended, pruning).
                     Some(None) => gone(item),
                     None => {}
                 }
@@ -670,7 +556,6 @@ impl Run {
         self.update(|p| p.items[i].stage = stage);
     }
 
-    /// Keeps the first note.
     fn note(&self, note: String) {
         log::info!("bulk batch {}: {note}", self.batch_id);
         self.update(|p| {
@@ -678,7 +563,6 @@ impl Run {
         });
     }
 
-    /// Changes this batch's progress and emits it when anything changed.
     fn update(&self, f: impl FnOnce(&mut BulkProgress)) {
         let s = self.app.state::<App>();
         let changed = {
@@ -694,8 +578,6 @@ impl Run {
     }
 }
 
-/// One page of the place's servers (Recommended, full ones left out; the fullest first if
-/// Roblox refuses Recommended for this account) and `choose_server`.
 async fn pick_server(
     api: &crate::roblox_api::Client,
     account_id: i64,
@@ -711,7 +593,6 @@ async fn pick_server(
     Ok(choose_server(&page.servers, n))
 }
 
-/// A new batch: every account `Queued`, the delay clamped.
 fn new_progress(batch_id: String, req: &BulkRequest, accounts: &[Account]) -> BulkProgress {
     let queued =
         |a: &Account| BulkItem { account_id: a.id, user_id: a.user_id, stage: BulkStage::Queued, instance_id: None };
@@ -728,12 +609,10 @@ fn new_progress(batch_id: String, req: &BulkRequest, accounts: &[Account]) -> Bu
     }
 }
 
-/// Alias, else display name, else username.
 pub(crate) fn name_of(a: &AccountSummary) -> String {
     [&a.alias, &a.display_name, &a.username].into_iter().find(|n| !n.trim().is_empty()).cloned().unwrap_or_default()
 }
 
-/// Why an account can't be in a batch (None when its cookie is valid).
 fn cant_launch(status: AccountStatus) -> Option<String> {
     match status {
         AccountStatus::Valid => None,
@@ -743,7 +622,6 @@ fn cant_launch(status: AccountStatus) -> Option<String> {
     }
 }
 
-/// A launch error that stops the batch (why and what to do); None when only that item fails.
 fn stop_reason(e: &AppError, name: &str) -> Option<String> {
     match e {
         AppError::Challenge => {
@@ -754,8 +632,6 @@ fn stop_reason(e: &AppError, name: &str) -> Option<String> {
     }
 }
 
-/// Mirrors one started client into its item; `Some(why)` when it signed in as another account
-/// or Roblox wants a human check. A refused sign-in is `launch_all`'s to answer.
 fn mirror_item(item: &mut BulkItem, inst: &Instance, a: &Account) -> Option<String> {
     let name = &a.name;
     let why = match inst.note.as_deref() {
@@ -780,27 +656,23 @@ fn mirror_item(item: &mut BulkItem, inst: &Instance, a: &Account) -> Option<Stri
     Some(why)
 }
 
-/// A started client that left the tracker: it ended.
 fn gone(item: &mut BulkItem) {
     if !matches!(item.stage, BulkStage::Failed { .. }) {
         item.stage = BulkStage::Failed { message: crate::instances::closed() };
     }
 }
 
-/// The leader's server from its own presence, only when it is in game in `place_id`'s game.
 fn presence_server(p: &UserPresence, place_id: i64) -> Option<(i64, String)> {
     const IN_GAME: i64 = 2;
     let same_game = p.place_id == Some(place_id) || p.root_place_id == Some(place_id);
     if p.user_presence_type == IN_GAME && same_game { server_of(p.place_id, p.game_id.as_deref()) } else { None }
 }
 
-/// A server to send the rest to: a known place and a GUID job id.
 fn server_of(place_id: Option<i64>, job_id: Option<&str>) -> Option<(i64, String)> {
     let job_id = job_id.filter(|j| is_uuid(j))?;
     Some((place_id.filter(|&p| p > 0)?, job_id.to_owned()))
 }
 
-/// What one account launches into: the shared server once known, else the target as given.
 fn target_for(given: &LaunchTarget, server: Option<&(i64, String)>) -> LaunchTarget {
     match server {
         Some((place_id, job_id)) => LaunchTarget::Server { place_id: *place_id, job_id: job_id.clone() },
@@ -808,8 +680,6 @@ fn target_for(given: &LaunchTarget, server: Option<&(i64, String)>) -> LaunchTar
     }
 }
 
-/// Ends the batch early: what hasn't launched is `Cancelled`, `stopped` says why (and, when
-/// something was cancelled for a reason, what to do next).
 fn halt(p: &mut BulkProgress, why: String) {
     let mut cancelled = false;
     for item in &mut p.items {
@@ -824,7 +694,6 @@ fn halt(p: &mut BulkProgress, why: String) {
     });
 }
 
-/// Every started client is in game, done or ended.
 fn settled(p: &BulkProgress) -> bool {
     p.items
         .iter()
@@ -836,7 +705,6 @@ fn settled(p: &BulkProgress) -> bool {
 mod tests {
     use super::*;
 
-    // The notes in English (tests run in English).
     const WRONG_ACCOUNT: &str = "Signed in as another account";
     const CHALLENGED: &str = "Roblox wants a human check";
 
@@ -864,6 +732,7 @@ mod tests {
             rejoins: 0,
             limits: Default::default(),
             anti_afk: true,
+            muted: false,
             afk_at: None,
             throttled: false,
             micro: false,
@@ -890,16 +759,12 @@ mod tests {
     #[test]
     fn choose_server_prefers_the_fullest_with_a_spare_seat() {
         let (a, b, c, d) = (guid(1), guid(2), guid(3), guid(4));
-        // n = 3: b (33/35) doesn't fit; d (32/35) fits exactly; a (30/35) and c (20/35) have a spare seat.
         let list = [server(&c, 20, 35), server(&b, 33, 35), server(&d, 32, 35), server(&a, 30, 35)];
         assert_eq!(choose_server(&list, 3), Some(a.clone()));
-        // No spare seat anywhere: the fullest exact fit.
         let exact = [server(&b, 33, 35), server(&d, 32, 35), server(&c, 31, 34)];
         assert_eq!(choose_server(&exact, 3), Some(d.clone()));
-        // Nothing fits.
         assert_eq!(choose_server(&[server(&b, 33, 35), server(&a, 35, 35)], 3), None);
         assert_eq!(choose_server(&[], 1), None);
-        // Duplicates (pages repeat servers) change nothing.
         assert_eq!(choose_server(&[server(&a, 30, 35), server(&c, 20, 35), server(&a, 30, 35)], 3), Some(a.clone()));
     }
 
@@ -910,7 +775,6 @@ mod tests {
         assert_eq!(choose_server(&list, 2), None);
         list.push(server(&guid(9), 5, 35));
         assert_eq!(choose_server(&list, 2), Some(guid(9)));
-        // A negative player count is nonsense, not room.
         assert_eq!(choose_server(&[server(&guid(1), -5, 10)], 2), None);
     }
 
@@ -1002,19 +866,15 @@ mod tests {
         let b = Bulk::new();
         let (t0, gap) = (Instant::now(), Duration::from_secs(5));
         assert_eq!(b.reserve(t0, gap).0, Duration::ZERO, "the first goes at once");
-        // Two asked for at once queue up one gap apart.
         assert_eq!(b.reserve(t0 + Duration::from_secs(1), gap).0, Duration::from_secs(4));
         let (wait, slot) = b.reserve(t0 + Duration::from_secs(1), gap);
         assert_eq!(wait, Duration::from_secs(9));
-        // A failed launch gives its slot back: the next one takes it.
         b.release(slot);
         assert_eq!(b.reserve(t0 + Duration::from_secs(1), gap).0, Duration::from_secs(9));
-        // Not when another queued behind it meanwhile.
         let (_, slot) = b.reserve(t0 + Duration::from_secs(1), gap);
         b.reserve(t0 + Duration::from_secs(1), gap);
         b.release(slot);
         assert_eq!(b.reserve(t0 + Duration::from_secs(1), gap).0, Duration::from_secs(24));
-        // Long after: at once again.
         assert_eq!(b.reserve(t0 + Duration::from_secs(60), gap).0, Duration::ZERO);
         assert_eq!(Bulk::new().cooldown(gap).0, Duration::ZERO);
     }
@@ -1058,7 +918,6 @@ mod tests {
         let why = mirror_item(&mut it, &instance(InstanceState::Joining, Some(WRONG_ACCOUNT)), &alt).unwrap();
         assert!(why.starts_with("Alt 1's client signed in as another account"), "{why}");
         assert_eq!(it.stage, failed(WRONG_ACCOUNT));
-        // A human check stops it too; other notes only mirror.
         let why = mirror_item(&mut it, &instance(InstanceState::Joining, Some(CHALLENGED)), &alt).unwrap();
         assert!(why.starts_with("Roblox wants a human check for Alt 1"), "{why}");
         assert_eq!(it.stage, failed(CHALLENGED));
@@ -1066,7 +925,6 @@ mod tests {
         assert_eq!(mirror_item(&mut it, &instance(InstanceState::Joining, Some(replaced)), &alt), None);
         assert_eq!(it.stage, BulkStage::Joining);
 
-        // A client that left the tracker ended; an earlier failure is kept.
         let mut it = item(BulkStage::Joining, true);
         gone(&mut it);
         assert_eq!(it.stage, failed("Closed"));
@@ -1087,7 +945,6 @@ mod tests {
             universe_id: None,
         };
         assert_eq!(presence_server(&row(2, 1818, 1818), 1818), Some((1818, guid(1))));
-        // A sub-place of the game counts (by its root place).
         assert_eq!(presence_server(&row(2, 77, 1818), 1818), Some((77, guid(1))));
         assert_eq!(presence_server(&row(2, 5, 5), 1818), None, "another game");
         assert_eq!(presence_server(&row(1, 1818, 1818), 1818), None, "online, not in game");
@@ -1116,7 +973,6 @@ mod tests {
         assert_eq!(stages, [BulkStage::InGame, failed("HTTP 500"), cancelled.clone(), cancelled.clone(), cancelled]);
         assert_eq!((p.stopped.as_deref(), p.done), (Some("Cancelled"), false));
 
-        // A reason says what to do only when something was cancelled.
         let mut stopped = fresh.clone();
         halt(&mut stopped, "The vault locked. Unlock it.".into());
         assert_eq!(stopped.stopped.as_deref(), Some("The vault locked. Unlock it, then launch the accounts that were cancelled."));

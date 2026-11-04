@@ -1,10 +1,17 @@
-// Square-cut 16px line icons, drawn to match the design canvas.
 const paths = {
   search: <><rect x="2" y="2" width="9" height="9" /><path d="M10.5 10.5L14 14" /></>,
   sun: <><rect x="5" y="5" width="6" height="6" /><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3 3l1.5 1.5M11.5 11.5L13 13M13 3l-1.5 1.5M4.5 11.5L3 13" /></>,
   moon: <path d="M13.5 9.5A6 6 0 0 1 6.5 2.5a6 6 0 1 0 7 7z" />,
   lock: <><rect x="3" y="7" width="10" height="7" /><path d="M5 7V3h6v4" /></>,
   accounts: <><rect x="5" y="2" width="6" height="6" /><path d="M2 14v-2h12v2" /></>,
+  friends: (
+    <>
+      <rect x="1.5" y="2.5" width="4" height="4" />
+      <path d="M0.5 13v-1.5A2 2 0 0 1 2.5 9.5h2a2 2 0 0 1 2 2V13" />
+      <rect x="10.5" y="2.5" width="4" height="4" />
+      <path d="M9.5 13v-1.5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2V13" />
+    </>
+  ),
   settings: <><rect x="5" y="5" width="6" height="6" /><path d="M8 1v3M8 12v3M1 8h3M12 8h3" /></>,
   plus: <path d="M8 2v12M2 8h12" />,
   heart: <path d="M8 14L2.4 8.4a3.2 3.2 0 0 1 4.5-4.5L8 5l1.1-1.1a3.2 3.2 0 0 1 4.5 4.5z" strokeLinejoin="round" />,
@@ -47,6 +54,7 @@ const paths = {
 
 export type IconName = keyof typeof paths;
 
+// -- Main func
 export function Icon({ name, size = 16, fill = false, className }: { name: IconName; size?: number; fill?: boolean; className?: string }) {
   return (
     <svg

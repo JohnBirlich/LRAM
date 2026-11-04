@@ -11,7 +11,6 @@ import { accountName, Avatar } from "../accounts/shared";
 import { mb } from "../monitor/MonitorView";
 import { launchBlocked, launched, launchFailed } from "./LaunchView";
 
-// Getters: labels are translated when read (at render), not once at load.
 export const STATES: Record<InstanceState, [label: string, color: string]> = {
   get starting(): [string, string] { return [t("launch.state.starting"), "var(--dim)"]; },
   get joining(): [string, string] { return [t("launch.state.joining"), "var(--blue)"]; },
@@ -21,7 +20,7 @@ export const STATES: Record<InstanceState, [label: string, color: string]> = {
 };
 
 export const isRunning = (i: Instance) => i.state !== "exited";
-/** Roblox has it running or on its way: its account can't start another. */
+
 export const isLive = (i: Instance) => i.state === "starting" || i.state === "joining" || i.state === "inGame";
 
 export function uptime(from: number, to: number) {
@@ -29,7 +28,6 @@ export function uptime(from: number, to: number) {
   return m < 60 ? t("launch.minutes", { m }) : t("launch.hoursMinutes", { h: Math.floor(m / 60), m: m % 60 });
 }
 
-/** Re-renders every `ms` so uptimes move. */
 export function useNow(ms: number) {
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
@@ -39,16 +37,16 @@ export function useNow(ms: number) {
   return now;
 }
 
-const CAPS = [0, 50, 25, 10, 5];
-/** -1: the default from Settings; 0: never. */
+const CAPS = [0, 50, 25, 10, 5, 2, 1];
+
+const tight = (cap: number | null | undefined) => !!cap && cap < 5;
+
 const TRIMS = [-1, 0, 5, 15, 30, 60];
-/** Logical processors a mask can name (JS numbers hold 53 bits exactly). */
+
 const CORES = Math.min(53, navigator.hardwareConcurrency || 1);
-// Not bit operators: those cut numbers to 32 bits.
 const hasCore = (mask: number, c: number) => Math.floor(mask / 2 ** c) % 2 === 1;
 const allCores = 2 ** CORES - 1;
 
-/** One client's limits, from its menu on Home: CPU cap, efficiency mode, trimming, cores and anti-AFK. */
 export function LimitsDialog({ instanceId, name, onClose }: { instanceId: string | null; name: string; onClose: () => void }) {
   const inst = useInstances().data?.find((i) => i.id === instanceId && isRunning(i));
   return (
@@ -95,6 +93,7 @@ function LimitsBody({ inst }: { inst: Instance }) {
           onChange={(c) => set({ cpuCap: c || null })}
         />
       </div>
+      {tight(inst.limits.cpuCap) && <p className="state text-orange">{t("settings.cpuTinyHint")}</p>}
       <div className="flex items-center justify-between gap-2">
         <span>{t("launch.limits.eco")}</span>
         <Switch label={t("launch.limits.eco")} checked={inst.limits.eco} onChange={(eco) => set({ eco })} />
@@ -141,6 +140,13 @@ function LimitsBody({ inst }: { inst: Instance }) {
       </fieldset>
       <div className="flex items-center justify-between gap-2">
         <span className="flex flex-col">
+          <span>{t("launch.limits.mute")}</span>
+          <span className="mono text-xs text-dim">{inst.muted ? t("launch.limits.muted") : t("launch.limits.notMuted")}</span>
+        </span>
+        <Switch label={t("launch.limits.mute")} checked={inst.muted} onChange={(muted) => api.instanceSetMuted(inst.id, muted).catch(toastError)} />
+      </div>
+      <div className="flex items-center justify-between gap-2">
+        <span className="flex flex-col">
           <span>{t("launch.limits.antiAfk")}</span>
           <span className="mono text-xs text-dim">
             {!afk?.enabled ? t("launch.limits.afkOff") : inst.afkAt !== null ? t("launch.limits.lastKey", { ago: uptime(inst.afkAt, Date.now()) }) : t("launch.limits.noKey")}
@@ -160,7 +166,6 @@ const KINDS: Record<CrashKind, Key> = {
   mem: "launch.crash.mem",
 };
 
-/** What LRAM recorded about an ended client: how it ended, what its log said, its log. */
 function CrashDetails({ crash: c }: { crash: Crash }) {
   return (
     <div className="well flex flex-col gap-2 px-4 py-3">
@@ -179,7 +184,6 @@ function CrashDetails({ crash: c }: { crash: Crash }) {
   );
 }
 
-/** Clients that ended, newest first, on Home: how they ended, and a way to start them again. */
 export function EndedPanel({ accounts }: { accounts: AccountSummary[] }) {
   const list = useInstances().data ?? [];
   const now = useNow(30_000);
@@ -192,7 +196,6 @@ export function EndedPanel({ accounts }: { accounts: AccountSummary[] }) {
   const running = list.filter(isRunning);
   const ended = list.filter((i) => !isRunning(i));
 
-  /** Same account, same target. */
   const relaunch = (i: Instance, a: AccountSummary) => {
     setRelaunching(i.id);
     api
@@ -200,7 +203,6 @@ export function EndedPanel({ accounts }: { accounts: AccountSummary[] }) {
       .then((info) => launched(a, info), launchFailed)
       .finally(() => setRelaunching(null));
   };
-  // Starting next to running clients needs multi-instance, as a bulk launch does.
   const blocked = launchBlocked(running.length > 0, multi, batch) ?? (relaunching ? t("launch.launching") : null);
 
   if (!ended.length) return null;
@@ -249,8 +251,6 @@ export function EndedPanel({ accounts }: { accounts: AccountSummary[] }) {
 
 const HOLD_MS = 1000;
 
-/** The panic button: held for a second (pointer, Space or Enter), it cancels the batch, stops
- * rejoins and restarts, and terminates every Roblox client at once, LRAM's or not. */
 export function KillAllButton() {
   const qc = useQueryClient();
   const [held, setHeld] = useState(false);
@@ -290,7 +290,6 @@ export function KillAllButton() {
       data-busy={busy || undefined}
       disabled={busy}
       title={t("launch.kill.hint")}
-      // Screen readers and voice control activate without pressing anything to hold.
       onClick={(e) => e.detail === 0 && !busy && !held && fire()}
       onPointerDown={(e) => e.button === 0 && start()}
       onPointerUp={stop}
@@ -319,8 +318,6 @@ function noticeSeen() {
   }
 }
 
-/** Turns multi-instance on or off. The first time it is turned on, Roblox's stance on several
- * clients is shown first (DESIGN §2); render `dialog` next to the switch. */
 export function useMultiToggle(onStatus?: (s: MultiInstanceStatus) => void) {
   const qc = useQueryClient();
   const [asking, setAsking] = useState(false);
@@ -339,7 +336,6 @@ export function useMultiToggle(onStatus?: (s: MultiInstanceStatus) => void) {
         try {
           localStorage.setItem(NOTICE_KEY, "1");
         } catch {
-          // Shown again next time; harmless.
         }
         setAsking(false);
         void set(true);
@@ -353,19 +349,17 @@ export function useMultiToggle(onStatus?: (s: MultiInstanceStatus) => void) {
   return { toggle, dialog };
 }
 
-/** Says when multi-instance stands in the way, with the way out: turned off while several accounts
- * are `wanted` or a launch `replaces` the running client, or wanted but held up by a Roblox that
- * already runs. */
+// -- Main func
 export function MultiNotice({ wanted, replaces, className = "" }: { wanted: boolean; replaces?: boolean; className?: string }) {
   const qc = useQueryClient();
   const status = useMultiStatus().data;
-  const [confirm, setConfirm] = useState<"close" | "takeOver" | null>(null);
+  const [confirm, setConfirm] = useState<"close" | null>(null);
   const [busy, setBusy] = useState(false);
   const apply = (s: MultiInstanceStatus) => qc.setQueryData(qk.multi, s);
   const { toggle, dialog } = useMultiToggle();
   const run = () => {
     setBusy(true);
-    (confirm === "takeOver" ? api.multiInstanceTakeOver() : api.robloxCloseAll(false))
+    api.robloxCloseAll(false)
       .then(apply, toastError)
       .finally(() => {
         setBusy(false);
@@ -396,9 +390,6 @@ export function MultiNotice({ wanted, replaces, className = "" }: { wanted: bool
                   <button className="btn btn-sm" onClick={() => setConfirm("close")}>
                     {t("launch.multi.closeRobloxEllipsis")}
                   </button>
-                  <button className="btn btn-sm" onClick={() => setConfirm("takeOver")}>
-                    {t("launch.multi.takeOverEllipsis")}
-                  </button>
                 </div>
               ) : (
                 <button className="btn btn-sm" onClick={() => api.multiInstanceSet(true).then(apply, toastError)}>{t("common.tryAgain")}</button>
@@ -415,15 +406,6 @@ export function MultiNotice({ wanted, replaces, className = "" }: { wanted: bool
         title={t("launch.multi.closeTitle")}
         text={t("launch.multi.closeText", { count: status.blockedBy.length })}
         confirmLabel={t("launch.multi.closeRoblox")}
-      />
-      <ConfirmDialog
-        open={confirm === "takeOver"}
-        onClose={() => !busy && setConfirm(null)}
-        onConfirm={run}
-        busy={busy}
-        title={t("launch.multi.takeOverTitle")}
-        text={t("launch.multi.takeOverText", { count: status.blockedBy.length })}
-        confirmLabel={t("launch.multi.takeOver")}
       />
       {dialog}
     </>

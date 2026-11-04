@@ -20,7 +20,6 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      # tsc and the Vite build, which also gives tauri::generate_context! its ../dist.
       - run: npm run build
       - uses: dtolnay/rust-toolchain@stable
         with:

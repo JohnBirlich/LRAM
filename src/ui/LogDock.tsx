@@ -21,6 +21,7 @@ function levelOf(text: string, prev: Level): Level {
 
 let nextId = 0;
 
+// -- Main func
 export function LogDock() {
   const [open, setOpen] = useState(false);
   const [lines, setLines] = useState<Line[]>([]);

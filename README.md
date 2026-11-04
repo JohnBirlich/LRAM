@@ -7,8 +7,9 @@
 A fast, local-only account manager and multi-client launcher for Windows.<br>
 Your cookies stay encrypted on your PC. Nothing is sent anywhere except Roblox.
 
-<sub>**LRAM** — Local Roblox Account Manager. A personal build: the built-in updater is off (no
-release key ships with it), donations and the community Discord server of the original project are
+<sub>**LRAM** — Local Roblox Account Manager, a fork of **[RoALT](https://github.com/inspectsoftware/RoALT)**
+by **[inspectsoftware](https://github.com/inspectsoftware)**. A personal build: the built-in updater is off
+(no release key ships with it), donations and the community Discord server of the original project are
 not part of it, and releases are installed by hand.</sub>
 
 [![Latest release](https://img.shields.io/github/v/release/JohnBirlich/RAM?style=for-the-badge&color=b4f000&labelColor=1a1a1a&label=release)](https://github.com/JohnBirlich/RAM/releases/latest)
@@ -41,13 +42,14 @@ not part of it, and releases are installed by hand.</sub>
 
 | For everyone | For developers |
 |---|---|
-| [What is LRAM?](#-what-is-roalt) | [Architecture](#-architecture) |
+| [What is LRAM?](#-what-is-lram) | [Architecture](#-architecture) |
 | [Features](#-features) | [Tech stack](#-tech-stack) |
 | [Install](#-install) | [Build from source](#-build-from-source) |
 | [Quick start](#-quick-start) | [Project layout](#-project-layout) |
 | [Safety and privacy](#-safety-and-privacy) | [Testing](#-testing) |
 | [FAQ](#-faq) | [Contributing](#-contributing) |
 | [Community](#-community) | [Cut a release](#-cut-a-release) |
+| [A fork of RoALT](#-a-fork-of-roalt) | |
 
 <br>
 
@@ -62,6 +64,9 @@ and only ever one client open at a time. LRAM removes all of that.
 - **Run several Roblox windows side by side**, and let LRAM bring back any that crash or get kicked.
 
 It runs entirely on your PC. There is no LRAM account, no LRAM server and no tracking.
+
+LRAM is a fork of **[RoALT](https://github.com/inspectsoftware/RoALT)**, the local-only Roblox account
+manager by **[inspectsoftware](https://github.com/inspectsoftware)** — see [A fork of RoALT](#-a-fork-of-roalt).
 
 | | |
 |---|---|
@@ -236,7 +241,7 @@ for the amount you pick, and you confirm the purchase on Roblox.
 | 📤 **Performance profiles** | Export your performance settings to a file or a share code, or import someone else's: you see what changes, then apply it. Only performance settings travel, never accounts, passwords, launch arguments or hotkeys. |
 | 📶 **Bandwidth** | One upload cap for all Roblox clients through a Windows QoS policy. Applied only when you click Apply (admin prompt); cleared when Windows restarts. |
 | 💤 **Anti-AFK** | Off by default, with a switch on Home. While you are away from the PC, every few minutes each client is briefly brought to the front and gets one Space press, so Roblox doesn't kick it after 20 idle minutes. Hidden and minimized clients get it too, invisibly. Stops the moment you touch the mouse. Or **in the background**: a Tab press is posted to the window without bringing it to the front, even when minimized (Roblox may not count it in every game; auto-rejoin stays the fallback). Per-client opt-out. |
-| 🔔 **Discord** | Crash, disconnect, restart and batch alerts, plus an opt-in alert when a client gets into a game. Mute alerts per account. **Rich presence** (on by default, a switch in Settings): your profile shows "Playing LRAM", idling or with the game and how many alts run. |
+| 🔔 **Discord** | Crash, disconnect, restart and batch alerts, plus an opt-in alert when a client gets into a game. Mute alerts per account. |
 | 🔄 **LRAM updates** | Looks for a new LRAM on GitHub Releases at start and every 6 hours (can be turned off; *Check now* in Settings). A banner offers it; *Update now* downloads it, checks its release signature, installs it silently and restarts LRAM. Never installs on its own. |
 | 🧰 **Comfort** | Tray menu with favourites, close to tray, relaunch an ended client in one click, movable data folder, keyboard shortcuts. Dark, light or system theme, any accent colour, and your own background image, with a choice of how much the theme covers it. Optional skip of the splash screen. Your LRAM and Roblox versions at the top of Settings. |
 
@@ -359,7 +364,7 @@ In **Settings → Launching**, turn on **Auto-rejoin** (and, if you like, **Auto
 - **Never** sends telemetry. There is no LRAM server and no LRAM account.
 - **Never** writes cookies, tickets or launch arguments to its logs.
 - **Never** changes Windows settings, except the opt-in bandwidth limit.
-- **Never** contacts Discord's servers unless you paste a webhook. Rich presence goes only to the Discord app on your PC.
+- **Never** contacts Discord's servers unless you paste a webhook.
 
 </td>
 </tr>
@@ -369,8 +374,6 @@ In **Settings → Launching**, turn on **Auto-rejoin** (and, if you like, **Auto
 <summary><b>The details</b></summary>
 <br>
 
-- **Discord rich presence (on by default).** LRAM tells the Discord app on this PC, over its local pipe, the game's
-  name and how many clients run. Discord shows that on your profile. Turn it off under **Settings → Show on Discord**.
 - **Discord alerts (opt-in).** If you paste a webhook in the Discord tab, alerts go to that webhook on `discord.com`. The URL is
   kept encrypted in the vault, and messages name accounts by display name and username only, with mentions disabled.
   Nothing is sent while the vault is locked.
@@ -429,6 +432,20 @@ doesn't officially support running several clients at once. Use LRAM only with a
 
 The installer isn't code-signed yet, so SmartScreen doesn't recognise it. Check the SHA-256 against
 `SHA256SUMS.txt` on the release, then choose **More info → Run anyway**.
+
+</details>
+
+<details>
+<summary><b>Why does my antivirus or VirusTotal flag the installer?</b></summary>
+<br>
+
+A few engines (Arctic Wolf, DeepInstinct, SecureAge, Skyhigh) score unsigned installers on
+reputation and entropy rather than on anything the file does, and a compressed Inno Setup installer
+looks like a packer to them. Windows Defender can go further and convict a build from its behaviour
+alone (`Behavior:Win32/DefenseEvasion.A!ml`) — a cloud guess, pinned to that file's hash, and only
+Microsoft can clear it. Code signing is the fix and is not done yet; [docs/ANTIVIRUS.md](docs/ANTIVIRUS.md)
+has what each flag means, what LRAM does that looks suspicious and what was removed, how to report
+it, and how to check the file yourself.
 
 </details>
 
@@ -528,7 +545,7 @@ flowchart LR
 | [`vault/`](src-tauri/src/vault) | Envelope encryption: one random data key encrypts every secret (AES-256-GCM, row-bound AAD). The key is wrapped with DPAPI, or with an Argon2id key from the master password and then DPAPI. Windows Hello re-auth, `.lram` backups. |
 | [`roblox_api/`](src-tauri/src/roblox_api) | The one typed Roblox client. Every URL in `endpoints.rs`. CSRF from the real request's 403, per-route queues driven by `x-ratelimit-*`, rotated `.ROBLOSECURITY` saved atomically, three error-body shapes parsed. |
 | [`launcher/`](src-tauri/src/launcher) | `target.rs` parses any pasted link locally; `uri.rs` builds the `roblox-player:` URI exactly like the website; `bulk.rs` runs batches and same-server; `client_settings.rs` the FPS cap and lowest graphics; `flags.rs` the rendering flags; `update.rs` + `authenticode.rs` install Roblox updates after `WinVerifyTrust`. |
-| [`instances/`](src-tauri/src/instances) | `tracker.rs` ties each client to its account by PID, start time and log file; `logwatch.rs` reads job IDs and disconnects; `rejoin.rs` and the crash breaker; `limits.rs` CPU caps, affinity, efficiency mode, trims; `metrics.rs`; `multi.rs` the singleton lock and take-over; `capture.rs` live previews; `window.rs` hidden clients, micro and tile; `resize.rs` free resizing; `qos.rs`; `afk.rs`. |
+| [`instances/`](src-tauri/src/instances) | `tracker.rs` ties each client to its account by PID, start time and log file; `logwatch.rs` reads job IDs and disconnects; `rejoin.rs` and the crash breaker; `limits.rs` CPU caps, affinity, efficiency mode, trims; `metrics.rs`; `multi.rs` the singleton lock; `capture.rs` live previews; `window.rs` hidden clients, micro and tile; `resize.rs` free resizing; `qos.rs`; `afk.rs`. |
 | [`discord.rs`](src-tauri/src/discord.rs) | Webhook alerts: host-checked URL, events coalesced every 2 s, `retry_after` honoured. |
 | [`webview.rs`](src-tauri/src/webview.rs) | Sign-in and session windows on temporary WebView2 profiles, deleted after use. |
 | [`storage/`](src-tauri/src/storage) | SQLite through `rusqlite` with numbered migrations. Running clients live in memory only. |
@@ -553,8 +570,8 @@ flowchart LR
 
 Every sample or change opens a short-lived handle checked against the client's start time, with only the right it
 needs: `PROCESS_QUERY_LIMITED_INFORMATION` for metrics, `PROCESS_SET_QUOTA` for trims, `PROCESS_SET_INFORMATION` for
-affinity and efficiency mode. Never `PROCESS_VM_READ`; `PROCESS_DUP_HANDLE` only for a take-over you start. Only the
-CPU-cap job handle is kept.
+affinity and efficiency mode. Never `PROCESS_VM_READ` and never `PROCESS_DUP_HANDLE`: nothing in LRAM reaches into a client's
+handles or memory. Only the CPU-cap job handle is kept.
 
 </details>
 
@@ -671,10 +688,42 @@ Bug reports, ideas and pull requests are welcome.
 
 <br>
 
+## 🧬 A fork of RoALT
+
+LRAM is a fork of **[RoALT](https://github.com/inspectsoftware/RoALT)**, the local-only Roblox account
+manager written by **[inspectsoftware](https://github.com/inspectsoftware)**. The architecture, the
+encrypted vault, the launcher, the instance tracker and the whole original feature set are that
+project's work, and the credit for them belongs to its author.
+
+What this fork changes:
+
+- **Name and identity**: LRAM instead of RoALT, its own icon, window title and installer.
+- **No updater, no donations, no community Discord**: releases are downloaded and installed by hand,
+  and nothing in the app asks for money.
+- **English only**: one language, no translations to keep in sync.
+- **Its own releases**: fixes and features after the fork point (0.10.x and 0.11.x) come from the
+  reports and suggestions in `docs/REQUESTS.md` — false "Disconnected" and "Closed unexpectedly"
+  states, the first-launch "failed" report, the 403 hint, window tiling, friend requests and the
+  anti-AFK press modes.
+
+The rest of the credit is Roblox's own API and client, which do the actual work.
+
+<br>
+
+## 👥 Contributors
+
+| | Who | What |
+|---|---|---|
+| 🧑‍💻 | **[JohnBirlich](https://github.com/JohnBirlich)** — author and maintainer | The project itself: what LRAM is for, every decision about what it does and does not do, the Roblox-TOS and privacy rules, testing on real clients, the releases, and the last word on every change. By the author's own estimate, about 80% of the work; the rest is the code below. |
+| 🤖 | **Arena Agent** — AI pair-programmer | The code, docs, tests and release notes, written to those decisions in this repository's style, checked through CI before anything is merged. |
+
+<br>
+
 ## 📜 Disclaimer
 
-LRAM is an independent project, not affiliated with or endorsed by Roblox Corporation. Use it only
-with accounts you own. Roblox doesn't officially support running several clients at once and may
+LRAM is a fork of RoALT by [inspectsoftware](https://github.com/inspectsoftware) and is an independent
+project: not affiliated with or endorsed by Roblox Corporation, and not the original author's build.
+Use it only with accounts you own. Roblox doesn't officially support running several clients at once and may
 change how its client behaves at any time.
 
 <div align="center">

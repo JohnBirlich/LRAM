@@ -1,8 +1,3 @@
-//! Password-protected `.lram` backup files (portable: no DPAPI).
-//!
-//! Layout: `b"LRAMBK01" | m_kib u32le | t u32le | p u32le | salt[16] | seal(key, header, json)`
-//! where `header` is every byte before the sealed part and `key = Argon2id(password, salt)`.
-
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -14,9 +9,7 @@ use super::{Kdf, master};
 use crate::error::{AppError, Result};
 
 pub const MAGIC: &[u8; 8] = b"LRAMBK01";
-/// Backups written before the rename; they open as before.
 const LEGACY_MAGIC: &[u8; 8] = b"ROALTBK1";
-/// The header offsets below are counted from the magic's length, so the two must match.
 const _: () = assert!(MAGIC.len() == LEGACY_MAGIC.len());
 
 #[derive(Serialize, Deserialize)]
@@ -50,10 +43,8 @@ pub struct BackupAccount {
     pub color: Option<String>,
     pub favourite: bool,
     pub sort_order: i64,
-    /// Group names.
     pub groups: Vec<String>,
     pub cookie: Zeroizing<String>,
-    // Absent in backups from before 0.7; `allow_disconnect` always there after that.
     #[serde(default)]
     pub allow_disconnect: Option<bool>,
     #[serde(default)]
@@ -75,20 +66,15 @@ pub struct BackupGroup {
 }
 
 const HEADER_LEN: usize = MAGIC.len() + 3 * 4 + 16;
-/// Nonce and tag around the sealed JSON.
 const SEAL_OVERHEAD: usize = 12 + 16;
-/// Caps on the file's own KDF cost, so a crafted file cannot eat the machine.
 const MAX_M_KIB: u32 = 1024 * 1024;
 const MAX_T: u32 = 20;
 const MAX_P: u32 = 16;
 
-/// Writes atomically (temp file in the same folder, then rename).
 pub fn write(path: &Path, password: &str, payload: &BackupPayload) -> Result<()> {
     write_atomic(path, &build(MAGIC, password, payload)?)
 }
 
-/// The whole file, sealed over a header that starts with `magic` (the header is authenticated, so
-/// the magic cannot be swapped afterwards).
 fn build(magic: &[u8], password: &str, payload: &BackupPayload) -> Result<Vec<u8>> {
     let kdf = master::new_kdf();
     let mut out = magic.to_vec();
@@ -108,11 +94,9 @@ fn build(magic: &[u8], password: &str, payload: &BackupPayload) -> Result<Vec<u8
     Ok(out)
 }
 
-/// `WrongPassword` when the password (or file) does not authenticate,
-/// `Invalid("This isn't a LRAM backup.")` on a bad magic / truncated file.
+// -- Main func
 pub fn read(path: &Path, password: &str) -> Result<BackupPayload> {
     let not_backup = || AppError::Invalid(tr!("This isn't a LRAM backup."));
-    // About 2 KB per account: far above anyone's vault, and it isn't all read into memory first.
     if fs::metadata(path)?.len() > 64 << 20 {
         return Err(not_backup());
     }
@@ -133,7 +117,6 @@ pub fn read(path: &Path, password: &str) -> Result<BackupPayload> {
         not_backup()
     })?;
     let json = master::open(&key, header, sealed).map_err(|_| AppError::WrongPassword)?;
-    // The serde error could quote a cookie: only where it broke is logged.
     serde_json::from_slice(&json).map_err(|e| {
         log::warn!("backup payload unreadable ({:?} at {}:{})", e.classify(), e.line(), e.column());
         not_backup()

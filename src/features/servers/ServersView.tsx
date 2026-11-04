@@ -20,16 +20,16 @@ const ORDERS: { value: ServerOrder; label: Key }[] = [
   { value: "bestLatency", label: "servers.orderBestPing" },
 ];
 
-/** The server browser. Roblox rate-limits the list, so pages load only when asked for. */
+// -- Main func
 export function ServersView({ accounts, picked, setPicked, place, setPlace, onBatch, step, setStep }: {
   accounts: AccountSummary[];
   picked: number[];
   setPicked: Dispatch<SetStateAction<number[]>>;
   place: number | null;
   setPlace: (placeId: number) => void;
-  /** A bulk launch started; its progress shows in the Launch view. */
+
   onBatch: () => void;
-  /** Shared with the Launch view: one launch at a time, also across views. */
+
   step: string | null;
   setStep: (step: string | null) => void;
 }) {
@@ -47,13 +47,10 @@ export function ServersView({ accounts, picked, setPicked, place, setPlace, onBa
   const [loading, setLoading] = useState(false);
 
   const valid = accounts.filter((a) => a.status === "valid");
-  // In list order, which is also the bulk launch order; the first one asks Roblox.
   const chosen = valid.filter((a) => picked.includes(a.id));
   const asker = chosen[0]?.id;
-  // Recommended and Best ping need an account: without one, nothing is asked for.
   const needsAccount = asker === undefined && SIGNED_IN.includes(order);
 
-  // A game without its icon (failed or still being made) is asked for again next time.
   const game = useQuery({
     queryKey: qk.game(place),
     queryFn: () => api.gameInfo(place!),
@@ -61,14 +58,10 @@ export function ServersView({ accounts, picked, setPicked, place, setPlace, onBa
     staleTime: (q) => (q.state.data?.iconUrl ? Infinity : 0),
   });
   const g = game.data;
-  // Not gated on g.privateServers: that guest hint is false for games whose servers exist anyway.
   const view = tab;
   const pubKey = [...qk.servers, place, order, hideFull];
   const pub = useInfiniteQuery({
     queryKey: pubKey,
-    // The asking account isn't in the key: picking other accounts doesn't reload the list.
-    // Every fetch path (Load next, Try again, refetch) goes through here: no guest request for a
-    // signed-in sort.
     queryFn: ({ pageParam }) =>
       needsAccount
         ? Promise.reject({ kind: "invalid", message: t("servers.needAccountSort") })
@@ -87,7 +80,6 @@ export function ServersView({ accounts, picked, setPicked, place, setPlace, onBa
   });
   const list = view === "public" ? pub : priv;
 
-  // Pages repeat servers as players come and go; the newest copy wins.
   const servers = [...new Map(pub.data?.pages.flatMap((p) => p.servers.map((s) => [s.id, s] as const)) ?? []).values()];
   const privates = priv.data?.pages.flatMap((p) => p.servers) ?? [];
   const count = view === "public" ? servers.length : privates.length;
@@ -111,7 +103,6 @@ export function ServersView({ accounts, picked, setPicked, place, setPlace, onBa
   const noJoin = t("servers.noJoin", { name: askerName });
   const replaces = n === 1 && instances.some((i) => isRunning(i) && i.accountId !== chosen[0].id);
   const blocked = launchBlocked(n > 1 || (replaces && !!multi?.enabled), multi, batch) ?? (restricted && n === 1 ? noJoin : null);
-  // Multi-instance has its own notice, with the way out.
   const warning =
     [
       (batch && !batch.done ? t("launch.batchRunning") : null) ?? (restricted ? noJoin : null),
@@ -123,7 +114,6 @@ export function ServersView({ accounts, picked, setPicked, place, setPlace, onBa
       .join(" ") || null;
   const canJoin = !!target && n > 0 && !step && !blocked;
 
-  // A lookup that finishes after a newer Load (or after leaving the view) is dropped.
   const loads = useRef(0);
   useEffect(() => () => void loads.current++, []);
 
@@ -137,12 +127,10 @@ export function ServersView({ accounts, picked, setPicked, place, setPlace, onBa
       setTextError(p && "reason" in p ? p.reason : t("servers.pasteLink"));
       return;
     }
-    // Universe and share links need a lookup (share links with the first picked account).
     setLoading(true);
     try {
       const id = "placeId" in tgt ? tgt.placeId : await api.targetPlace(tgt, asker);
       if (mine !== loads.current) return;
-      // Loading the game already shown asks for its icon again if it was missing.
       if (id === place && g && !g.iconUrl) void game.refetch();
       setPlace(id);
       setTextError(null);
@@ -155,7 +143,6 @@ export function ServersView({ accounts, picked, setPicked, place, setPlace, onBa
     }
   }
 
-  // Page 1 again, without asking for every page loaded so far.
   const refresh = () => {
     qc.setQueryData<InfiniteData<unknown>>(
       view === "public" ? pubKey : privKey,

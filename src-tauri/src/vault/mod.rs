@@ -1,15 +1,3 @@
-//! Envelope encryption for everything secret.
-//!
-//! One random 256-bit data key encrypts every secret (AES-256-GCM, random 96-bit nonce per
-//! value, AAD = row identity). The data key itself is stored wrapped:
-//! - `Dpapi`: `DPAPI(data key)` for the current Windows user; opens without a prompt.
-//! - `Master`: `DPAPI(seal(Argon2id(password, salt), data key))`; locked until `unlock`.
-//!
-//! A master vault may also have a recovery record, the same wrap under a one-use code:
-//! `DPAPI(seal(Argon2id(code, salt), data key))`. The code itself is never stored.
-//!
-//! Switching mode only re-wraps the data key.
-
 pub mod backup;
 mod dpapi;
 mod hello;
@@ -27,7 +15,6 @@ use crate::model::VaultMode;
 pub use dpapi::{protect_with, unprotect_with};
 pub use hello::{hello_available, windows_hello};
 
-/// A secret string (cookie, password). Zeroed on drop, never printed.
 #[derive(Clone)]
 pub struct Secret(Zeroizing<String>);
 
@@ -47,12 +34,10 @@ impl fmt::Debug for Secret {
     }
 }
 
-/// AAD for a stored cookie, so a blob cannot be moved to another account's row.
 pub fn cookie_aad(user_id: i64) -> Vec<u8> {
     format!("roalt.cookie:{user_id}").into_bytes()
 }
 
-/// Argon2id parameters stored next to a master-password vault.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Kdf {
     pub salt: Vec<u8>,
@@ -61,16 +46,13 @@ pub struct Kdf {
     pub p: u32,
 }
 
-/// The `vault` table row.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VaultRecord {
     pub mode: VaultMode,
     pub wrapped_key: Vec<u8>,
-    /// `Some` in master mode only.
     pub kdf: Option<Kdf>,
 }
 
-/// The `vault_recovery` table row.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RecoveryRecord {
     pub wrapped_key: Vec<u8>,
@@ -87,25 +69,79 @@ pub struct Vault {
     inner: Mutex<Inner>,
 }
 
-/// Shortest master password accepted.
 pub const MIN_MASTER_PASSWORD: usize = 8;
 
-/// AAD for the sealed data key in master mode.
+#[derive(Clone, Copy, Debug, Default)]
+struct Attempts {
+    fails: u32,
+    until: Option<Instant>,
+}
+
+impl Attempts {
+    fn wait(fails: u32) -> u64 {
+        match fails {
+            0..=2 => 0,
+            n => (5u64 << (n - 3).min(6)).min(300),
+        }
+    }
+
+    fn left(&self) -> u64 {
+        self.until.map_or(0, |until| {
+            let left = until.saturating_duration_since(Instant::now());
+            left.as_millis().div_ceil(1000) as u64
+        })
+    }
+
+    fn refused(&self) -> Result<()> {
+        match self.left() {
+            0 => Ok(()),
+            s => Err(AppError::TooManyAttempts(s)),
+        }
+    }
+
+    fn failed(&mut self) {
+        self.fails = self.fails.saturating_add(1);
+        self.until = Some(Instant::now() + Duration::from_secs(Self::wait(self.fails)));
+    }
+
+    fn passed(&mut self) {
+        *self = Attempts::default();
+    }
+}
+
+static ATTEMPTS: Mutex<Attempts> = Mutex::new(Attempts { fails: 0, until: None });
+
+fn attempts() -> MutexGuard<'static, Attempts> {
+    ATTEMPTS.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+fn counted<T>(r: Result<T>) -> Result<T> {
+    match r {
+        Ok(v) => {
+            attempts().passed();
+            Ok(v)
+        }
+        Err(e) => {
+            if matches!(e, AppError::WrongPassword) {
+                attempts().failed();
+            }
+            Err(e)
+        }
+    }
+}
+
 const KEY_AAD: &[u8] = b"roalt.vault.key";
-/// AAD for the sealed data key in a recovery record.
 const RECOVERY_AAD: &[u8] = b"roalt.vault.recovery";
 
 type Key = Zeroizing<[u8; 32]>;
 
 impl Vault {
-    /// A new vault: random data key, DPAPI-wrapped, returned unlocked.
     pub fn create() -> Result<(Vault, VaultRecord)> {
         let key = Zeroizing::new(master::random_bytes::<32>());
         let rec = wrap_dpapi(&key)?;
         Ok((Vault::with(VaultMode::Dpapi, Some(key)), rec))
     }
 
-    /// DPAPI mode unwraps at once (unlocked). Master mode stays locked until `unlock`.
     pub fn open(rec: &VaultRecord) -> Result<Vault> {
         let key = match rec.mode {
             VaultMode::Dpapi => Some(unwrap_dpapi(rec)?),
@@ -121,13 +157,11 @@ impl Vault {
     fn guard(&self) -> MutexGuard<'_, Inner> {
         self.inner.lock().unwrap_or_else(|e| {
             log::warn!("vault lock was poisoned by an earlier panic; recovering");
-            // Cleared so this is logged once, not on every call.
             self.inner.clear_poison();
             e.into_inner()
         })
     }
 
-    /// A copy of the data key, or `Locked`.
     fn key(&self) -> Result<Key> {
         self.guard().key.clone().ok_or(AppError::Locked)
     }
@@ -140,19 +174,37 @@ impl Vault {
         self.guard().key.is_none()
     }
 
-    /// Master mode: derive, unwrap and keep the data key. `WrongPassword` on failure.
     pub fn unlock(&self, rec: &VaultRecord, password: &str) -> Result<()> {
         let key = match rec.mode {
             VaultMode::Dpapi => unwrap_dpapi(rec)?,
-            VaultMode::Master => unwrap_master(rec, password)?,
+            VaultMode::Master => {
+                attempts().refused()?;
+                counted(unwrap_master(rec, password))?
+            }
         };
-        let mut g = self.guard();
-        g.key = Some(key);
-        g.last_activity = Instant::now();
+        self.keep(key);
         Ok(())
     }
 
-    /// Drops (zeroes) the data key. No-op in DPAPI mode, which cannot be locked.
+    pub fn unlock_after_recovery(&self, rec: &VaultRecord, password: &str) -> Result<()> {
+        attempts().passed();
+        self.keep(unwrap_master(rec, password)?);
+        Ok(())
+    }
+
+    fn keep(&self, key: Key) {
+        let mut g = self.guard();
+        g.key = Some(key);
+        g.last_activity = Instant::now();
+    }
+
+    pub fn retry_in(&self) -> Option<u64> {
+        match attempts().left() {
+            0 => None,
+            s => Some(s),
+        }
+    }
+
     pub fn lock(&self) {
         let mut g = self.guard();
         if g.mode == VaultMode::Master {
@@ -160,14 +212,11 @@ impl Vault {
         }
     }
 
-    /// Re-authentication in master mode (reveal / copy cookie). `WrongPassword` on mismatch.
     pub fn check_password(&self, rec: &VaultRecord, password: &str) -> Result<()> {
-        unwrap_master(rec, password).map(drop)
+        attempts().refused()?;
+        counted(unwrap_master(rec, password).map(drop))
     }
 
-    /// Re-wraps the (unlocked) data key for `mode` and returns the new record.
-    /// Leaving master mode needs `current_password`; entering or changing it needs
-    /// `new_password` (at least `MIN_MASTER_PASSWORD` chars).
     pub fn rewrap(
         &self,
         rec: &VaultRecord,
@@ -189,24 +238,19 @@ impl Vault {
         }
     }
 
-    /// A new recovery code for the (unlocked) data key, and the record it opens. Saving the record
-    /// replaces the old one, which revokes the old code.
     pub fn seal_recovery(&self) -> Result<(Secret, RecoveryRecord)> {
         wrap_recovery(&*self.key()?)
     }
 
-    /// Switches the in-memory mode; call only after the record from `rewrap` is saved.
     pub fn set_mode(&self, mode: VaultMode) {
         self.guard().mode = mode;
     }
 
-    /// `Locked` when locked.
     pub fn encrypt(&self, aad: &[u8], plaintext: &[u8]) -> Result<Vec<u8>> {
         let key = self.key()?;
         master::seal(&key, aad, plaintext)
     }
 
-    /// `Locked` when locked, `Crypto` when the blob or AAD does not match.
     pub fn decrypt(&self, aad: &[u8], blob: &[u8]) -> Result<Zeroizing<Vec<u8>>> {
         let key = self.key()?;
         master::open(&key, aad, blob)
@@ -221,7 +265,6 @@ impl Vault {
         Ok(Secret::new(s))
     }
 
-    /// Marks user activity (auto-lock).
     pub fn touch(&self) {
         self.guard().last_activity = Instant::now();
     }
@@ -231,9 +274,7 @@ impl Vault {
     }
 }
 
-/// Opens `rec` with `code` and re-wraps the data key: under `new_password`, and under a fresh code
-/// since this one is now used. Returns the new vault record, code and recovery record; nothing
-/// changes until those are saved. `WrongPassword` when `code` does not open it.
+// -- Main func
 pub fn recover(rec: &RecoveryRecord, code: &str, new_password: &str) -> Result<(VaultRecord, Secret, RecoveryRecord)> {
     let new_password = long_enough(Some(new_password))?;
     let code = master::normalize_code(code).ok_or(AppError::WrongPassword)?;
@@ -274,7 +315,6 @@ fn unwrap_dpapi(rec: &VaultRecord) -> Result<Key> {
     to_key(&dpapi::unprotect(&rec.wrapped_key)?)
 }
 
-/// `WrongPassword` when `password` does not open the sealed data key.
 fn unwrap_master(rec: &VaultRecord, password: &str) -> Result<Key> {
     let kdf = rec.kdf.as_ref().ok_or_else(|| {
         log::error!("vault record is in master mode but has no KDF parameters");
@@ -346,7 +386,6 @@ mod tests {
         assert_eq!(Vault::open(&back).unwrap().decrypt(AAD, &blob).unwrap().as_slice(), b"cookie");
     }
 
-    /// A master vault holding one secret, locked again, with the record its code opens.
     fn locked_with_code() -> (VaultRecord, Vec<u8>, Secret, RecoveryRecord) {
         let (v, rec) = Vault::create().unwrap();
         let blob = v.encrypt(AAD, b"cookie").unwrap();
@@ -408,6 +447,30 @@ mod tests {
     fn a_locked_vault_cannot_seal_a_code() {
         let (rec, ..) = locked_with_code();
         assert!(matches!(Vault::open(&rec).unwrap().seal_recovery(), Err(AppError::Locked)));
+    }
+
+    #[test]
+    fn wrong_attempts_cost_a_wait_that_grows_to_a_cap() {
+        assert_eq!((0..=2).map(Attempts::wait).collect::<Vec<_>>(), [0, 0, 0]);
+        assert_eq!((3..=9).map(Attempts::wait).collect::<Vec<_>>(), [5, 10, 20, 40, 80, 160, 300]);
+        assert_eq!(Attempts::wait(40), 300);
+        assert_eq!(Attempts::wait(u32::MAX), 300);
+    }
+
+    #[test]
+    fn a_wait_only_holds_while_it_lasts() {
+        let mut a = Attempts::default();
+        assert_eq!(a.left(), 0);
+        assert!(a.refused().is_ok());
+        a.failed();
+        a.failed();
+        assert_eq!(a.left(), 0, "two wrong tries are free");
+        a.failed();
+        assert!((4..=5).contains(&a.left()), "{} s left", a.left());
+        assert!(matches!(a.refused(), Err(AppError::TooManyAttempts(s)) if s > 0));
+        a.passed();
+        assert_eq!(a.left(), 0);
+        assert!(a.refused().is_ok());
     }
 
     #[test]

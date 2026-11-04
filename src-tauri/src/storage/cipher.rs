@@ -1,18 +1,3 @@
-//! Whole-file encryption of lram.db (SQLCipher: AES-256 per page, HMAC-SHA512 per page).
-//!
-//! The 256-bit raw key is random, made once, and kept beside the database in `<db>.key` as
-//! `DPAPI(key)` (current Windows user, entropy `ENTROPY`). DPAPI only, never the master
-//! password: settings, the theme and the vault record are read before any unlock. So a copied
-//! lram.db is unreadable on another PC or Windows account; secrets inside it keep their own
-//! layer (`vault`).
-//!
-//! A plain database from before is encrypted once (`migrate`), crash-safely:
-//! 1. `sqlcipher_export` into `<db>.enc`, checked row for row;
-//! 2. the key into `<db>.key.new`;
-//! 3. the commit: `<db>` → `<db>.plain`, `<db>.enc` → `<db>`, `<db>.key.new` → `<db>.key`,
-//!    then `<db>.plain` deleted. `resume` finishes a commit a crash cut off, and a step 1 or 2
-//!    cut off is redone from the plain file, which is never touched before the commit.
-
 use std::path::{Path, PathBuf};
 
 use rusqlite::Connection;
@@ -23,36 +8,25 @@ use crate::error::{AppError, Result};
 use crate::vault::master::random_bytes;
 use crate::vault::{protect_with, unprotect_with};
 
-/// DPAPI entropy of the database key. Frozen at the original product name: changing it would make
-/// every existing `lram.db.key` unreadable (DPAPI mixes the entropy into the key), so a rename of
-/// the product must never touch it.
 const ENTROPY: &[u8] = b"RoALT/db/v1";
 
-/// `<db>` plus a suffix: `lram.db` → `lram.db.key`.
 pub fn beside(db: &Path, suffix: &str) -> PathBuf {
     let mut name = db.file_name().unwrap_or_default().to_os_string();
     name.push(suffix);
     db.with_file_name(name)
 }
 
-/// `PRAGMA key`'s value for a raw key: `x'..'`, which skips SQLCipher's own KDF.
 fn key_literal(key: &[u8]) -> Zeroizing<String> {
     Zeroizing::new(format!("\"x'{}'\"", hex(key)))
 }
 
-/// Sets the key on a fresh connection and proves it is the right one (a wrong key or a plain
-/// file fails the first read).
 pub fn unlock(conn: &Connection, key: &[u8]) -> Result<()> {
-    // The SQL holds the key: a rusqlite error may quote it, so it never leaves here.
     conn.execute_batch(&format!("PRAGMA key = {};", key_literal(key).as_str()))
         .map_err(|_| AppError::Storage("setting the database key failed".into()))?;
-    // ponytail: no `cipher_memory_security`: its locked-memory allocator overflows the stack
-    // on Windows (seen in tests); the key itself is zeroized here (`Zeroizing`).
     conn.query_row("SELECT count(*) FROM sqlite_master", [], |_| Ok(()))
         .map_err(|e| AppError::Storage(format!("the database key doesn't open it ({e})")))
 }
 
-/// The raw key from `<db>.key`.
 pub fn read_key(db: &Path) -> Result<Zeroizing<Vec<u8>>> {
     let blob = std::fs::read(beside(db, ".key"))?;
     let key = unprotect_with(&blob, ENTROPY)?;
@@ -63,7 +37,6 @@ pub fn read_key(db: &Path) -> Result<Zeroizing<Vec<u8>>> {
     Ok(key)
 }
 
-/// A new random key, written DPAPI-wrapped to `path` (atomically: a temp file renamed).
 pub fn new_key(path: &Path) -> Result<Zeroizing<Vec<u8>>> {
     let key = Zeroizing::new(random_bytes::<32>().to_vec());
     write_key(path, &key)?;
@@ -77,21 +50,17 @@ pub fn write_key(path: &Path, key: &[u8]) -> Result<()> {
     Ok(())
 }
 
-/// Exports the database open on `conn` into the new file `to`, encrypted with `key`.
 pub fn export(conn: &Connection, to: &Path, key: &[u8]) -> Result<()> {
     let to = to.to_str().ok_or_else(|| AppError::Invalid(tr!("That folder's name can't be used.")))?;
-    // The SQL holds the key: a rusqlite error may quote it, so it never leaves here.
     conn.execute(&format!("ATTACH DATABASE ?1 AS enc KEY {}", key_literal(key).as_str()), [to])
         .map_err(|_| AppError::Storage("attaching the encrypted copy failed".into()))?;
     let done = (|| {
         conn.query_row("SELECT sqlcipher_export('enc')", [], |_| Ok(()))?;
-        // Not copied by sqlcipher_export; the migrations go by it.
         let version: i64 = conn.query_row("PRAGMA main.user_version", [], |r| r.get(0))?;
         conn.execute_batch(&format!("PRAGMA enc.user_version = {version};"))
     })()
     .map_err(AppError::from);
     if let Err(e) = conn.execute_batch("DETACH DATABASE enc;") {
-        // Only the DETACH error is returned: keep the export's own.
         if let Err(d) = &done {
             log::error!("database export failed: {d}");
         }
@@ -100,7 +69,6 @@ pub fn export(conn: &Connection, to: &Path, key: &[u8]) -> Result<()> {
     done
 }
 
-/// Every table's row count and the schema version: what a copy must match.
 fn fingerprint(conn: &Connection) -> Result<Vec<(String, i64)>> {
     let mut tables: Vec<String> = conn
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name")?
@@ -121,21 +89,16 @@ fn remove(path: &Path) -> Result<()> {
     }
 }
 
-/// The plain file `db` and its journal, closed and checkpointed (the WAL folded in).
 fn remove_journal(db: &Path) -> Result<()> {
     remove(&beside(db, "-wal"))?;
     remove(&beside(db, "-shm"))
 }
 
-/// Finishes a commit (step 3) a crash cut off; nothing to do otherwise. A step 1 or 2 that
-/// didn't finish leaves files the next `migrate` replaces.
 pub fn resume(db: &Path) -> Result<()> {
     let (enc, key_new, plain) = (beside(db, ".enc"), beside(db, ".key.new"), beside(db, ".plain"));
-    // The commit starts by renaming `db` to `.plain` and ends by deleting `.plain`.
     if !plain.exists() {
         return Ok(());
     }
-    // Only the original is left: put it back, the next start encrypts it again.
     if !db.exists() && !enc.exists() {
         std::fs::rename(&plain, db)?;
         return Ok(());
@@ -147,7 +110,6 @@ pub fn resume(db: &Path) -> Result<()> {
         if key_new.exists() {
             std::fs::rename(&key_new, beside(db, ".key"))?;
         }
-        // Without its key the encrypted copy is unreadable: the original stays.
         if !beside(db, ".key").exists() {
             return Err(AppError::Storage("the database's key is missing".into()));
         }
@@ -159,7 +121,7 @@ pub fn resume(db: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Encrypts the plain database `db` in place (see the module docs); its key.
+// -- Main func
 pub fn migrate(db: &Path) -> Result<Zeroizing<Vec<u8>>> {
     let (enc, key_new, plain) = (beside(db, ".enc"), beside(db, ".key.new"), beside(db, ".plain"));
     remove(&enc)?;
@@ -182,7 +144,6 @@ pub fn migrate(db: &Path) -> Result<Zeroizing<Vec<u8>>> {
         }
     }
     write_key(&key_new, &key)?;
-    // The commit.
     remove_journal(db)?;
     std::fs::rename(db, &plain)?;
     std::fs::rename(&enc, db)?;
@@ -223,7 +184,6 @@ mod tests {
         assert!(plain_has_rows(&path).is_err(), "opens as plain SQLite");
         let raw = std::fs::read(&path).unwrap();
         assert!(!raw.starts_with(b"SQLite format 3"));
-        // A wrong key doesn't open it either.
         let c = Connection::open(&path).unwrap();
         assert!(unlock(&c, &[7; 32]).is_err());
         drop(c);
@@ -235,7 +195,6 @@ mod tests {
     fn a_plain_database_is_encrypted_with_its_data() {
         let dir = tmp();
         let path = dir.join("lram.db");
-        // A plain database as an older LRAM left it: migrated schema, one account, WAL.
         std::fs::create_dir_all(&dir).unwrap();
         Db::open_in_memory().unwrap().copy_to(&path, || Ok(())).unwrap();
         put(&path, 42);
@@ -247,7 +206,6 @@ mod tests {
         for left in [".enc", ".key.new", ".plain"] {
             assert!(!beside(&path, left).exists(), "{left} left behind");
         }
-        // Opens again, now by its key.
         assert_eq!(Db::open(&path).unwrap().accounts().unwrap().len(), 1);
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -259,7 +217,6 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         Db::open_in_memory().unwrap().copy_to(&path, || Ok(())).unwrap();
         put(&path, 7);
-        // Steps 1 and 2 by hand, then the crash right after renaming the plain file.
         let key = Zeroizing::new(random_bytes::<32>().to_vec());
         export(&Connection::open(&path).unwrap(), &beside(&path, ".enc"), &key).unwrap();
         write_key(&beside(&path, ".key.new"), &key).unwrap();

@@ -12,6 +12,10 @@ export type Tab = "login" | "cookie" | "many";
 
 const RAM_FILTER = [{ name: "Roblox Account Manager", extensions: ["json"] }];
 
+const CREDENTIALS = /^\s*[^\s:@]{1,64}\s*:\s*[^\s:]+/m;
+const looksLikeCredentials = (text: string) => !text.includes("_|WARNING:-DO-NOT-SHARE-THIS.") && CREDENTIALS.test(text);
+
+// -- Main func
 export function AddAccountDialog({ open, startOn = "login", onClose, onAdded }: {
   open: boolean;
   startOn?: Tab;
@@ -21,7 +25,6 @@ export function AddAccountDialog({ open, startOn = "login", onClose, onAdded }: 
   const qc = useQueryClient();
   const [tab, setTab] = useState<Tab>(startOn);
   const [error, setError] = useState<string | null>(null);
-  // While rendering, not in an effect: Dialog focuses a field of the panel that shows when it opens.
   const [wasOpen, setWasOpen] = useState(open);
   if (open !== wasOpen) {
     setWasOpen(open);
@@ -30,7 +33,6 @@ export function AddAccountDialog({ open, startOn = "login", onClose, onAdded }: 
       setError(null);
     }
   }
-  // Closed while its request ran: the account is still added, but the app stays where it is.
   const stillOpen = useRef(open);
   stillOpen.current = open;
   const [waiting, setWaiting] = useState(false);
@@ -71,9 +73,13 @@ export function AddAccountDialog({ open, startOn = "login", onClose, onAdded }: 
   async function paste(e: FormEvent) {
     e.preventDefault();
     const value = cookie;
-    setCookie(""); // the field never keeps a submitted cookie
+    setCookie("");
     if (!value.trim() || busy) return;
     setError(null);
+    if (looksLikeCredentials(value)) {
+      setError(t("accounts.add.credentialsNotCookie"));
+      return;
+    }
     setBusy(true);
     try {
       added(await api.accountAddCookie(value));
@@ -97,7 +103,6 @@ export function AddAccountDialog({ open, startOn = "login", onClose, onAdded }: 
     if (r.added + r.updated > 0) onClose();
   };
 
-  /** Pasted lists and Roblox Account Manager files both go one cookie at a time. */
   async function runImport(run: () => Promise<ImportReport>) {
     setError(null);
     setBusy(true);
@@ -113,8 +118,12 @@ export function AddAccountDialog({ open, startOn = "login", onClose, onAdded }: 
   function pasteMany(e: FormEvent) {
     e.preventDefault();
     const value = many;
-    setMany(""); // as with one cookie, the field never keeps what was submitted
+    setMany("");
     if (!value.trim() || busy) return;
+    if (looksLikeCredentials(value)) {
+      setError(t("accounts.add.credentialsNotCookie"));
+      return;
+    }
     runImport(() => api.accountsImportCookies(value));
   }
 

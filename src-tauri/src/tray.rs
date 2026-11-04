@@ -1,7 +1,3 @@
-//! The tray icon (`tray-icon` feature): left click shows the window; the menu has Show LRAM,
-//! Favourites (those with `in_tray`), Close all clients, Kill all Roblox, Lock vault
-//! (master-password mode), Quit.
-
 use std::sync::{Mutex, MutexGuard};
 
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
@@ -15,27 +11,21 @@ use crate::model::{AccountStatus, BulkRequest, SameServer, VaultMode};
 
 const TRAY: &str = "main";
 
-/// What the menu shows; it is rebuilt only when this changes.
 #[derive(PartialEq)]
 struct View {
-    /// In-tray favourites in order: id and name (names are stored in plain text).
     favourites: Vec<(i64, String)>,
     locked: bool,
     master: bool,
     running: bool,
-    /// The menu's language (`i18n::current`).
     lang: &'static str,
 }
 
-/// The view the current menu was built from. Only touched on the main thread.
 static SHOWN: Mutex<Option<View>> = Mutex::new(None);
 
 fn shown() -> MutexGuard<'static, Option<View>> {
     SHOWN.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// Builds the tray icon (the app's window icon, tooltip "LRAM") and its menu; menu events go
-/// to `on_menu`. Called once from setup.
 pub fn setup(app: &AppHandle) -> tauri::Result<()> {
     let view = view(app);
     let mut tray = TrayIconBuilder::with_id(TRAY)
@@ -56,16 +46,9 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-/// Rebuilds the menu: favourites in tray order by name (ids `fav:<id>`; disabled with the label
-/// "Unlock LRAM to launch" while the vault is locked; "No favourites" when none), "Close all
-/// clients" (disabled when none run), "Kill all Roblox" (always: it also ends clients LRAM
-/// didn't start), "Lock vault" (only in master-password mode, disabled
-/// while locked). Called after favourites change, the vault locks or unlocks, and clients
-/// start or end. Never fails loudly: errors are logged.
+// -- Main func
 pub fn refresh(app: &AppHandle) {
     let handle = app.clone();
-    // Menus live on the main thread; queueing there also keeps refreshes in order and never
-    // blocks the caller.
     let queued = app.run_on_main_thread(move || {
         let view = view(&handle);
         if shown().as_ref() == Some(&view) {
@@ -112,7 +95,6 @@ fn menu(app: &AppHandle, v: &View) -> tauri::Result<Menu<Wry>> {
         favourites.append(&MenuItem::new(app, tr!("Unlock LRAM to launch"), false, None::<&str>)?)?;
     } else {
         for (id, name) in &v.favourites {
-            // A single `&` would mark a shortcut key in a Windows menu.
             favourites.append(&item(&format!("fav:{id}"), &name.replace('&', "&&"), true)?)?;
         }
     }
@@ -133,7 +115,6 @@ fn menu(app: &AppHandle, v: &View) -> tauri::Result<Menu<Wry>> {
     Ok(menu)
 }
 
-/// Shows, unminimizes and focuses the main window (it may be hidden in the tray).
 pub fn show_main(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         for r in [w.show(), w.unminimize(), w.set_focus()] {
@@ -144,10 +125,6 @@ pub fn show_main(app: &AppHandle) {
     }
 }
 
-/// Menu ids: "show" → show, unminimize and focus the main window; "close-all" →
-/// `commands::instances_close_all(force: false)` logic; "kill-all" → `commands::kill_all`
-/// (no confirmation: it is the panic button); "lock" → `commands::lock_vault`;
-/// "quit" → exit the app; "fav:<id>" → `launch_favourite`.
 fn on_menu(app: &AppHandle, id: &str) {
     match id {
         "show" => show_main(app),
@@ -172,7 +149,6 @@ fn on_menu(app: &AppHandle, id: &str) {
     }
 }
 
-/// `commands::kill_all` in the background (tray menu, panic hotkey); a failure is a notice.
 pub fn kill_all(app: &AppHandle) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -182,11 +158,6 @@ pub fn kill_all(app: &AppHandle) {
     });
 }
 
-/// Launches a favourite from the tray with its stored accounts that have a valid cookie: one →
-/// `commands::launch_tracked` (the favourite marked used); several → `launcher::bulk::start`
-/// with the launch delay and `SameServer::PickFirst`; none → show the window with an
-/// `app://notice` saying to pick accounts for it in LRAM. Errors become `app://notice`
-/// (error), also when the window is hidden.
 fn launch_favourite(app: &AppHandle, id: i64) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -218,7 +189,6 @@ async fn launch(app: &AppHandle, id: i64) -> Result<()> {
             notice(app, false, tr!("No account of \"{name}\" can launch. Pick accounts for it in LRAM.", name = fav.name));
         }
         1 => {
-            // Without the multi-instance lock it would end the client that runs.
             if !s.multi.is_active() && s.tracker.list().iter().any(|i| i.account_id != ids[0] && i.state != crate::model::InstanceState::Exited) {
                 show_main(app);
                 notice(app, false, tr!("\"{name}\" wasn't started: another client is running and multi-instance is off.", name = fav.name));

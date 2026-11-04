@@ -1,14 +1,3 @@
-//! Public-network guard. Windows files every network as Public, Private or Domain (the user
-//! picks it when joining: a café or hotel Wi-Fi is Public). While a connected network with
-//! internet access is Public and `Settings.allow_public_networks` is off (it is on by default):
-//! - launches are refused (`blocked`, checked by `commands::launch_tracked`, so single launches,
-//!   batches, auto-rejoin and the tray alike) and a running batch stops;
-//! - a master-password vault locks (on joining such a network, not again while on it).
-//!
-//! Read through the Network List Manager every `TICK`. Only networks with internet access
-//! count: Hyper-V, WSL and VPN adapters are often filed Public but reach nothing. The network's
-//! name is never read: it would show on a streamer's screen and in the log.
-
 use std::sync::Mutex;
 use std::thread::sleep;
 use std::time::Duration;
@@ -26,7 +15,6 @@ use crate::model::{NetworkStatus, VaultMode};
 
 const TICK: Duration = Duration::from_secs(10);
 
-/// The network status as last read (`App.network`).
 pub struct Network(Mutex<NetworkStatus>);
 
 impl Network {
@@ -43,22 +31,17 @@ impl Network {
     }
 }
 
-/// One connected network as Windows files it.
 struct Seen {
     category: NLM_NETWORK_CATEGORY,
     connectivity: NLM_CONNECTIVITY,
 }
 
-/// Whether a connected network is Public and reaches the internet (pure).
 fn public_of(nets: &[Seen]) -> bool {
     let internet = NLM_CONNECTIVITY_IPV4_INTERNET.0 | NLM_CONNECTIVITY_IPV6_INTERNET.0;
     nets.iter().any(|n| n.category == NLM_NETWORK_CATEGORY_PUBLIC && n.connectivity.0 & internet != 0)
 }
 
-/// Reads the connected networks; not public when Windows can't say (logged).
 pub fn scan() -> NetworkStatus {
-    // On its own thread: COM as multithreaded on the main thread breaks the window's
-    // `OleInitialize` (RPC_E_CHANGED_MODE, the app doesn't start).
     let read = std::thread::spawn(networks).join().unwrap_or_else(|_| {
         log::warn!("network: COM thread panicked");
         Err(windows::core::Error::empty())
@@ -73,8 +56,7 @@ pub fn scan() -> NetworkStatus {
 }
 
 fn networks() -> windows::core::Result<Vec<Seen>> {
-    // SAFETY: COM on this thread (S_FALSE: already initialised, also fine); the manager and
-    // the networks are COM objects released on drop.
+    // -- SAFETY: COM on this thread (S_FALSE: already initialised, also fine); the manager and the networks are COM objects …
     unsafe {
         let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
         let nlm: INetworkListManager = CoCreateInstance(&NetworkListManager, None, CLSCTX_ALL)?;
@@ -94,7 +76,6 @@ fn networks() -> windows::core::Result<Vec<Seen>> {
     }
 }
 
-/// Why launching isn't allowed now; None when it is.
 pub fn blocked(s: &App) -> Option<String> {
     if !s.network.get().public || s
         .db
@@ -109,7 +90,7 @@ pub fn blocked(s: &App) -> Option<String> {
     ))
 }
 
-/// Runs for the app's lifetime on its own thread (COM calls block briefly).
+// -- Main func
 pub fn spawn(app: AppHandle) {
     let started = std::thread::Builder::new().name("network".into()).spawn(move || {
         let mut was = blocked(&app.state::<App>()).is_some();
@@ -134,7 +115,6 @@ pub fn spawn(app: AppHandle) {
     }
 }
 
-/// Joined a public network: what runs stops (see the module docs).
 fn enforce(app: &AppHandle, why: &str) {
     let s = app.state::<App>();
     if let Some(batch) = s.bulk.current().filter(|b| !b.done)
@@ -170,7 +150,6 @@ mod tests {
         assert!(!public_of(&[]));
         assert!(!public_of(&[home(), hyperv, gone]));
         assert!(public_of(&[home(), cafe]));
-        // Both IPv4 and IPv6 internet bits.
         let both = net(NLM_NETWORK_CATEGORY_PUBLIC, NLM_CONNECTIVITY(NLM_CONNECTIVITY_IPV4_INTERNET.0 | NLM_CONNECTIVITY_IPV6_INTERNET.0));
         assert!(public_of(&[both]));
     }

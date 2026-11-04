@@ -27,10 +27,9 @@ const LAUNCH_ERRORS: Record<string, Key> = {
   challenge: "launch.err.challenge",
   notFound: "launch.err.notFound",
 };
-/** One launch at a time, also across remounts of the view. */
+
 let busy = false;
-/** The FPS cap typed for the next launches (0: each account's own or the default), across remounts;
- * read when launching, so a value committed by the Launch click's blur counts. */
+
 let lastFps = 0;
 
 export function lastLaunchAccount() {
@@ -44,20 +43,15 @@ function remember(id: number) {
   try {
     localStorage.setItem(LAST_KEY, String(id));
   } catch {
-    // Only a convenience.
   }
 }
 
-/** Why several accounts can't launch right now, or null. */
-/** Why a launch can't start now: launches go one at a time (a running batch blocks single
- * launches too), and several accounts need multi-instance. */
 export function launchBlocked(several: boolean, multi: MultiInstanceStatus | undefined, batch: BulkProgress | null | undefined) {
   if (batch && !batch.done) return t("launch.batchRunning");
   if (several && !multi?.active) return (multi?.enabled && multi.message) || t("launch.needMulti");
   return null;
 }
 
-/** Toasts a started client and remembers its account for the next start. */
 export function launched(a: AccountSummary, info: LaunchInfo) {
   remember(a.id);
   toast(t(info.viaBootstrapper ? "launch.launchedViaBootstrapper" : "launch.launched", { name: accountName(a) }));
@@ -69,6 +63,7 @@ export function launchFailed(e: unknown) {
   if (err.kind !== "cancelled") toast(LAUNCH_ERRORS[err.kind] ? t(LAUNCH_ERRORS[err.kind]) : friendly(err), "error");
 }
 
+// -- Main func
 export function LaunchView({ accounts, picked, setPicked, sameServer, setSameServer, draft, setDraft, step, setStep, onAdd, onServers, onPickFavourite, onHome, onAccounts, onSettings }: {
   accounts: AccountSummary[];
   picked: number[];
@@ -98,38 +93,30 @@ export function LaunchView({ accounts, picked, setPicked, sameServer, setSameSer
   const [joinOpen, setJoinOpen] = useState(false);
   const [saveOpen, setSaveOpen] = useState(false);
   const targetField = useRef<HTMLInputElement>(null);
-  // Open when one of them is set: it applies to the next launch, so it stays in sight.
   const [who, setWho] = useState("");
   const [optionsOpen, setOptionsOpen] = useState(() => lastFps > 0 || sameServer !== "off");
   const [fps, setFpsState] = useState(lastFps);
   const setFps = (v: number) => setFpsState((lastFps = v));
 
-  // An account with a client on its way or in a game can't start another.
   const instances = useInstances().data ?? [];
   const liveAccounts = new Set(instances.filter(isLive).map((i) => i.accountId));
-  // In list order, which is also the bulk launch order.
   const chosen = accounts.filter((a) => a.status === "valid" && !liveAccounts.has(a.id) && picked.includes(a.id));
   const account = chosen[0] ?? null;
   const bulk = chosen.length > 1;
-  // With multi-instance off, one more client ends the one that runs.
   const replaces = !bulk && !!account && instances.some((i) => isRunning(i) && i.accountId !== account.id);
   const validIds = useMemo(
     () => accounts.filter((a) => a.status === "valid" && !liveAccounts.has(a.id)).map((a) => a.id).sort((x, y) => x - y),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [accounts.map((a) => `${a.id}:${a.status}:${liveAccounts.has(a.id)}`).join()],
   );
-  // ponytail: the first 100 only; one request per account each minute. Past that, tiles show Ready.
   const presence = usePresence(useMemo(() => validIds.slice(0, 100), [validIds])).data;
   const needle = who.trim().toLowerCase();
   const tiles = needle ? accounts.filter((a) => `${a.alias}\n${a.displayName}\n${a.username}`.toLowerCase().includes(needle)) : accounts;
-  // Picked accounts that are all playing already: that's what the button can't do.
   const allPlaying = !chosen.length && accounts.some((a) => picked.includes(a.id) && liveAccounts.has(a.id));
   const signedOut = accounts.length > 0 && accounts.every((a) => a.status !== "valid");
   if (joinOpen && !account) setJoinOpen(false);
 
-  // Debounced local parse; the result is kept with the text it belongs to.
   const { text } = draft;
-  // Straight to pasting a link. The field can be below the fold: no jump.
   useEffect(() => {
     if (!text.trim()) targetField.current?.focus({ preventScroll: true });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -138,19 +125,16 @@ export function LaunchView({ accounts, picked, setPicked, sameServer, setSameSer
     const t = setTimeout(() => {
       api.targetParse(text).then(
         (value) => setDraft((d) => (d.text === text ? { ...d, parsed: { text, value } } : d)),
-        () => {}, // launching parses again and shows the error
+        () => {},
       );
     }, 150);
     return () => clearTimeout(t);
   }, [text]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // A parse that hasn't caught up yet is launchable.
   const { parsed, place, look, usable: usableTarget, pending } = readDraft(draft);
   const fav = draft.favId === null ? undefined : favourites.data?.find((f) => f.id === draft.favId);
   const network = useNetwork().data;
-  // Turned on but held up by a Roblox already running: another client would still replace it.
   const blocked = publicBlock(network, settings) ?? launchBlocked(bulk || (replaces && !!multi?.enabled), multi, batch);
-  // Multi-instance has its own notice, with the way out.
   const otherBlock = publicBlock(network, settings) ?? (batch && !batch.done ? t("launch.batchRunning") : null);
   const canLaunch = !!account && (usableTarget || pending) && !step && !blocked;
 
@@ -166,7 +150,6 @@ export function LaunchView({ accounts, picked, setPicked, sameServer, setSameSer
       const target = await resolveTarget(draft, setDraft, (name) => setStep(t("launch.step.lookup", { name })));
       setStep(first);
       if (ids.length > 1) {
-        // From the cache: a stagger committed by this click's blur hasn't re-rendered yet.
         const delay = qc.getQueryData<Settings>(qk.settings)?.launchDelayMs ?? delayMs;
         await api.bulkLaunch({ accountIds: ids, target, delayMs: delay, sameServer, favouriteId: draft.favId, fpsCap: lastFps || null });
       } else {
@@ -259,7 +242,6 @@ export function LaunchView({ accounts, picked, setPicked, sameServer, setSameSer
                     aria-pressed={valid && !playing && picked.includes(a.id)}
                     disabled={!valid || playing}
                     title={valid ? undefined : t("launch.onlyValid")}
-                    // A pick that is playing goes with this one, or it would come back by itself when its client ends.
                     onClick={(e) => e.detail < 2 && setPicked((p) => (p.includes(a.id) ? p.filter((id) => id !== a.id) : [...p.filter((id) => !liveAccounts.has(id)), a.id]))}
                   >
                     <span aria-hidden="true" className="tick"><Icon name="check" size={14} /></span>
@@ -344,7 +326,6 @@ export function LaunchView({ accounts, picked, setPicked, sameServer, setSameSer
                 <input
                   className="field mono"
                   ref={(el) => {
-                    // Jump here after a pasted job ID, not while it is being typed.
                     if (el && pasted.current) {
                       pasted.current = false;
                       el.focus();
@@ -406,7 +387,6 @@ export function LaunchView({ accounts, picked, setPicked, sameServer, setSameSer
             ) : otherBlock ? (
               <span className="alert text-start">{otherBlock}</span>
             ) : bulk && client?.outdated ? (
-              // Not blocking: Roblox updates itself on the first launch, which can end the clients after it.
               <span className="alert text-start" title={t("launch.robloxVersions", { installed: client.version ?? "", latest: client.latest ?? "" })}>
                 {t("launch.robloxOutdated")}
               </span>

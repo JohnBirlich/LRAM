@@ -23,15 +23,13 @@ function dismiss(id: number) {
   setTimeout(() => publish(items.filter((t) => t.id !== id)), 200);
 }
 
-/** Shows a short message bottom-right. Callable from anywhere, including outside React. A sticky
- *  one stays until dismissed. */
+// -- Main func
 export function toast(text: string, tone: Tone = "ok", sticky = false) {
   const id = ++nextId;
   publish([...items.slice(-3), { id, text, tone }]);
   if (!sticky) later(id, tone === "error" ? 7000 : 4000);
 }
 
-/** Pointer or focus on a toast holds it: it is being read. */
 const timers = new Map<number, number>();
 function later(id: number, ms: number) {
   timers.set(id, window.setTimeout(() => dismiss(id), ms));
@@ -52,13 +50,11 @@ const FRIENDLY: Record<string, Key> = {
   storage: "ui.error.storage",
 };
 
-/** User-facing text for an IPC error. Backend messages are already safe and user-facing. */
 export function friendly(e: ErrorPayload): string {
   const k = FRIENDLY[e.kind];
   return k ? t(k) : e.message || t("ui.error.generic");
 }
 
-/** Error toast; a cancelled action (closed window, dismissed Windows Hello) stays quiet. */
 export function toastError(e: unknown) {
   const err = asError(e);
   if (err.kind !== "cancelled") toast(friendly(err), "error");

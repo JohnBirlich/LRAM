@@ -1,9 +1,3 @@
-//! What a client that ended badly leaves behind, written into LRAM's log (so into the diagnostics
-//! report too): how long it really lived, the PC's state, the end of its logs cleaned line by line
-//! (`diagnostics::redact`), a crash dump if Roblox's crash handler wrote one, Windows' own record of
-//! the fault, and what all that points to. The process's exit code isn't here: reading it would mean
-//! holding a handle on the client, which Roblox's anti-cheat has flagged.
-
 use std::os::windows::process::CommandExt;
 use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -13,16 +7,13 @@ use super::{logwatch, metrics, process};
 use crate::diagnostics::clean_tail;
 use crate::model::CrashKind;
 
-/// Lines of the client's log and of its crash handler's.
 const CLIENT_LINES: usize = 30;
 const HANDLER_LINES: usize = 5;
-/// Roblox's lines can be very long.
 const MAX_LINE: usize = 300;
-/// The crash handler names the client's log in its first lines.
 const HANDLER_HEAD: u64 = 64 * 1024;
 const CLIENT_EXE: &str = "RobloxPlayerBeta.exe";
 
-/// Logs the whole autopsy. Blocking (it reads files and asks Windows): on a thread of its own.
+// -- Main func
 pub fn report(c: &Ended) {
     let id = &c.instance_id;
     let launched = UNIX_EPOCH + Duration::from_millis(c.started_at.max(0) as u64);
@@ -53,7 +44,6 @@ pub fn report(c: &Ended) {
     }
 }
 
-/// What the evidence points to, first of all (pure).
 fn verdict(c: &Ended, has_log: bool, dump: bool, fault: bool) -> String {
     let early = c.died_after_ms.is_some_and(|ms| ms < 30_000);
     match () {
@@ -79,7 +69,6 @@ fn shortened(line: &str) -> &str {
     &line[..line.char_indices().nth(MAX_LINE).map_or(line.len(), |(i, _)| i)]
 }
 
-/// The crash dumps Roblox's handler wrote since `since`: name and size.
 fn dumps_since(logs: &Path, since: SystemTime) -> Vec<String> {
     let Ok(entries) = std::fs::read_dir(logs.join("crashes").join("reports")) else { return Vec::new() };
     entries
@@ -93,7 +82,6 @@ fn dumps_since(logs: &Path, since: SystemTime) -> Vec<String> {
         .collect()
 }
 
-/// The crash handler log naming the client log `player_log`, written since `since`.
 fn handler_log(logs: &Path, player_log: &str, since: SystemTime) -> Option<std::path::PathBuf> {
     use std::io::Read;
     std::fs::read_dir(logs).ok()?.flatten().map(|e| e.path()).find(|p| {
@@ -104,12 +92,10 @@ fn handler_log(logs: &Path, player_log: &str, since: SystemTime) -> Option<std::
     })
 }
 
-/// Windows' records of this client faulting, from the Application event log (no rights needed).
 fn windows_faults(c: &Ended) -> Vec<String> {
     faults_of(&fault_events((c.uptime_ms + 60_000).max(60_000)), c.pid)
 }
 
-/// The Application log's fault events of the last `ms` milliseconds, as XML; empty on failure.
 fn fault_events(ms: i64) -> String {
     let root = std::env::var_os("SystemRoot").unwrap_or_else(|| "C:\\Windows".into());
     let out = std::process::Command::new(Path::new(&root).join(r"System32\wevtutil.exe"))
@@ -130,7 +116,6 @@ fn fault_events(ms: i64) -> String {
     }
 }
 
-/// The events of `xml` about Roblox's client with this pid, as a line each (pure).
 fn faults_of(xml: &str, pid: u32) -> Vec<String> {
     let field = |event: &str, name: &str| {
         let open = format!("<Data Name='{name}'>");
@@ -199,8 +184,6 @@ mod tests {
         assert!(faults_of("", 1).is_empty());
     }
 
-    /// Against this PC's event log, which needs a recent fault of any program:
-    /// `cargo test -- --ignored asks_windows --nocapture`.
     #[test]
     #[ignore]
     fn asks_windows() {

@@ -30,16 +30,16 @@ import { Divider, usePanelWidth } from "./ui/Resizer";
 import { TitleBar } from "./ui/TitleBar";
 import { friendly, toast, toastError, Toaster } from "./ui/Toast";
 
-/** Last applied theme, read before first paint so a light-theme start does not flash dark. */
 export const THEME_KEY = "lram.theme";
 
+// -- Main func
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <Root />
       <Toaster />
       <Splash />
-      {/* Design proposals for review; tree-shaken out of release builds. */}
+      {}
       {import.meta.env.DEV && <DirectionSwitcher />}
     </QueryClientProvider>
   );
@@ -56,7 +56,6 @@ function Root() {
   const manualLockAt = useRef(0);
   const v = vault.data;
   const s = settings.data;
-  // Before any child renders, so the whole tree uses the chosen language.
   const unlocked = !!v && !v.locked;
 
   const markLocked = () => {
@@ -64,7 +63,6 @@ function Root() {
     for (const queryKey of [qk.accounts, qk.presence, ["info"], qk.favourites, qk.join, qk.privateServers, qk.discord]) qc.removeQueries({ queryKey });
   };
 
-  // Everything on screen asks again; the webview itself is never reloaded.
   const refresh = () => void qc.invalidateQueries();
 
   const lock = () => {
@@ -85,7 +83,6 @@ function Root() {
       events.onRobloxClient((c) => qc.setQueryData(qk.client, c)),
       events.onNetwork((n) => qc.setQueryData(qk.network, n)),
       events.onAppUpdate((u) => qc.setQueryData(qk.appUpdate, u)),
-      // Errors stay until dismissed: the window may have been hidden in the tray.
       events.onNotice((n) => toast(n.message, n.error ? "error" : "ok", n.error)),
       events.onVaultLocked(() => {
         if (Date.now() - manualLockAt.current > 3000) setLockReason("idle");
@@ -98,8 +95,6 @@ function Root() {
 
   useActivity(unlocked);
 
-  // Keyboard use: when what had focus went away (a menu item, a button that disabled itself),
-  // focus goes to the page, not to nowhere, where the next Tab starts over.
   useEffect(() => {
     let keys = false;
     const key = () => void (keys = true);
@@ -125,14 +120,13 @@ function Root() {
     const onKey = (e: KeyboardEvent) => {
       const ctrl = e.ctrlKey || e.metaKey;
       const k = e.key.toLowerCase();
-      if ((ctrl && k === "r") || e.key === "F5") e.preventDefault(); // never reload the webview
+      if ((ctrl && k === "r") || e.key === "F5") e.preventDefault();
       if (e.key === "F5" && unlocked) refresh();
       if (ctrl && k === "l" && unlocked && v?.mode === "master") {
         e.preventDefault();
         lock();
       }
     };
-    // The WebView2 menu (Reload, Inspect) has no place in the app; fields keep theirs.
     const onMenu = (e: MouseEvent) => {
       if (import.meta.env.PROD && !(e.target instanceof Element && e.target.closest("input, textarea, .selectable"))) e.preventDefault();
     };
@@ -172,7 +166,7 @@ function Root() {
       ) : (
         <Shell vault={v} settings={s} onRecoveryCode={setRecoveryCode} />
       )}
-      {/* Up here because it must outlive what opened it: the old code is void by now, and a recovered unlock swaps the screen below. Hidden while locked: it would open the vault for whoever comes by. */}
+      {}
       <RecoveryCodeDialog code={unlocked ? recoveryCode : null} onClose={() => setRecoveryCode(null)} />
     </div>
   );
@@ -196,7 +190,6 @@ function Shell({ vault, settings, onRecoveryCode }: { vault: VaultStatus; settin
   const [view, setView] = useState<"dashboard" | "accounts" | "launch" | "performance" | "servers" | "monitor" | "discord" | "debug" | "settings">("dashboard");
   const [group, setGroup] = useState<number | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
-  // The Launch view's accounts; the last one launched until something else is picked.
   const [picked, setPicked] = useState<number[]>(() => {
     const id = lastLaunchAccount();
     return id === null ? [] : [id];
@@ -205,14 +198,11 @@ function Shell({ vault, settings, onRecoveryCode }: { vault: VaultStatus; settin
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const homeTabs = useHomeTabs(accounts.data);
   const [sectionOrder, setSectionOrder] = useSectionOrder();
-  // Kept here so a launch in flight survives leaving the view.
   const [launchStep, setLaunchStep] = useState<string | null>(null);
-  // The game the Servers view shows.
   const [serversPlace, setServersPlace] = useState<number | null>(null);
   const [adding, setAdding] = useState(false);
   const [addOn, setAddOn] = useState<AddTab>("login");
   const [toolsOpen, setToolsOpen] = useState(false);
-  // A tool that is open stays in sight.
   const showTools = toolsOpen || view === "servers" || view === "monitor" || view === "discord";
   const openAdd = (tab: AddTab = "login") => {
     setAddOn(tab);
@@ -224,7 +214,6 @@ function Shell({ vault, settings, onRecoveryCode }: { vault: VaultStatus; settin
     document.title = `${viewName} · LRAM`;
   }, [viewName]);
 
-  // A new account needs its headshot; the backend only asks Roblox for the missing ones.
   useEffect(() => {
     if (!accounts.data) return;
     const ids = new Set(accounts.data.map((a) => a.id));
@@ -232,7 +221,6 @@ function Shell({ vault, settings, onRecoveryCode }: { vault: VaultStatus; settin
     known.current = ids;
   }, [accounts.data, qc]);
 
-  // Opens on the Launch target's game until a game is loaded here.
   const openServers = () => {
     const p = draft.parsed?.text === draft.text ? draft.parsed.value : null;
     const t = p?.kind === "target" ? p.target : null;
@@ -240,12 +228,10 @@ function Shell({ vault, settings, onRecoveryCode }: { vault: VaultStatus; settin
     setView("servers");
   };
 
-  // Re-bound each render: Ctrl+4 needs the current draft. Alt is left alone (AltGr types characters).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!(e.ctrlKey || e.metaKey) || e.altKey || document.querySelector("dialog[open]")) return;
       const k = e.key.toLowerCase();
-      // By key position, so Ctrl+1 works on layouts where the digits need Shift.
       const views: Record<string, () => void> = {
         Digit1: () => setView("dashboard"),
         Digit2: () => setView("accounts"),
@@ -260,7 +246,6 @@ function Shell({ vault, settings, onRecoveryCode }: { vault: VaultStatus; settin
       const go = views[e.code];
       if (go) {
         e.preventDefault();
-        // A field saves on blur: what was typed goes with it, not lost with the view.
         if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
         go();
       } else if (k === "n") {
@@ -292,8 +277,7 @@ function Shell({ vault, settings, onRecoveryCode }: { vault: VaultStatus; settin
     setView("accounts");
     setGroup(null);
   };
-  /** Opens Launch with these accounts picked; ones that can't launch (signed out, already
-   * playing) are left out, and with none left nothing changes. */
+
   const launchAs = (ids: number[]) => {
     const live = new Set(instances.filter(isLive).map((i) => i.accountId));
     const valid = ids.filter((id) => !live.has(id) && accounts.data?.some((a) => a.id === id && a.status === "valid"));
@@ -372,7 +356,7 @@ function Shell({ vault, settings, onRecoveryCode }: { vault: VaultStatus; settin
       <nav aria-label={t("app.sections")} style={{ width: nav.width }} className="flex-none flex flex-col min-h-0">
         <div className="scroll flex-1 min-h-0 flex flex-col gap-1.5 px-3 pt-2.5 pb-3" style={{ scrollbarWidth: "none" }}>
           <div className="nav-heading">{t("app.sections")}</div>
-          {/* Sorted within each group; More tools and Settings stay where they are. */}
+          {}
           {sections(MAIN_SECTIONS, true, "flex flex-col gap-1.5")}
           <button className="nav-item" aria-expanded={showTools} onClick={() => setToolsOpen(!showTools)}>
             <Icon name="chevron" className={showTools ? "" : "-rotate-90 rtl:rotate-90"} />
@@ -392,7 +376,7 @@ function Shell({ vault, settings, onRecoveryCode }: { vault: VaultStatus; settin
       {side && view === "settings" && <div className="enter flex-none flex flex-wrap gap-x-1 px-1 pb-2 [&>.sub]:w-auto">{settingsLinks}</div>}
       <div className="sheet min-h-0">
       {view === "dashboard" ? (
-        <DashboardView accounts={accounts.data} home={homeTabs} onLaunch={() => setView("launch")} onAdd={() => openAdd()} onImport={() => openAdd("many")} onAccounts={showAll} />
+        <DashboardView accounts={accounts.data} groups={groups.data} home={homeTabs} onLaunch={() => setView("launch")} onAdd={() => openAdd()} onImport={() => openAdd("many")} onAccounts={showAll} />
       ) : view === "accounts" ? (
         <AccountsView
           accounts={accounts.data}
@@ -448,7 +432,7 @@ function Shell({ vault, settings, onRecoveryCode }: { vault: VaultStatus; settin
         <SettingsView vault={vault} settings={settings} onPerformance={() => setView("performance")} onRecoveryCode={onRecoveryCode} />
       )}
       </div>
-      {/* The Debug page is the log; everywhere else it waits collapsed at the bottom. */}
+      {}
       {view !== "debug" && <LogDock />}
       </div>
 
@@ -465,23 +449,17 @@ function Shell({ vault, settings, onRecoveryCode }: { vault: VaultStatus; settin
   );
 }
 
-/** Surfaces that turn see-through over a background image, and how much of them stays (the rest
- * stay solid). Panels hold most of the text, so they keep it readable over any picture. */
 const SEE_THROUGH = { "--bg": 50, "--panel": 72 };
 
-/** Text on the accent: whichever of ink and white has the higher contrast (WCAG luminance). */
 function onAccent(hex: string) {
   const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
   return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.18 ? "#0a0b0d" : "#ffffff";
 }
 
-/** Applies the theme to <html>: `data-theme` (dark or light, "system" follows Windows live), the
- * accent colour (`data-accent`, theme.css) and the background image. Returns whether it is dark. */
 function useTheme(s: Settings | undefined) {
   const [dark, setDark] = useState(() => document.documentElement.dataset.theme !== "light");
   const theme = s?.theme;
   const accent = s?.accent ?? "";
-  // Less than this over a bright picture and no text stays readable.
   const dim = Math.max(40, s?.backgroundDim ?? 60);
   const bytes = useQuery({ queryKey: qk.background, queryFn: api.backgroundGet, staleTime: Infinity, enabled: !!s }).data;
   const [image, setImage] = useState<string | null>(null);
@@ -508,7 +486,6 @@ function useTheme(s: Settings | undefined) {
       } else {
         delete root.dataset.accent;
       }
-      // The window's colour covers the picture by `dim`; panels on top are half see-through.
       for (const v of Object.keys(SEE_THROUGH)) root.style.removeProperty(v);
       if (image) {
         const css = getComputedStyle(root);
@@ -522,7 +499,6 @@ function useTheme(s: Settings | undefined) {
       try {
         localStorage.setItem(THEME_KEY, t);
       } catch {
-        // Storage can be unavailable; the theme still applies.
       }
     };
     apply();
@@ -532,7 +508,6 @@ function useTheme(s: Settings | undefined) {
   return dark;
 }
 
-/** Tells the backend about user input (auto-lock), at most once every 30 s. */
 function useActivity(enabled: boolean) {
   useEffect(() => {
     if (!enabled) return;

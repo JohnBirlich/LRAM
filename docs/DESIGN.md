@@ -34,6 +34,7 @@ window-state, dialog. Tray via the `tray-icon` feature.
 | Plain cookie works anywhere | Hardware-backed auth (HBA / `x-bound-auth-token`) is live on the website. Roblox staff (2026-05-27): cookie workflows are "unaffected"; Account Session Protection is now a background risk signal and its opt-out was removed. Expect challenges, not hard rejections. | Send unsigned; map `401 9002/2` to "Roblox requires a bound session" and `rblx-challenge-*` 403s to "verify in the browser" (opens the account's session window). |
 | Login is username + password | Enhanced Protection (2026-04) forces passkeys / security keys on opted-in accounts; the web Account Switcher can swap accounts inside one browser profile. | Login only through the real roblox.com page in WebView2 (WebAuthn works there). After any session window closes, re-check the cookie still belongs to the same user ID. |
 | Premium via premiumfeatures | Premium stopped selling 2026-04-30 and its profile badge ended 2026-05-30 (Roblox Plus replaced it). `validate-membership` is marked for deprecation. | One "Subscription" field: Plus from `user-profile-api get-profiles` (`hasRobloxSubscription`), "Premium (legacy)" only if the old endpoint still says so. |
+| Friend requests (verified 2026-11-02) | The website's tab asks `GET friends.roblox.com/v1/users/{id}/friends/requests?limit=100&sortOrder=Asc` with cookie; sending is `POST .../users/{targetUserId}/request-friendship {"friendshipOriginSourceType":0}`, answering is `POST .../users/{requesterUserId}/accept-friend-request` or `.../decline-friend-request`. All need cookie + CSRF. | Mirror the website; answers that carry `isCaptchaRequired` become a plain English hint instead of a silent failure. |
 | Robux at `/v1/users/{id}/currency` | Documented endpoint is `GET economy.roblox.com/v1/user/currency`. | Use the documented one. |
 | Presence gives last online | `lastOnline` and `/presence/last-online` are gone. Job ID only visible to permitted viewers. | Same-server detection reads the client's own log first, presence second. |
 | Server list freely pageable | `limit` must be 10/25/50/100; **3 requests per minute per IP** without a cookie, on a window aligned to the clock minute; website uses `/v2/.../servers/Public?orderBy=OccupancyDesc\|OccupancyAsc\|Recommended\|BestLatency&excludeFullGames=true` (the last two need a cookie). Pages repeat servers. Staff have announced a logged-in-only server list. | Use the selected account's cookie, page on demand, de-duplicate by job ID, wait on `x-ratelimit-reset` (Retry-After understates it). |
@@ -122,6 +123,12 @@ session windows, deleted after use, swept on start). A moved data folder is reco
 - Switching mode only re-wraps the data key. No cookie is re-encrypted.
 - Reveal / copy cookie: master mode re-asks the password; DPAPI mode asks Windows Hello. Copy clears the
   clipboard after 30 s. Cookies, tickets, link codes and process command lines never reach logs.
+- Wrong-password attempts are counted (`vault::Attempts`): the first two are free (an Argon2 unwrap
+  already costs about a second), then each one costs a wait that doubles from 5 s up to 5 minutes, and
+  the status carries the seconds left so the unlock screen counts them down. Any right password drops
+  the count. A used recovery code skips the wait, since the owner proved it is theirs another way. The
+  count lives in memory: it stops guessing through the app, not a copied database — for that the master
+  password itself, under Argon2id, is the defence.
 
 ### SQLite schema v1
 
@@ -198,6 +205,14 @@ same start time (not multi-instance survivors then: `Multi::adopt`); the rest ar
 can't be found again by a new process, so RoALT lifts the limits it set at exit (`Limiter::release_all`)
 and sets them anew after the restart.
 
+A running client is never called closed on one doubtful look. Liveness comes from the pid with its
+start time, and a refused read still counts when Windows lists the process as RobloxPlayerBeta.exe
+(`process::unreadable_client`) or when the process still owns a top-level window, shown or hidden
+(`process::has_any_window`). A client that never reached a game is given 120 s to appear; while
+Roblox's own installer runs, updating it, that wait is 15 minutes (`INSTALL_WAIT_MS`), so a first
+launch isn't reported as one that failed. A disconnect line in the client's log stops counting once
+the log shows it replicating again (`Replicator created`, `serverId:`).
+
 ### Core types (Rust, exported to TS)
 
 ```rust
@@ -218,13 +233,14 @@ enum BulkStage { Queued, Resolving, Ticket, Starting, Joining, InGame, Failed(St
 ## 5. IPC commands
 
 All return `Result<T, AppError>`; `AppError` reaches the UI as `{kind, message}` with kinds such as
-`Locked`, `CookieInvalid`, `Challenge` (needs a human in the browser), `RateLimited{retry_at}`,
-`BoundSessionRequired`, `RobloxRunning`, `NotFound`, `Network`, `Internal`.
+`Locked`, `CookieInvalid`, `Challenge` (needs a human in the browser), `RateLimited(seconds)`,
+`TooManyAttempts(seconds)`, `BoundSessionRequired`, `RobloxRunning`, `NotFound`, `Network`,
+`Internal`.
 
 | Area | Command | Returns |
 |---|---|---|
-| Vault | `vault_status()` | `{mode, locked, accounts}` |
-| | `vault_unlock(password)` / `vault_lock()` | — |
+| Vault | `vault_status()` | `{mode, locked, accounts, retryIn}` |
+| | `vault_unlock(password)` / `vault_lock()` | — (wrong tries are counted, see the vault) |
 | | `vault_set_mode(mode, current_password?, new_password?)` | — |
 | | `app_activity()` (throttled, resets the idle timer) | — |
 | Accounts | `accounts_list()` | `AccountSummary[]` |
@@ -240,6 +256,9 @@ All return `Result<T, AppError>`; `AppError` reaches the UI as `{kind, message}`
 | Info | `account_info(id, refresh)` | `AccountInfo` |
 | | `presence(ids)` | `Presence[]` |
 | | `friends_joinable(account_id)` (Join-user picker) | `FriendPresence[]` |
+| | `friends_requests(account_id)` — pending incoming requests, the website's own list | `UserRef[]` |
+| | `friend_request_send(account_id, name)` → `POST friends/v1/users/{targetUserId}/request-friendship` `{friendshipOriginSourceType: 0}` | `UserRef` |
+| | `friend_request_answer(account_id, requester_id, accept)` → `.../accept-friend-request` / `.../decline-friend-request` (both take the requester's id) | — |
 | Launch | `target_parse(input)` (local, no network) | `ParsedInput` |
 | | `launch(account_id, target)` | `Instance` |
 | | `bulk_launch({account_ids, target, delay_ms, same_server: off\|pick_first\|follow_first, auto_rejoin})` | `batch_id` |
@@ -247,6 +266,7 @@ All return `Result<T, AppError>`; `AppError` reaches the UI as `{kind, message}`
 | | `favourites_list()` / `favourite_save(input)` / `favourite_remove(id)` / `favourites_reorder(ids)` | |
 | Instances | `instances_list()` | `Instance[]` |
 | | `instance_close(id, force)` / `instances_close_all(force)` | — |
+| | `instance_set_muted(id, muted)` — the Windows mixer's mute for that client (`instances::audio`) | — |
 | | `multi_instance_status()` | `{enabled, held, blocking_pid?}` |
 | Servers | `game_info(place_id)` | `GameInfo` |
 | | `servers_list(place_id, {order, exclude_full, cursor?, account_id?})` | `ServerPage` |
@@ -355,14 +375,45 @@ panics clear it: alpha first, which needs no answer from the client, then the bi
 hard kill with RoALT not reopened leaves the client invisible until the next start, which clears ghosts it doesn't
 follow again (half-made ones too, by the bits alone).
 
+A client that reaches a game is laid out once per client (`first_in_game`): made tiny, hidden, and
+put in the grid. The grid is laid out before any hiding, since `tile` leaves hidden windows out;
+hiding first would drop the client from it, and it would come back wherever Roblox left it. A
+resize that the window didn't take (a maximized client, Roblox's own fullscreen) is retried once
+after leaving that state, and says so in the log when it still fails.
+
+A client that has shown its window needs `DEAD_POLLS` (two) polls without a readable process or a
+window before it counts as ended: Roblox guards its process, and one failed read must not turn a
+running client into "Closed unexpectedly". Every such end is logged with what was seen.
+
+A client's size survives its own fullscreen: `window::sweep` keeps the client area it last had outside
+fullscreen (no title bar and a client area covering the monitor; maximized and tiled windows don't
+count) and puts that size back when it comes out of fullscreen at another one (`note_size`,
+`restore_size`). A window the user resized itself wins: `resize::on_event` reports the end of a drag to
+`window::user_sized`, which makes that the size to keep. Tiny clients are `keep_tiny`'s.
+
+Groups are listed with numbered names first (`model::group_order`: `1Main` before `007 Bank`, then by
+what follows the number), the rest in the order they were made; `storage::groups` sorts them and the UI
+sorts its own cache the same way (`byGroupOrder` in `data.ts`). The dashboard's client cards show the
+account's groups so membership is visible without going back to the accounts list.
+
 Anti-AFK (opt-in) uses `SendInput`, so it needs the client in front: it runs only after 5 s with no
 user input (`GetLastInputInfo`), wakes minimized clients as ghosts first (`window::wake_for_press`), and takes the focus with `SetForegroundWindow`,
 then `AttachThreadInput`, then after a zero-movement mouse input that lifts the foreground lock (not an
-ALT tap, which opens menus). Space goes out by scan code only while the client is confirmed in front,
-then the previous window gets the focus back. Our own injection also moves `GetLastInputInfo`, so any
-newer input mid-round means the user is back and the round stops. This is input automation: it moves the
+ALT tap, which opens menus). The press itself is `Settings.anti_afk.press`: Space goes out by scan code
+only while the client is confirmed in front (a jump, which resets a treadmill's counter and also knocks
+the character off it); Camera holds the right button for a 3 px move and back; Mouse only walks the cursor
+into the middle of the client and back, which leaves the game untouched. Both gentle kinds put the cursor
+where it was. Then the previous window gets the focus back. Our own injection also moves
+`GetLastInputInfo`, so any newer input mid-round means the user is back and the round stops. This is input automation: it moves the
 focus for a moment and Roblox may treat injected input as it sees fit, so it is off by default and each
 client can opt out.
+
+Client sound (opt-in via `Settings.mute_clients`, per client with `instance_set_muted`): Core Audio on
+its own thread (`instances/audio.rs`), `IAudioSessionManager2` → `IAudioSessionControl2::GetProcessId`
+→ `ISimpleAudioVolume::SetMute` on the default render endpoint. Roblox makes the session a few seconds
+after the window and may replace it, so muted clients are re-muted every 5 s; an unmuted one is touched
+only when this worker muted it before, so the Windows mixer stays the user's. Nothing in the game's own
+volume or memory is read.
 
 Discord alerts (opt-in): the webhook URL is encrypted with its own AAD (`roalt.discord.webhook`) and
 accepted only for the Discord hosts, https, `/api/webhooks/<id>/<token>`; redirects are off. Events are
@@ -390,7 +441,7 @@ doesn't retry a version that failed. Fallback: open roblox.com/download.
   the version from `tauri.conf.json`, output `dist\RoALT-Setup-<version>.exe`.
 - `.github/workflows/release.yml` (same pattern as AgentSuite): a `v*` tag builds on windows-latest,
   installs Inno Setup, signs `RoALT-Setup-<version>.exe` + newline + the setup .exe's bytes with the
-  `ROALT_UPDATE_KEY` secret (ECDSA P-256 / SHA-256, IEEE P1363, base64 in `RoALT-Setup-<version>.exe.sig`;
+  `LRAM_UPDATE_KEY` secret (ECDSA P-256 / SHA-256, IEEE P1363, base64 in `LRAM-Setup-<version>.exe.sig`;
   the job fails without the secret, or when the signature doesn't verify against `PUBLIC_KEY` in
   `self_update.rs`), attaches both and
   `SHA256SUMS.txt` to a **draft** release; you publish it.

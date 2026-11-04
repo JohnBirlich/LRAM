@@ -5,7 +5,6 @@ import { accountName, Avatar } from "../accounts/shared";
 import { isRunning, STATES, uptime, useNow } from "../launch/Running";
 import { fmtNum, t } from "../../i18n";
 
-/** Samples kept per line: two minutes at one every 2 s, longer when reading them is slow (`metrics`). */
 const KEEP = 60;
 
 type Series = { cpu: number[]; mem: number[] };
@@ -21,13 +20,11 @@ function rate(bps: number | null) {
 }
 const push = (list: number[], v: number) => [...list, v].slice(-KEEP);
 
-/** One series over its last `KEEP` samples: a 2px line with a faint wash under it, the latest
- * value marked. Its title reads out the range, the table cell beside it the current value. */
 function Sparkline({ values, floor, zero, label, format }: {
   values: number[];
-  /** The smallest span the height stands for, so noise stays flat. */
+
   floor: number;
-  /** From 0 (a share); else from the lowest value (memory: its change is the story). */
+
   zero?: boolean;
   label: string;
   format: (n: number) => string;
@@ -66,7 +63,7 @@ function Tile({ label, value, children }: { label: string; value: string; childr
   );
 }
 
-/** Live CPU, memory and IO of every client LRAM runs, polled every 2 s. */
+// -- Main func
 export function MonitorView({ accounts }: { accounts: AccountSummary[] }) {
   const running = (useInstances().data ?? []).filter(isRunning);
   const metrics = useMetrics();
@@ -76,7 +73,6 @@ export function MonitorView({ accounts }: { accounts: AccountSummary[] }) {
   const list = metrics.data ?? [];
   const byInst = new Map<string, ClientMetrics>(list.map((m) => [m.instanceId, m]));
 
-  // One point per new sample; clients that ended drop out.
   const { data } = metrics;
   useEffect(() => {
     if (!data) return;

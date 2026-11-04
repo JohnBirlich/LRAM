@@ -1,6 +1,3 @@
-//! The `roblox-player:` URI and PlaceLauncher URL, byte-for-byte as roblox.com builds them
-//! (docs/research/fixtures/authlaunch-web-launch-uri-spec.json).
-
 use std::fmt::Write;
 
 use uuid::Uuid;
@@ -16,12 +13,7 @@ pub struct PlaceLaunch<'a> {
     pub join_attempt_id: Uuid,
 }
 
-/// `https://www.roblox.com/Game/PlaceLauncher.ashx?request=<T>&browserTrackerId=<id>&...`
-/// with the website's parameter order; keys and values encodeURIComponent-encoded, `%20` → `+`.
-/// Game: placeId, [launchData], isPlayTogetherGame=false, joinAttemptId, joinAttemptOrigin=PlayButton.
-/// Job: placeId, gameId, isPlayTogetherGame=false, joinAttemptId, joinAttemptOrigin=JoinInstance.
-/// Private: placeId, [accessCode], [linkCode], joinAttemptId, joinAttemptOrigin=PlayButton.
-/// Follow: userId, joinAttemptId, joinAttemptOrigin=JoinUser.
+// -- Main func
 pub fn place_launcher_url(p: &PlaceLaunch) -> String {
     let some = |k, v: &Option<String>| v.as_deref().filter(|v| !v.is_empty()).map(|v| (k, v.to_owned()));
     let (request, mut params, origin) = match p.join {
@@ -52,14 +44,8 @@ pub fn place_launcher_url(p: &PlaceLaunch) -> String {
     url
 }
 
-/// `roblox-player:1+launchmode:play+gameinfo:<enc ticket>+launchtime:<ms>+placelauncherurl:<enc url>+
-/// browsertrackerid:<id>+robloxLocale:en_us+gameLocale:en_us+LaunchExp:InApp`. `production` adds an
-/// empty `channel:` before `LaunchExp`: the client then asks for production's version, whatever
-/// channel Roblox left in the registry (research multi-instance M9). The result holds the ticket,
-/// so it is a `Secret`.
 pub fn player_uri(ticket: &Secret, launch_time_ms: i64, p: &PlaceLaunch, production: bool) -> Secret {
     let url = place_launcher_url(p);
-    // Sized up front so no reallocation leaves a copy of the ticket behind.
     let mut s = String::with_capacity(3 * (ticket.expose().len() + url.len()) + 256);
     s.push_str("roblox-player:1+launchmode:play+gameinfo:");
     encode_into(&mut s, ticket.expose());
@@ -70,14 +56,11 @@ pub fn player_uri(ticket: &Secret, launch_time_ms: i64, p: &PlaceLaunch, product
     Secret::new(s)
 }
 
-/// A random 16-digit browser tracker id, unique per launch (the client log names it, which is
-/// how a client is tied back to its account). Kept at or below 2^53 - 1 so JavaScript holds it exactly.
 pub fn new_browser_tracker_id() -> i64 {
     const LOW: i64 = 1_000_000_000_000_000;
     LOW + (Uuid::new_v4().as_u128() % (8 * LOW as u128)) as i64
 }
 
-/// JavaScript's `encodeURIComponent`.
 pub(crate) fn encode(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     encode_into(&mut out, s);

@@ -1,9 +1,3 @@
-//! Turns pasted text (game links, share links, roblox:// deep links, ids, usernames) into a
-//! `ParsedInput`. Pure and local: nothing here touches the network.
-//! Rules and the 38 recorded cases: docs/research/research-links-private.json (L16),
-//! docs/research/ref_parse.py, docs/research/fixtures/links-parse-cases.json, plus the
-//! verifier's gaps (verify-links-private.json L16).
-
 use std::collections::HashMap;
 
 use url::{Url, form_urlencoded};
@@ -60,7 +54,6 @@ fn nested_why() -> String {
 }
 
 const WEB_HOSTS: [&str; 4] = ["roblox.com", "www.roblox.com", "web.roblox.com", "m.roblox.com"];
-/// The web's share-link types; `true` = it can lead into a game.
 const SHARE_TYPES: [(&str, bool); 12] = [
     ("Server", true),
     ("ExperienceInvite", true),
@@ -75,10 +68,9 @@ const SHARE_TYPES: [(&str, bool); 12] = [
     ("AvatarItemAffiliate", false),
     ("ContentPost", false),
 ];
-/// Lower-cased keys; the first non-empty value wins.
 type Query = HashMap<String, String>;
 
-/// Never panics; anything unusable is `Invalid` / `Unsupported` with a short user-facing reason.
+// -- Main func
 pub fn parse(input: &str) -> ParsedInput {
     parse_at(input, 0)
 }
@@ -111,7 +103,6 @@ fn parse_at(input: &str, depth: u8) -> ParsedInput {
     }
 }
 
-/// http(s) links; hosts are read the WHATWG way (`evil.com\@www.roblox.com` is evil.com).
 fn web(s: &str, depth: u8) -> ParsedInput {
     let Ok(u) = Url::parse(s) else { return invalid(not_roblox_why()) };
     let host = u.host_str().unwrap_or("").trim_end_matches('.').to_ascii_lowercase();
@@ -137,7 +128,6 @@ fn web(s: &str, depth: u8) -> ParsedInput {
     }
 }
 
-/// ro.blox.com (AppsFlyer): the real link is in the query; short links are never fetched.
 fn apps_flyer(q: &Query, depth: u8) -> ParsedInput {
     if depth > 0 {
         return invalid(nested_why());
@@ -148,7 +138,6 @@ fn apps_flyer(q: &Query, depth: u8) -> ParsedInput {
     }
 }
 
-/// `rest` = what follows `roblox://`. The legacy form `roblox://placeId=1&..` has no `?`.
 fn deeplink(rest: &str) -> ParsedInput {
     let (mut path, mut raw) = rest.split_once('?').unwrap_or((rest, ""));
     if raw.is_empty() && path.contains('=') {
@@ -167,7 +156,6 @@ fn deeplink(rest: &str) -> ParsedInput {
     }
 }
 
-/// `/games/start` and the roblox:// launch forms.
 fn from_query(q: &Query) -> ParsedInput {
     match get(q, &["placeid", "id"]) {
         Some(p) => id(p).map_or_else(|| invalid(place_why()), |place_id| with_place(place_id, q, true)),
@@ -176,8 +164,6 @@ fn from_query(q: &Query) -> ParsedInput {
     }
 }
 
-/// Link code, then access code, then job id, as the website's own handler. A `/games/{id}` page
-/// (`start == false`) takes neither an access code nor launch data.
 fn with_place(place_id: i64, q: &Query, start: bool) -> ParsedInput {
     if let Some(c) = get(q, &["linkcode", "privateserverlinkcode"]) {
         if !is_digits(c, 64) {
@@ -197,7 +183,6 @@ fn with_place(place_id: i64, q: &Query, start: bool) -> ParsedInput {
         }
         return target(LaunchTarget::Server { place_id, job_id: j.to_ascii_lowercase() });
     }
-    // Over-long data is kept here; resolve drops it at launch and says so.
     let launch_data = q.get("launchdata").filter(|_| start);
     place(place_id, launch_data.cloned())
 }
@@ -215,8 +200,6 @@ fn share(q: &Query) -> ParsedInput {
     }
 }
 
-/// Values are percent-decoded once. `+` stays a literal plus, as in Roblox's own parser (no
-/// form decoding). Empty values count as absent.
 fn query(raw: &str) -> Query {
     let mut q = Query::new();
     for (k, v) in form_urlencoded::parse(raw.replace('+', "%2B").as_bytes()) {
@@ -231,7 +214,6 @@ fn get<'a>(q: &'a Query, keys: &[&str]) -> Option<&'a str> {
     keys.iter().find_map(|k| q.get(*k)).map(String::as_str)
 }
 
-/// A positive id that fits an i64, digits only.
 fn id(s: &str) -> Option<i64> {
     if !is_digits(s, 19) {
         return None;
@@ -264,7 +246,6 @@ fn is_scheme(s: &str) -> bool {
         && s.bytes().all(|b| b.is_ascii_alphanumeric() || b"+-.".contains(&b))
 }
 
-/// `xx` or `xx-yyyy` (already lower-cased).
 fn is_locale(s: &str) -> bool {
     let (lang, region) = match s.split_once('-') {
         Some((l, r)) => (l, Some(r)),
@@ -305,7 +286,6 @@ mod tests {
 
     use super::*;
 
-    /// The fixture's short reason codes, as the user-facing text.
     fn reason(code: &str) -> String {
         match code {
             "empty" => empty_why(),
@@ -383,20 +363,16 @@ mod tests {
     fn verifier_fixes() {
         let link = |place_id, c: &str| target(LaunchTarget::PrivateLink { place_id, link_code: c.into() });
         let cases = [
-            // Empty values count as absent.
             ("roblox://experiences/start?placeId=1&accessCode=&gameInstanceId=", place(1, None)),
             ("https://www.roblox.com/games/1/x?privateServerLinkCode=&gameInstanceId=", place(1, None)),
             ("roblox://experiences/start?placeId=&id=5", place(5, None)),
             ("https://www.roblox.com/games/start?placeId=&userId=156", follow(156)),
-            // WHATWG hosts.
             ("https://evil.com\\@www.roblox.com/games/1", invalid(not_roblox_why())),
             ("https://www.roblox.com@evil.com/games/1", invalid(not_roblox_why())),
             ("https://WWW.ROBLOX.COM./games/1", place(1, None)),
             ("https://www.roblox.com:443/games/1", place(1, None)),
-            // Legacy place page.
             ("https://www.roblox.com/PlaceItem.aspx?id=920587237", place(920587237, None)),
             ("https://www.roblox.com/PlaceItem.aspx?id=x", invalid(place_why())),
-            // A linkCode on a game page is kept, not dropped.
             ("https://www.roblox.com/games/1/x?linkCode=123", link(1, "123")),
             ("https://www.roblox.com/games/1/x?linkCode=12a", invalid(link_code_why())),
             ("https://www.roblox.com/games/1/x?accessCode=8d5f1b3e-6a0c-4f7e-9b2d-1c3e5a7f9b0d", place(1, None)),

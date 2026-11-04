@@ -1,5 +1,3 @@
-//! The IPC surface. Each command validates input, calls the modules and emits change events.
-
 use std::path::Path;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -22,8 +20,6 @@ fn accounts_changed(app: &AppHandle) {
     let _ = app.emit("accounts://changed", ());
 }
 
-// ---------- vault ----------
-
 #[tauri::command]
 pub fn vault_status(s: State<'_, App>) -> Result<VaultStatus> {
     Ok(VaultStatus {
@@ -32,6 +28,7 @@ pub fn vault_status(s: State<'_, App>) -> Result<VaultStatus> {
         accounts: s.db.accounts()?.len() as u32,
         auto_lock_minutes: s.db.settings()?.auto_lock_minutes,
         has_recovery: s.db.recovery_record()?.is_some(),
+        retry_in: s.vault.retry_in(),
     })
 }
 
@@ -49,19 +46,16 @@ fn after_unlock(app: &AppHandle, s: &App) {
     crate::tray::refresh(app);
 }
 
-/// Forgot the password: `code` sets `new_password` and unlocks. The code is used up; returns the
-/// fresh one, which the UI shows once. A vault without a code answers like a wrong code.
 #[tauri::command]
 pub async fn vault_recover(app: AppHandle, s: State<'_, App>, code: String, new_password: String) -> Result<String> {
     let recovery = s.db.recovery_record()?.ok_or(AppError::WrongPassword)?;
     let (rec, new_code, new_recovery) = crate::vault::recover(&recovery, &code, &new_password)?;
     s.db.save_vault_and_recovery(&rec, &new_recovery)?;
-    s.vault.unlock(&rec, &new_password)?;
+    s.vault.unlock_after_recovery(&rec, &new_password)?;
     after_unlock(&app, &s);
     Ok(new_code.expose().to_owned())
 }
 
-/// A new recovery code, shown once by the UI. Replaces (revokes) the one before.
 #[tauri::command]
 pub async fn vault_recovery_create(s: State<'_, App>, current_password: String) -> Result<String> {
     let rec = s.db.vault_record()?.ok_or(AppError::Internal("vault record missing".into()))?;
@@ -74,8 +68,6 @@ pub async fn vault_recovery_create(s: State<'_, App>, current_password: String) 
     Ok(code.expose().to_owned())
 }
 
-/// What a saved code file says. Refuses anything but a code, so the command that writes it can't
-/// be used to put other content in a file.
 fn recovery_file_text(code: &str) -> Result<String> {
     let code = crate::vault::master::normalize_code(code).ok_or_else(not_a_code)?;
     Ok(tr!(
@@ -95,8 +87,6 @@ pub async fn vault_recovery_save(path: String, code: String) -> Result<()> {
     crate::vault::backup::write_atomic(Path::new(&path), recovery_file_text(&code)?.as_bytes())
 }
 
-/// Copies a code as `account_copy_cookie` does a cookie: not into Windows clipboard history, and
-/// cleared again.
 #[tauri::command]
 pub async fn vault_recovery_copy(app: AppHandle, s: State<'_, App>, code: String) -> Result<()> {
     let code = crate::vault::master::normalize_code(&code).ok_or_else(not_a_code)?;
@@ -119,7 +109,6 @@ pub async fn vault_set_mode(
     new_password: Option<String>,
 ) -> Result<()> {
     let rec = s.db.vault_record()?.ok_or(AppError::Internal("vault record missing".into()))?;
-    // Otherwise setting a master password would be a way round the Hello check on reveal.
     if rec.mode == VaultMode::Dpapi && mode == VaultMode::Master && crate::vault::hello_available().await {
         reauth(&app, &s, None, &tr!("Confirm it's you to set a master password.")).await?;
     }
@@ -130,20 +119,16 @@ pub async fn vault_set_mode(
     Ok(())
 }
 
-/// Called by the UI (throttled) on user input; drives auto-lock.
 #[tauri::command]
 pub fn app_activity(s: State<'_, App>) {
     s.vault.touch();
 }
-
-// ---------- accounts ----------
 
 #[tauri::command]
 pub fn accounts_list(s: State<'_, App>) -> Result<Vec<AccountSummary>> {
     s.db.accounts()
 }
 
-/// Accepts a raw value, `.ROBLOSECURITY=value`, quoted or with a trailing `;`.
 fn normalize_cookie(raw: &str) -> Result<Secret> {
     let v = raw.trim().trim_matches(|c| c == '"' || c == '\'').trim();
     let v = v.strip_prefix(".ROBLOSECURITY=").unwrap_or(v).trim_end_matches(';').trim();
@@ -153,7 +138,6 @@ fn normalize_cookie(raw: &str) -> Result<Secret> {
     Ok(Secret::new(v))
 }
 
-/// Validates a cookie that is not stored yet and saves it as a new or refreshed account.
 async fn add_account(app: &AppHandle, s: &App, cookie: Secret) -> Result<AccountSummary> {
     let (user, rotated): (AuthenticatedUser, _) = s.api.authenticated_user(0, &cookie).await?;
     let cookie = rotated.unwrap_or(cookie);
@@ -175,6 +159,9 @@ pub async fn account_add_cookie(app: AppHandle, s: State<'_, App>, cookie: Strin
     if s.vault.is_locked() {
         return Err(AppError::Locked);
     }
+    if !cookie.contains(COOKIE_MARK) && looks_like_credentials(&cookie) {
+        return Err(AppError::Invalid(not_a_cookie()));
+    }
     add_account(&app, &s, normalize_cookie(&cookie)?).await
 }
 
@@ -187,19 +174,30 @@ pub async fn account_add_login(app: AppHandle, s: State<'_, App>) -> Result<Acco
     add_account(&app, &s, cookie).await
 }
 
-/// The start of every .ROBLOSECURITY value.
 const COOKIE_MARK: &str = "_|WARNING:-DO-NOT-SHARE-THIS.";
 
-/// Every .ROBLOSECURITY value in pasted text (pure), once each: on any line, from the warning
-/// to the next space, quote, `;`, `,` or `:` after it, so `user:pass:cookie` lines and plain
-/// lists both work.
+fn not_a_cookie() -> String {
+    tr!("That is a username and password, not a cookie: Roblox no longer signs in from those. Use \"Sign in with Roblox\", or paste the .ROBLOSECURITY cookie of a browser where the account is signed in.")
+}
+
+fn looks_like_credentials(text: &str) -> bool {
+    text.lines().filter(|line| !line.contains(COOKIE_MARK)).any(|line| {
+        let Some((user, rest)) = line.trim().split_once(':') else { return false };
+        let (user, pass) = (user.trim(), rest.trim());
+        !user.is_empty()
+            && !pass.is_empty()
+            && user.len() <= 64
+            && !user.contains(char::is_whitespace)
+            && !pass.contains(char::is_whitespace)
+    })
+}
+
 fn find_cookies(text: &str) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for line in text.lines() {
         let mut rest = line;
         while let Some(at) = rest.find(COOKIE_MARK) {
             let tail = &rest[at..];
-            // The warning ends with "|_"; the value proper starts after it.
             let body = tail.find("|_").map_or(COOKIE_MARK.len(), |i| i + 2);
             let end = tail[body..].find(|c: char| !c.is_ascii_graphic() || "\"';,:".contains(c)).map_or(tail.len(), |i| body + i);
             let c = &tail[..end];
@@ -212,9 +210,6 @@ fn find_cookies(text: &str) -> Vec<String> {
     out
 }
 
-/// Adds each cookie in turn through the single-account path (checked with Roblox, a short
-/// pause between them). A cookie for an account already stored refreshes it (`updated`); the
-/// same cookie twice counts once.
 async fn import_cookies(app: &AppHandle, s: &App, cookies: Vec<(Secret, ImportExtras)>) -> Result<ImportReport> {
     let mut report = ImportReport::default();
     let before: Vec<i64> = s.db.accounts()?.iter().map(|a| a.id).collect();
@@ -245,14 +240,12 @@ async fn import_cookies(app: &AppHandle, s: &App, cookies: Vec<(Secret, ImportEx
     Ok(report)
 }
 
-/// What an import keeps besides the cookie.
 #[derive(Default)]
 struct ImportExtras {
     alias: String,
     notes: String,
 }
 
-/// Every cookie found in pasted text (`find_cookies`), added one by one. `skipped`: repeats.
 #[tauri::command]
 pub async fn accounts_import_cookies(app: AppHandle, s: State<'_, App>, text: String) -> Result<ImportReport> {
     if s.vault.is_locked() {
@@ -260,7 +253,11 @@ pub async fn accounts_import_cookies(app: AppHandle, s: State<'_, App>, text: St
     }
     let found = find_cookies(&text);
     if found.is_empty() {
-        return Err(AppError::Invalid(tr!("No .ROBLOSECURITY cookies found. Each starts with _|WARNING:-DO-NOT-SHARE-THIS.")));
+        return Err(AppError::Invalid(if looks_like_credentials(&text) {
+            not_a_cookie()
+        } else {
+            tr!("No .ROBLOSECURITY cookies found. Each starts with _|WARNING:-DO-NOT-SHARE-THIS.")
+        }));
     }
     let total = text.matches(COOKIE_MARK).count();
     let cookies = found.iter().map(|c| normalize_cookie(c).map(|c| (c, ImportExtras::default()))).collect::<Result<Vec<_>>>()?;
@@ -269,12 +266,9 @@ pub async fn accounts_import_cookies(app: AppHandle, s: State<'_, App>, text: St
     Ok(report)
 }
 
-/// Roblox Account Manager's DPAPI entropy (ic3w0lf22/Roblox-Account-Manager, AccountManager.cs).
 const RAM_ENTROPY: &[u8] = b"ROBLOX ACCOUNT MANAGER | :) | BROUGHT TO YOU BUY ic3w0lf";
-/// Starts a RAM file saved with its own password (libsodium; not readable here).
 const RAM_HEADER: &[u8] = b"Roblox Account Manager created by ic3w0lf22 @ github.com .......";
 
-/// One account of RAM's AccountData.json.
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "PascalCase")]
 struct RamAccount {
@@ -286,7 +280,6 @@ struct RamAccount {
     description: Option<String>,
 }
 
-/// RAM's accounts from its saved JSON (pure): the cookie (blank: None), alias and description.
 fn ram_accounts(json: &[u8]) -> Result<Vec<(Option<String>, ImportExtras)>> {
     let list: Vec<RamAccount> = serde_json::from_slice(json.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(json))
         .map_err(|e| {
@@ -302,9 +295,6 @@ fn ram_accounts(json: &[u8]) -> Result<Vec<(Option<String>, ImportExtras)>> {
         .collect())
 }
 
-/// Imports Roblox Account Manager's AccountData.json: plain, or DPAPI-encrypted by RAM for
-/// this Windows user. One saved with a RAM password is refused (remove the password in RAM
-/// first). Alias and Description become alias and notes.
 #[tauri::command]
 pub async fn accounts_import_ram(app: AppHandle, s: State<'_, App>, path: String) -> Result<ImportReport> {
     if s.vault.is_locked() {
@@ -351,12 +341,10 @@ pub async fn accounts_import_ram(app: AppHandle, s: State<'_, App>, path: String
     Ok(report)
 }
 
-/// A locked vault is for looking at nothing and changing nothing.
 fn unlocked(s: &App) -> Result<()> {
     if s.vault.is_locked() { Err(AppError::Locked) } else { Ok(()) }
 }
 
-/// These run on the main thread: a list no UI can make would freeze the window.
 fn not_too_many(ids: &[i64]) -> Result<()> {
     if ids.len() > 20_000 { Err(AppError::Internal("too many ids".into())) } else { Ok(()) }
 }
@@ -393,8 +381,6 @@ pub fn accounts_remove(app: AppHandle, s: State<'_, App>, ids: Vec<i64>) -> Resu
     Ok(())
 }
 
-/// Checks each cookie with Roblox (one at a time; the API client throttles).
-/// `None` checks every account. Returns the full, updated list.
 #[tauri::command]
 pub async fn accounts_validate(app: AppHandle, s: State<'_, App>, ids: Option<Vec<i64>>) -> Result<Vec<AccountSummary>> {
     let ids = match ids {
@@ -403,7 +389,6 @@ pub async fn accounts_validate(app: AppHandle, s: State<'_, App>, ids: Option<Ve
     };
     let (mut answered, mut last_err) = (0, None);
     for id in ids {
-        // Removed while a long run was going: skip it.
         let (user_id, blob) = match s.db.account_cookie(id) {
             Err(AppError::NotFound) => continue,
             r => r?,
@@ -417,7 +402,6 @@ pub async fn accounts_validate(app: AppHandle, s: State<'_, App>, ids: Option<Ve
             Ok((u, _)) if u.id == user_id => {
                 s.db.set_status(id, AccountStatus::Valid, now, Some(&u.name), Some(&u.display_name))
             }
-            // The cookie signs in as someone else (e.g. an account switch in a browser).
             Ok(_) => s.db.set_status(id, AccountStatus::Invalid, now, None, None),
             Err(AppError::CookieInvalid | AppError::BoundSessionRequired) => {
                 s.db.set_status(id, AccountStatus::Invalid, now, None, None)
@@ -425,7 +409,11 @@ pub async fn accounts_validate(app: AppHandle, s: State<'_, App>, ids: Option<Ve
             Err(AppError::Challenge) => s.db.set_status(id, AccountStatus::Challenged, now, None, None),
             Err(e) => {
                 log::warn!("could not validate account {id}: {e}");
+                let limited = matches!(e, AppError::RateLimited(_));
                 last_err = Some(e);
+                if limited {
+                    break;
+                }
                 continue;
             }
         };
@@ -434,6 +422,7 @@ pub async fn accounts_validate(app: AppHandle, s: State<'_, App>, ids: Option<Ve
             r => r?,
         }
         answered += 1;
+        accounts_changed(&app);
     }
     accounts_changed(&app);
     match last_err {
@@ -442,7 +431,6 @@ pub async fn accounts_validate(app: AppHandle, s: State<'_, App>, ids: Option<Ve
     }
 }
 
-/// Master mode asks for the password again; DPAPI mode asks Windows Hello.
 async fn reauth(app: &AppHandle, s: &App, password: Option<String>, prompt: &str) -> Result<()> {
     match s.vault.mode() {
         VaultMode::Master => {
@@ -460,7 +448,6 @@ fn reveal_prompt() -> String {
     tr!("Confirm it's you to reveal a Roblox cookie.")
 }
 
-/// Records a dead or challenged cookie on the account (true when `e` was one).
 pub(crate) fn record_cookie_error(app: &AppHandle, s: &App, id: i64, e: &AppError) -> Result<bool> {
     let status = match e {
         AppError::CookieInvalid | AppError::BoundSessionRequired => AccountStatus::Invalid,
@@ -484,9 +471,6 @@ pub async fn account_reveal_cookie(app: AppHandle, s: State<'_, App>, id: i64, p
     Ok(stored_cookie(&s, id)?.expose().to_owned())
 }
 
-/// Copies from Rust so the cookie never passes through the UI. `write_secret` keeps it out of
-/// Windows clipboard history and cloud sync; the clipboard is cleared after the configured
-/// delay, or at exit (`clear_copied_cookie`) if that comes first.
 #[tauri::command]
 pub async fn account_copy_cookie(app: AppHandle, s: State<'_, App>, id: i64, password: Option<String>) -> Result<()> {
     reauth(&app, &s, password, &reveal_prompt()).await?;
@@ -505,7 +489,6 @@ fn copy_secret(app: &AppHandle, s: &App, secret: Secret) -> Result<()> {
     Ok(())
 }
 
-/// Clears the clipboard if it still holds the last copied cookie.
 pub fn clear_copied_cookie(app: &AppHandle) {
     let s = app.state::<App>();
     let Some(cookie) = s.copied.lock().unwrap_or_else(|e| e.into_inner()).take() else { return };
@@ -520,8 +503,6 @@ pub fn clear_copied_cookie(app: &AppHandle) {
     }
 }
 
-// ---------- account info ----------
-
 const HEADSHOT_TTL_MS: i64 = 6 * 60 * 60 * 1000;
 
 fn presence_of(p: UserPresence) -> Presence {
@@ -535,8 +516,6 @@ fn presence_of(p: UserPresence) -> Presence {
     }
 }
 
-/// The info panel. Served from the cache unless `refresh` or older than `cache_minutes`.
-/// Each part is fetched on its own; parts Roblox doesn't answer are listed in `unavailable`.
 #[tauri::command]
 pub async fn account_info(app: AppHandle, s: State<'_, App>, id: i64, refresh: bool) -> Result<AccountInfo> {
     let a = s.db.account(id)?;
@@ -548,7 +527,6 @@ pub async fn account_info(app: AppHandle, s: State<'_, App>, id: i64, refresh: b
             log::debug!("cached info of account {id} unreadable: {:?} at {}:{}", e.classify(), e.line(), e.column())
         })
     {
-        // Presence goes stale long before the rest: re-ask (self-view) once a minute at most.
         if now_ms() - info.fetched_at > 60_000
             && let Ok(rows) = s.api.presence(id, &stored_cookie(&s, id)?, &[a.user_id]).await
         {
@@ -591,9 +569,6 @@ pub async fn account_info(app: AppHandle, s: State<'_, App>, id: i64, refresh: b
     };
     part("subscription", subscription.is_some());
 
-    // Robux needs the cookie, so it is the probe: a dead or challenged cookie is reported (and
-    // recorded) instead of showing a half-empty panel; so is being entirely offline. Neither
-    // is cached. Public parts still answer anonymously when the cookie is dead.
     let robux = match robux {
         Ok(r) => Some(r),
         Err(e) => {
@@ -634,7 +609,6 @@ pub async fn account_info(app: AppHandle, s: State<'_, App>, id: i64, refresh: b
     Ok(info)
 }
 
-/// Avatar URLs for every account (cached 6 h); one batched call for the missing ones.
 #[tauri::command]
 pub async fn accounts_headshots(s: State<'_, App>, refresh: bool) -> Result<Vec<Headshot>> {
     let now = now_ms();
@@ -648,7 +622,6 @@ pub async fn accounts_headshots(s: State<'_, App>, refresh: bool) -> Result<Vec<
         }
     }
     if !missing.is_empty() {
-        // Offline or rate limited: still show the avatars we have.
         match s.api.headshots(&missing).await {
             Ok(urls) => {
                 for a in accounts.iter().filter(|a| missing.contains(&a.user_id)) {
@@ -664,9 +637,6 @@ pub async fn accounts_headshots(s: State<'_, App>, refresh: bool) -> Result<Vec<
     Ok(out)
 }
 
-/// Presence of the given accounts (the rows on screen), each asked with its own cookie:
-/// Roblox hides friends-only presence and game details from other viewers. Accounts whose
-/// cookie isn't valid, or whose call fails, are left out.
 #[tauri::command]
 pub async fn accounts_presence(s: State<'_, App>, ids: Vec<i64>) -> Result<Vec<AccountPresence>> {
     let mut out = Vec::new();
@@ -691,11 +661,6 @@ pub async fn accounts_presence(s: State<'_, App>, ids: Vec<i64>) -> Result<Vec<A
     Ok(out)
 }
 
-/// Opens roblox.com signed in as the account, in its own throw-away browser profile.
-/// When the window closes, the cookie it ended with is checked: if it still signs in as the
-/// same user it is kept (Roblox may have rotated it, or the user signed in again or solved a
-/// challenge there) and the account is marked valid; a sign-out or account switch there is
-/// logged and the stored cookie left as it was.
 #[tauri::command]
 pub async fn account_open_session(app: AppHandle, s: State<'_, App>, id: i64) -> Result<()> {
     let a = s.db.account(id)?;
@@ -705,11 +670,8 @@ pub async fn account_open_session(app: AppHandle, s: State<'_, App>, id: i64) ->
     let (user_id, handle) = (a.user_id, app.clone());
     webview::open_session(&app, &s.data_dir, &title, cookie, move |last| {
         let Some(last) = last else { return };
-        // Runs on a blocking thread before the window is destroyed: finish before the app
-        // can exit (closing the last window ends it).
         tauri::async_runtime::block_on(async move {
             let s = handle.state::<App>();
-            // The row may have been removed (and its id reused) while the window was open.
             match s.db.account(id) {
                 Ok(a) if a.user_id == user_id => {}
                 Ok(_) | Err(AppError::NotFound) => return,
@@ -734,15 +696,11 @@ pub async fn account_open_session(app: AppHandle, s: State<'_, App>, id: i64) ->
     .await
 }
 
-// ---------- launching ----------
-
-/// Local only: what pasted text points at.
 #[tauri::command]
 pub fn target_parse(input: String) -> ParsedInput {
     crate::launcher::target::parse(&input)
 }
 
-/// A Roblox username (current or previous) → the user.
 #[tauri::command]
 pub async fn user_lookup(s: State<'_, App>, name: String) -> Result<UserRef> {
     let name = name.trim().trim_start_matches('@').to_owned();
@@ -754,8 +712,6 @@ pub async fn user_lookup(s: State<'_, App>, name: String) -> Result<UserRef> {
     Ok(UserRef { user_id: u.id, username: u.name, display_name: u.display_name })
 }
 
-/// Launches one account and starts following its client. `favourite_id` marks that
-/// favourite as used; `fps_cap` is this launch's own (`launch_fps`).
 #[tauri::command]
 pub async fn launch(
     app: AppHandle,
@@ -766,26 +722,14 @@ pub async fn launch(
     fps_cap: Option<u32>,
 ) -> Result<LaunchInfo> {
     let fps_cap = launch_fps(fps_cap)?;
-    // Launches go strictly one at a time (DESIGN §6).
     let _single = s.bulk.begin_single_launch()?;
     Ok(launch_tracked(&app, &s, account_id, target, favourite_id, None, fps_cap, true).await?.0)
 }
 
-/// Why launches are refused while `roblox_install` runs.
 pub(crate) fn installing() -> String {
     tr!("Roblox is being installed. Launch again once it is done.")
 }
 
-/// One launch as every caller does it: the launch cooldown (`Bulk::cooldown`: waits until the
-/// launch delay, `delay_ms` or else the setting's, less its 1 s jitter has passed since the
-/// previous launch; a launch that fails before its client starts gives its slot back); stopped
-/// by Kill all (`Bulk::kill`) while waiting, and a client started meanwhile is closed; the multi-instance
-/// lock first (it has to be held before this client starts, or the next one replaces it), and
-/// so the shared login files while protection is on; a dead or challenged cookie recorded on
-/// the account; the client tracked; the favourite marked as used. An account whose client is
-/// still running is refused (a second client would sign it out of the first).
-/// `hold`: refuse when an update would close running clients (a relaunch that already checked
-/// that before closing its client doesn't ask again).
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn launch_tracked(
     app: &AppHandle,
@@ -799,8 +743,6 @@ pub(crate) async fn launch_tracked(
 ) -> Result<(LaunchInfo, Instance)> {
     let kills = s.bulk.kills();
     let killed = || AppError::Invalid(tr!("Launch cancelled by Stop all."));
-    // Claimed until the client is tracked, so a launch from another path (rejoin, tray,
-    // batch) can't start the same account meanwhile.
     let Some(_claim) = s.tracker.claim(account_id) else {
         let name = s.db.account(account_id).map(|a| crate::launcher::bulk::name_of(&a)).ok().filter(|n| !n.is_empty());
         let name = name.unwrap_or_else(|| tr!("This account"));
@@ -810,7 +752,6 @@ pub(crate) async fn launch_tracked(
         return Err(AppError::Wait(why));
     }
     let _busy = s.bulk.begin_launch();
-    // After `_busy`: an install starting now sees this launch, one already running is seen here.
     if s.update.installing() {
         return Err(AppError::Wait(installing()));
     }
@@ -829,7 +770,6 @@ pub(crate) async fn launch_tracked(
         return Err(killed());
     }
     retake_multi(s, &v);
-    // Holds the shared files until the client is tracked (the poll releases them when idle).
     let launching = s.multi.launching(v.multi_instance && v.protect_shared_login);
     let info = match crate::launcher::launch(s, account_id, &target, fps_cap).await {
         Ok(info) => info,
@@ -844,9 +784,12 @@ pub(crate) async fn launch_tracked(
         }
     };
     let instance = s.tracker.register(&info, target);
+    if v.mute_clients {
+        s.tracker.set_muted(&instance.id, true);
+        crate::instances::audio::wake();
+    }
     drop(launching);
     instances_changed(app);
-    // Kill all pressed while the ticket was fetched: this client goes too.
     if s.bulk.kills() != kills {
         if let Some((pid, started)) = s.tracker.mark_closing(&instance.id) {
             match tauri::async_runtime::spawn_blocking(move || {
@@ -869,9 +812,6 @@ pub(crate) async fn launch_tracked(
     Ok((info, instance))
 }
 
-// ---------- M7: client, data folder, notices ----------
-
-/// Shows a message to the user (a toast; the window may be hidden in the tray).
 pub fn notice(app: &AppHandle, error: bool, message: impl Into<String>) {
     let message = message.into();
     if error {
@@ -882,40 +822,31 @@ pub fn notice(app: &AppHandle, error: bool, message: impl Into<String>) {
     let _ = app.emit("app://notice", Notice { error, message });
 }
 
-/// The Roblox client LRAM would start (`launcher::client::find`; not installed → path None),
-/// its version and Roblox's latest (`launcher::update`).
 #[tauri::command]
 pub fn roblox_client(app: AppHandle) -> RobloxClient {
     crate::launcher::update::publish(&app)
 }
 
-/// Downloads Roblox's installer, checks it is signed by Roblox Corporation and runs it
-/// (`launcher::update::install`); progress on `roblox://install`. Refused while a client runs.
 #[tauri::command]
 pub async fn roblox_install(app: AppHandle) -> Result<RobloxClient> {
     crate::launcher::update::install(&app).await
 }
 
-/// LRAM's version and the newer release the last check found (no network).
 #[tauri::command]
 pub fn self_update_status(s: State<'_, App>) -> AppUpdate {
     crate::self_update::status(&s)
 }
 
-/// Asks GitHub for a newer LRAM now (Check now), whatever `settings.self_update` says.
 #[tauri::command]
 pub async fn self_update_check(app: AppHandle) -> Result<AppUpdate> {
     crate::self_update::check(&app).await
 }
 
-/// Downloads the newer LRAM's installer, checks its signature, runs it and quits
-/// (`self_update::install`; the installer starts LRAM again).
 #[tauri::command]
 pub async fn self_update_install(app: AppHandle) -> Result<()> {
     crate::self_update::install(&app).await
 }
 
-/// Where the data lives now (see `main::data_dir`).
 #[tauri::command]
 pub fn data_dir_info(s: State<'_, App>) -> DataDir {
     DataDir {
@@ -925,14 +856,12 @@ pub fn data_dir_info(s: State<'_, App>) -> DataDir {
     }
 }
 
-/// Opens the data folder in Explorer (opener plugin, Rust side: no capability needed).
 #[tauri::command]
 pub fn data_dir_open(app: AppHandle, s: State<'_, App>) -> Result<()> {
     use tauri_plugin_opener::OpenerExt;
     app.opener().open_path(s.data_dir.display().to_string(), None::<&str>).map_err(|e| AppError::Internal(e.to_string()))
 }
 
-/// Opens LRAM's own log folder (data folder\logs) in Explorer.
 #[tauri::command]
 pub fn logs_open(app: AppHandle, s: State<'_, App>) -> Result<()> {
     use tauri_plugin_opener::OpenerExt;
@@ -941,14 +870,12 @@ pub fn logs_open(app: AppHandle, s: State<'_, App>) -> Result<()> {
     app.opener().open_path(dir.display().to_string(), None::<&str>).map_err(|e| AppError::Internal(e.to_string()))
 }
 
-/// The last `lines` lines of `logs/lram.log` (at most 10 000): the Debug tab's history.
 #[tauri::command]
 pub async fn debug_tail(s: State<'_, App>, lines: u32) -> Result<Vec<String>> {
     let path = s.data_dir.join("logs").join("lram.log");
     blocking(move || tail(&path, lines.min(10_000) as usize)).await?
 }
 
-/// The last `n` lines of a text file, read from its last 4 MB (pure but for the read).
 fn tail(path: &Path, n: usize) -> Result<Vec<String>> {
     use std::io::{Read, Seek, SeekFrom};
     const WINDOW: u64 = 4 << 20;
@@ -963,13 +890,11 @@ fn tail(path: &Path, n: usize) -> Result<Vec<String>> {
     f.read_to_end(&mut buf)?;
     let text = String::from_utf8_lossy(&buf);
     let all: Vec<&str> = text.lines().collect();
-    // A window that starts mid-file starts mid-line: drop that partial first line.
     let skip = usize::from(len > WINDOW && !all.is_empty());
     let all = &all[skip..];
     Ok(all[all.len().saturating_sub(n)..].iter().map(|l| l.to_string()).collect())
 }
 
-/// A line from the UI (uncaught errors, failed invokes) into the log, target "ui".
 #[tauri::command]
 pub fn debug_log(level: String, message: String) {
     let level = match level.as_str() {
@@ -978,7 +903,11 @@ pub fn debug_log(level: String, message: String) {
         "info" => log::Level::Info,
         _ => log::Level::Debug,
     };
-    let mut message = message;
+    log::log!(target: "ui", level, "{}", ui_log_text(message));
+}
+
+fn ui_log_text(message: String) -> String {
+    let mut message = message.replace(['\r', '\n'], " ");
     if message.len() > 4096 {
         let mut end = 4096;
         while !message.is_char_boundary(end) {
@@ -986,11 +915,9 @@ pub fn debug_log(level: String, message: String) {
         }
         message.truncate(end);
     }
-    log::log!(target: "ui", level, "{message}");
+    message
 }
 
-/// Deletes Roblox client logs over a day old or 50 MB now (`logwatch::clean`), never a running
-/// client's.
 #[tauri::command]
 pub async fn logs_clean(s: State<'_, App>) -> Result<LogsCleaned> {
     let Some(dir) = crate::instances::logwatch::logs_dir() else {
@@ -1004,7 +931,6 @@ pub async fn logs_clean(s: State<'_, App>) -> Result<LogsCleaned> {
 const BACKGROUND_KEY: &str = "background";
 const BACKGROUND_MAX: u64 = 8 * 1024 * 1024;
 
-/// PNG, JPEG, WebP or GIF, by its first bytes (pure).
 fn is_image(b: &[u8]) -> bool {
     b.starts_with(&[0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a])
         || b.starts_with(&[0xff, 0xd8, 0xff])
@@ -1012,7 +938,6 @@ fn is_image(b: &[u8]) -> bool {
         || (b.len() >= 12 && b.starts_with(b"RIFF") && &b[8..12] == b"WEBP")
 }
 
-/// Keeps a copy of the picked image (up to 8 MB) in the database as the window's background.
 #[tauri::command]
 pub async fn background_set(s: State<'_, App>, path: String) -> Result<()> {
     let bytes = blocking(move || -> Result<Vec<u8>> {
@@ -1033,7 +958,6 @@ pub fn background_clear(s: State<'_, App>) -> Result<()> {
     s.db.set_setting_value(BACKGROUND_KEY, None)
 }
 
-/// The background image's bytes; empty when none is set.
 #[tauri::command]
 pub async fn background_get(s: State<'_, App>) -> Result<tauri::ipc::Response> {
     let bytes = s
@@ -1050,7 +974,6 @@ pub async fn background_get(s: State<'_, App>) -> Result<tauri::ipc::Response> {
     Ok(tauri::ipc::Response::new(bytes))
 }
 
-/// Seconds until the shutdown (pure): `in_secs`, else until `at_ms` (rounded up); 1 minute to 7 days.
 fn shutdown_secs(at_ms: Option<i64>, in_secs: Option<u32>, now_ms: i64) -> Result<u32> {
     let secs = match (in_secs, at_ms) {
         (Some(s), _) => i64::from(s),
@@ -1063,7 +986,6 @@ fn shutdown_secs(at_ms: Option<i64>, in_secs: Option<u32>, now_ms: i64) -> Resul
     Ok(secs as u32)
 }
 
-/// Runs System32\shutdown.exe without a window: its exit code and what it printed.
 fn shutdown_exe(args: &[&str]) -> Result<(i32, String)> {
     use std::os::windows::process::CommandExt;
     let root = std::env::var_os("SystemRoot").map(std::path::PathBuf::from).unwrap_or_else(|| r"C:\Windows".into());
@@ -1076,20 +998,13 @@ fn shutdown_exe(args: &[&str]) -> Result<(i32, String)> {
     Ok((code, text))
 }
 
-/// The settings-table row with the scheduled shutdown's deadline (Unix ms), so LRAM still knows
-/// it (and can cancel it) after a restart; Windows keeps the timer either way.
 const SHUTDOWN_KEY: &str = "shutdown_at";
 
-/// The deadline of a shutdown scheduled before LRAM restarted, if it is still ahead (at start).
 pub fn pending_shutdown(db: &crate::storage::Db) -> Option<i64> {
     let v = db.setting_value(SHUTDOWN_KEY).inspect_err(|e| log::warn!("could not read the scheduled shutdown: {e}")).ok().flatten()?;
     v.parse::<i64>().inspect_err(|e| log::warn!("scheduled shutdown deadline {v:?} unreadable: {e}")).ok().filter(|&at| at > now_ms())
 }
 
-/// Tells Windows to shut down in `in_secs` or at `at_ms` (`shutdown /s /t`, no admin rights;
-/// Windows then force-closes every app). Replaces one LRAM scheduled. `close_clients`: LRAM's
-/// clients are asked to close 30 s before (while LRAM keeps running). Returns the deadline
-/// (Unix ms), stored (`SHUTDOWN_KEY`) until it is called off or passes.
 #[tauri::command]
 pub fn shutdown_schedule(app: AppHandle, s: State<'_, App>, at_ms: Option<i64>, in_secs: Option<u32>, close_clients: bool) -> Result<Option<i64>> {
     let secs = shutdown_secs(at_ms, in_secs, now_ms())?;
@@ -1099,7 +1014,6 @@ pub fn shutdown_schedule(app: AppHandle, s: State<'_, App>, at_ms: Option<i64>, 
     }
     let (code, text) = shutdown_exe(&["/s", "/t", &secs.to_string()])?;
     if code != 0 {
-        // 1190: a shutdown is already scheduled (by another app or by hand).
         return Err(AppError::Invalid(tr!("Windows wouldn't schedule the shutdown: {text}", text = text)));
     }
     let deadline = now_ms() + i64::from(secs) * 1000;
@@ -1122,12 +1036,10 @@ pub fn shutdown_schedule(app: AppHandle, s: State<'_, App>, at_ms: Option<i64>, 
     Ok(Some(deadline))
 }
 
-/// Calls off the shutdown LRAM scheduled (`shutdown /a`).
 #[tauri::command]
 pub fn shutdown_cancel(s: State<'_, App>) -> Result<Option<i64>> {
     let mut at = s.shutdown.lock().unwrap_or_else(|e| e.into_inner());
     if at.is_some() {
-        // 1116: none is scheduled any more (called off outside LRAM).
         let (code, text) = shutdown_exe(&["/a"])?;
         if code != 0 && code != 1116 {
             return Err(AppError::Invalid(tr!("Windows wouldn't call off the shutdown: {text}", text = text)));
@@ -1139,21 +1051,11 @@ pub fn shutdown_cancel(s: State<'_, App>) -> Result<Option<i64>> {
     Ok(None)
 }
 
-/// When the shutdown LRAM scheduled is due (Unix ms); None when there is none.
 #[tauri::command]
 pub fn shutdown_status(s: State<'_, App>) -> Option<i64> {
     *s.shutdown.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// Copies the database into `path` (a new folder or one without a lram.db; not the current
-/// folder or inside it) with SQLite's `VACUUM INTO` (consistent while open), records it in
-/// `%LOCALAPPDATA%\LRAM\location.json` as `{"dataDir": path, "movedFrom": current}` and
-/// restarts LRAM, all with the database locked so no write lands in the old copy after the
-/// copy. The next start deletes the old folder's lram.db, lram.db-wal and lram.db-shm once
-/// the new database opened, and drops `movedFrom`. Returns only on failure, after deleting the
-/// database files it may have left in `path`. Refused for test runs (`LRAM_DATA_DIR`), when
-/// `path` already has a lram.db, and while a launch, batch or auto-rejoin runs (the restart
-/// would cut it off). Async: the copy can take a moment.
 #[tauri::command]
 pub async fn data_dir_move(app: AppHandle, s: State<'_, App>, path: String) -> Result<()> {
     if crate::data_dir_overridden() {
@@ -1163,23 +1065,19 @@ pub async fn data_dir_move(app: AppHandle, s: State<'_, App>, path: String) -> R
         return Err(AppError::Invalid(tr!("Wait for the running launch, batch or auto-rejoin to finish, then move the data folder.")));
     }
     let target = crate::move_target(&s.data_dir, &path)?;
-    // Only a folder that holds nothing of anyone's: this removes what it inherits for all inside.
     let empty = std::fs::read_dir(&target).map_or(true, |mut d| d.next().is_none());
     std::fs::create_dir_all(&target)?;
     if empty {
         crate::restrict_to_user(&target);
     }
-    // In the copy: the exit handler still writes, but to the old database, the next start deletes.
     s.tracker.persist(&s.db, true);
     let location = crate::Location { data_dir: target.clone(), moved_from: Some(s.data_dir.clone()) };
     let failed = s.db.copy_to(&target.join(crate::DB_FILE), || crate::write_location(&location).map_err(AppError::from));
     if failed.is_ok() {
-        // Not inside copy_to: a restart waits for the exit handler, which needs the database's lock.
         log::info!("database copied to {}; restarting to use it", target.display());
         app.request_restart();
         return Ok(());
     }
-    // A half-written copy would make a retry to the same folder refused.
     for f in crate::DB_FILES {
         if let Err(e) = std::fs::remove_file(target.join(f))
             && e.kind() != std::io::ErrorKind::NotFound
@@ -1190,42 +1088,21 @@ pub async fn data_dir_move(app: AppHandle, s: State<'_, App>, path: String) -> R
     failed
 }
 
-// ---------- bulk ----------
-
-/// Starts a batch in the background (see `launcher::bulk::start`); returns its id.
 #[tauri::command]
 pub fn bulk_launch(app: AppHandle, request: BulkRequest) -> Result<String> {
     crate::launcher::bulk::start(app, request)
 }
 
-/// Stops the running batch after its current step.
 #[tauri::command]
 pub fn bulk_cancel(s: State<'_, App>, batch_id: String) -> Result<()> {
     s.bulk.cancel(&batch_id)
 }
 
-/// The running or last batch (None before the first), for a view that opens later.
 #[tauri::command]
 pub fn bulk_current(s: State<'_, App>) -> Option<BulkProgress> {
     s.bulk.current()
 }
 
-// ---------- servers ----------
-
-/// The game behind a place: name, creator, players, icon, whether it sells private servers.
-/// The game's name from what the app cached (`game_info`), however old; never asks Roblox.
-pub(crate) fn cached_game_name(s: &App, place_id: i64) -> Option<String> {
-    s.db.cache_get(&format!("game:{place_id}"), i64::MAX / 2, now_ms())
-        .ok()
-        .flatten()
-        .and_then(|(json, _)| {
-            serde_json::from_str::<GameInfo>(&json).inspect_err(|e| log::debug!("cached game {place_id} unreadable: {e}")).ok()
-        })
-        .map(|g| g.name)
-}
-
-/// Cached for `settings.cache_minutes` (key `game:<place_id>`, JSON of `GameInfo`). No cookie.
-/// `NotFound` when Roblox knows no such place (no universe) or no such game.
 #[tauri::command]
 pub async fn game_info(s: State<'_, App>, place_id: i64) -> Result<GameInfo> {
     let key = format!("game:{place_id}");
@@ -1235,12 +1112,10 @@ pub async fn game_info(s: State<'_, App>, place_id: i64) -> Result<GameInfo> {
     {
         return Ok(info);
     }
-    // The place icon needs no universe, so it is asked alongside; it is optional.
     let (universe, icons) = tokio::join!(s.api.place_universe(place_id), s.api.place_icons(std::slice::from_ref(&place_id)));
     let universe = universe?.ok_or(AppError::NotFound)?;
     let game = s.api.games(&[universe]).await?.into_iter().find(|g| g.universe_id == universe).ok_or(AppError::NotFound)?;
     let info = game_info_of(place_id, game, icons.ok().and_then(|mut i| i.remove(&place_id)));
-    // Without its icon (failed or still being made) it is asked for again next time.
     if info.icon_url.is_some() {
         let json = serde_json::to_string(&info).map_err(|e| AppError::Internal(e.to_string()))?;
         s.db.cache_put(&key, &json, now_ms())?;
@@ -1263,9 +1138,6 @@ fn game_info_of(place_id: i64, g: GameDetails, icon_url: Option<String>) -> Game
     }
 }
 
-/// The place a target leads to, for the server browser: its own place, a universe's root
-/// place, or where a share link points (resolved with `account_id`'s cookie, which share links
-/// need). `Invalid` for targets without a game (a user to follow).
 #[tauri::command]
 pub async fn target_place(app: AppHandle, s: State<'_, App>, target: LaunchTarget, account_id: Option<i64>) -> Result<i64> {
     let no_game = || AppError::Invalid(tr!("That link doesn't lead to a game."));
@@ -1290,8 +1162,6 @@ pub async fn target_place(app: AppHandle, s: State<'_, App>, target: LaunchTarge
     }
 }
 
-/// One page of the place's private servers as `account_id` sees them (its cookie; joinable ones
-/// carry an access code). `Locked` when the vault is locked.
 #[tauri::command]
 pub async fn private_servers_list(
     app: AppHandle,
@@ -1308,9 +1178,6 @@ pub async fn private_servers_list(
     page
 }
 
-/// One page of a place's public servers (`cursor` from the previous page). With `account_id`,
-/// asked with that account's cookie (needed for Recommended / BestLatency; a guest gets 3
-/// requests a minute). `limit` is 10, 25, 50 or 100.
 #[tauri::command]
 pub async fn servers_list(
     s: State<'_, App>,
@@ -1326,8 +1193,6 @@ pub async fn servers_list(
     s.api.servers_public(id, cookie.as_ref(), place_id, order, exclude_full, limit, cursor.as_deref()).await
 }
 
-// ---------- instances ----------
-
 pub fn instances_changed(app: &AppHandle) {
     let _ = app.emit("instances://changed", ());
     crate::tray::refresh(app);
@@ -1338,13 +1203,10 @@ pub fn instances_list(s: State<'_, App>) -> Vec<Instance> {
     s.tracker.list()
 }
 
-/// Asks one client to close (graceful unless `force`); not treated as an unexpected exit.
 #[tauri::command]
 pub async fn instance_close(s: State<'_, App>, id: String, force: bool) -> Result<()> {
     s.tracker.get(&id).ok_or(AppError::NotFound)?;
-    // Closed by the user: a relaunch waiting on it is over.
     s.tracker.end_relaunch(&id);
-    // Its process already gone: the next poll ends the entry.
     let Some(target) = s.tracker.mark_closing(&id) else { return Ok(()) };
     let r = close_all(vec![target], force, grace(&s)).await?.pop().unwrap_or(Ok(()));
     if r.is_err() {
@@ -1353,15 +1215,12 @@ pub async fn instance_close(s: State<'_, App>, id: String, force: bool) -> Resul
     r
 }
 
-/// How long a closed client gets before it is terminated (`settings.close_grace_s`).
 fn grace(s: &App) -> Duration {
     Duration::from_secs(u64::from(
         s.db.settings().inspect_err(|e| log::debug!("could not read settings, close grace 5 s: {e}")).map_or(5, |v| v.close_grace_s),
     ))
 }
 
-/// Closes the processes at once (each `process::close` waits up to `grace`), so the whole
-/// thing takes one grace period, not one per client. Results in input order.
 async fn close_all(targets: Vec<(u32, Option<u64>)>, force: bool, grace: Duration) -> Result<Vec<Result<()>>> {
     tauri::async_runtime::spawn_blocking(move || {
         std::thread::scope(|sc| {
@@ -1383,7 +1242,6 @@ pub async fn instances_close_all(s: State<'_, App>, force: bool) -> Result<()> {
     close_running(&s, force).await
 }
 
-/// Asks every running client to close (also the tray's "Close all clients").
 pub(crate) async fn close_running(s: &App, force: bool) -> Result<()> {
     s.tracker.cancel_relaunches();
     let running: Vec<Instance> = s.tracker.list().into_iter().filter(|i| i.state != InstanceState::Exited).collect();
@@ -1398,13 +1256,10 @@ pub(crate) async fn close_running(s: &App, force: bool) -> Result<()> {
     Ok(())
 }
 
-/// Logical processors (for auto-spread; affinity masks cover at most 64).
 pub fn cores() -> u32 {
     std::thread::available_parallelism().map_or(1, |n| n.get() as u32)
 }
 
-/// A launch's own FPS cap: None or 0 for none (the account's or the default applies), else
-/// `launcher::client_settings::RANGE`.
 pub(crate) fn launch_fps(f: Option<u32>) -> Result<Option<u32>> {
     let f = f.filter(|&f| f != 0);
     if let Some(f) = f {
@@ -1413,7 +1268,6 @@ pub(crate) fn launch_fps(f: Option<u32>) -> Result<Option<u32>> {
     Ok(f)
 }
 
-/// An FPS cap the user can set: 0 (none, or the default for an account) or `launcher::client_settings::RANGE`.
 fn check_fps(f: u32) -> Result<()> {
     if f != 0 && !crate::launcher::client_settings::RANGE.contains(&f) {
         return Err(AppError::Invalid(tr!("The FPS cap must be 0 (off) or 5 to 360.")));
@@ -1421,7 +1275,6 @@ fn check_fps(f: u32) -> Result<()> {
     Ok(())
 }
 
-/// Limits the user can set: a CPU cap of 1-100 %, a trim every 0-1440 minutes, at least one core.
 fn check_limits(l: &Limits) -> Result<()> {
     if l.cpu_cap.is_some_and(|c| !(1..=100).contains(&c)) {
         return Err(AppError::Invalid(tr!("The CPU limit must be between 1 and 100 %.")));
@@ -1435,9 +1288,6 @@ fn check_limits(l: &Limits) -> Result<()> {
     Ok(())
 }
 
-/// Sets one client's own limits (CPU cap, efficiency mode, trim interval, cores); they win
-/// over the adaptive manager's and fill in the defaults (`limits::plan`). A client still behind
-/// its bootstrapper gets them once it is found.
 #[tauri::command]
 pub async fn instance_set_limits(app: AppHandle, s: State<'_, App>, id: String, limits: Limits) -> Result<()> {
     check_limits(&limits)?;
@@ -1470,7 +1320,6 @@ pub async fn instance_set_limits(app: AppHandle, s: State<'_, App>, id: String, 
     Ok(())
 }
 
-/// Opts one running client in or out of anti-AFK.
 #[tauri::command]
 pub fn instance_set_anti_afk(app: AppHandle, s: State<'_, App>, id: String, enabled: bool) -> Result<()> {
     if !s.tracker.set_anti_afk(&id, enabled) {
@@ -1480,7 +1329,16 @@ pub fn instance_set_anti_afk(app: AppHandle, s: State<'_, App>, id: String, enab
     Ok(())
 }
 
-/// Pages one client's working set out now ("Trim now").
+#[tauri::command]
+pub fn instance_set_muted(app: AppHandle, s: State<'_, App>, id: String, muted: bool) -> Result<()> {
+    if !s.tracker.set_muted(&id, muted) {
+        return Err(AppError::NotFound);
+    }
+    crate::instances::audio::wake();
+    instances_changed(&app);
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn instance_trim(app: AppHandle, s: State<'_, App>, id: String) -> Result<(u64, u64)> {
     s.tracker.get(&id).ok_or(AppError::NotFound)?;
@@ -1495,8 +1353,6 @@ pub async fn instance_trim(app: AppHandle, s: State<'_, App>, id: String) -> Res
         .map_err(|e| AppError::Internal(e.to_string()))?
 }
 
-/// The pid of the running client `id` once it is known to be the client itself (None while
-/// only its bootstrapper is seen); NotFound when there is no such instance.
 fn client_pid(s: &App, id: &str) -> Result<Option<u32>> {
     s.tracker.get(id).ok_or(AppError::NotFound)?;
     Ok(s.tracker.clients().into_iter().find(|c| c.0 == id).map(|c| c.1))
@@ -1510,9 +1366,6 @@ async fn blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> 
     tauri::async_runtime::spawn_blocking(f).await.map_err(|e| AppError::Internal(e.to_string()))
 }
 
-/// One client's preview as raw bytes, at most `max_w` (16..=1280) pixels wide: a 24-byte header
-/// (`window::Preview::to_bytes`), then the picture's RGBA unless `known` is its number already.
-/// Answers at once with the newest picture there is.
 #[tauri::command]
 pub async fn instance_thumbnail(s: State<'_, App>, id: String, max_w: u32, known: u32) -> Result<tauri::ipc::Response> {
     let pid = client_pid(&s, &id)?;
@@ -1520,26 +1373,21 @@ pub async fn instance_thumbnail(s: State<'_, App>, id: String, max_w: u32, known
     Ok(tauri::ipc::Response::new(preview.to_bytes(known)))
 }
 
-/// Brings one client's window to the front, hides or restores it.
 #[tauri::command]
 pub async fn instance_show(s: State<'_, App>, id: String, what: crate::instances::window::Show) -> Result<()> {
     let pid = client_pid(&s, &id)?.ok_or_else(not_started)?;
     blocking(move || crate::instances::window::show(pid, what)).await?
 }
 
-/// Hides or restores every running client's window (focus is for one client).
 #[tauri::command]
 pub async fn instances_show_all(s: State<'_, App>, what: crate::instances::window::Show) -> Result<()> {
     if what == crate::instances::window::Show::Focus {
         return Err(AppError::Invalid(tr!("Only one client can be in front.")));
     }
     let pids: Vec<u32> = s.tracker.clients().into_iter().map(|c| c.1).collect();
-    // One without a window yet has nothing to show or hide.
     blocking(move || crate::instances::window::show_all(&pids, what)).await
 }
 
-/// Makes one client's window small (`window::MICRO` client area) or puts it back as it was.
-/// Returns the client area it got: Roblox may keep it bigger than asked.
 #[tauri::command]
 pub async fn instance_micro(app: AppHandle, s: State<'_, App>, id: String, on: bool, size: Option<(u32, u32)>) -> Result<(u32, u32)> {
     let pid = client_pid(&s, &id)?.ok_or_else(not_started)?;
@@ -1553,7 +1401,6 @@ pub async fn instance_micro(app: AppHandle, s: State<'_, App>, id: String, on: b
     Ok(size)
 }
 
-/// A size a window can be given: small enough for lots of clients, none of it zero.
 fn check_window_size((w, h): (u32, u32)) -> Result<()> {
     if !(16..=7680).contains(&w) || !(16..=4320).contains(&h) {
         return Err(AppError::Invalid(tr!("A window can be 16 to 7680 pixels wide and 16 to 4320 high.")));
@@ -1561,12 +1408,9 @@ fn check_window_size((w, h): (u32, u32)) -> Result<()> {
     Ok(())
 }
 
-/// Lays every running client's window out in a grid on the monitor LRAM is on, `micro`-sized
-/// or as big as all fit (`window::tile`; hidden and minimized ones are left alone). How many it laid out.
 #[tauri::command]
 pub async fn instances_tile(app: AppHandle, s: State<'_, App>, micro: bool) -> Result<usize> {
     let clients: Vec<(String, u32)> = s.tracker.clients().into_iter().map(|c| (c.0, c.1)).collect();
-    // As a number: a window handle can't cross threads.
     let near = app.get_webview_window("main").and_then(|w| w.hwnd().ok()).map_or(0, |h| h.0 as isize);
     let v = s.db.settings()?;
     let size = micro.then_some((v.micro_width, v.micro_height));
@@ -1581,7 +1425,6 @@ pub async fn instances_tile(app: AppHandle, s: State<'_, App>, micro: bool) -> R
     Ok(tiled.len())
 }
 
-/// CPU, memory and IO of each running client (sampled at most every 2 s).
 #[tauri::command]
 pub async fn instances_metrics(app: AppHandle) -> Result<Vec<ClientMetrics>> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -1592,7 +1435,6 @@ pub async fn instances_metrics(app: AppHandle) -> Result<Vec<ClientMetrics>> {
     .map_err(|e| AppError::Internal(e.to_string()))
 }
 
-/// When the bandwidth policy was last applied (the boot it was applied in, as fetched_at).
 const QOS_KEY: &str = "qos:applied";
 
 pub(crate) fn bandwidth(s: &App) -> Result<BandwidthStatus> {
@@ -1603,14 +1445,11 @@ pub(crate) fn bandwidth(s: &App) -> Result<BandwidthStatus> {
     Ok(BandwidthStatus { kbps, active: kbps > 0 && applied })
 }
 
-/// The Roblox bandwidth limit and whether it is in force (no admin rights needed).
 #[tauri::command]
 pub fn bandwidth_status(s: State<'_, App>) -> Result<BandwidthStatus> {
     bandwidth(&s)
 }
 
-/// Sets the outbound limit for all Roblox clients (kbit/s; 0 removes it) as a Windows QoS
-/// policy: Windows asks for admin rights first (`instances::qos::apply`). Saved only once set.
 #[tauri::command]
 pub async fn bandwidth_apply(s: State<'_, App>, kbps: u32) -> Result<BandwidthStatus> {
     crate::instances::qos::script(kbps)?;
@@ -1624,7 +1463,6 @@ pub async fn bandwidth_apply(s: State<'_, App>, kbps: u32) -> Result<BandwidthSt
     bandwidth(&s)
 }
 
-/// How busy the whole PC is, for the verdict on Home.
 #[tauri::command]
 pub async fn system_usage(app: AppHandle) -> Result<Option<crate::model::SystemUsage>> {
     tauri::async_runtime::spawn_blocking(move || app.state::<App>().metrics.system())
@@ -1632,16 +1470,13 @@ pub async fn system_usage(app: AppHandle) -> Result<Option<crate::model::SystemU
         .map_err(|e| AppError::Internal(e.to_string()))
 }
 
-/// Stops trying to bring this client back (the user's "Stop trying").
 #[tauri::command]
 pub fn instance_stop_relaunch(app: AppHandle, s: State<'_, App>, id: String) {
     s.tracker.end_relaunch(&id);
-    // Its task ends now, so that it can't take over from one started by a later trouble.
     crate::instances::rejoin::retry_now();
     instances_changed(&app);
 }
 
-/// Relaunches waiting to try again do so now (the user's "Try now").
 #[tauri::command]
 pub fn instances_retry_relaunch() {
     crate::instances::rejoin::retry_now();
@@ -1660,24 +1495,18 @@ pub fn multi_instance_status(s: State<'_, App>) -> Result<MultiInstanceStatus> {
     Ok(s.multi.status(v.multi_instance, v.protect_shared_login))
 }
 
-/// Takes the lock when it is wanted but not held and Roblox has since closed (no-op otherwise).
 pub(crate) fn retake_multi(s: &App, v: &Settings) {
     if v.multi_instance && !s.multi.is_active() && s.multi.enable().is_ok() {
         protect_running(s, v);
     }
 }
 
-/// Locks the shared login files at once when protection is on and clients already run
-/// (LRAM's, or ones from before a restart).
 fn protect_running(s: &App, v: &Settings) {
     if v.protect_shared_login && (s.multi.in_flight() || s.tracker.any_running() || s.multi.has_survivors()) {
         s.multi.lock_shared();
     }
 }
 
-/// Turns multi-instance on or off (saved). Turning it on while Roblox runs saves the setting
-/// but reports why the lock isn't held yet; it is taken once Roblox has closed (status check,
-/// next launch, next start) or after `roblox_close_all`.
 #[tauri::command]
 pub fn multi_instance_set(s: State<'_, App>, enabled: bool) -> Result<MultiInstanceStatus> {
     let mut v = s.db.settings()?;
@@ -1694,42 +1523,16 @@ pub fn multi_instance_set(s: State<'_, App>, enabled: bool) -> Result<MultiInsta
     Ok(s.multi.status(v.multi_instance, v.protect_shared_login))
 }
 
-/// Takes the multi-instance lock from the running Roblox (the UI asks first): closes Roblox's
-/// singleton event inside each client (`Multi::take_over`); the clients keep running.
-#[tauri::command]
-pub async fn multi_instance_take_over(app: AppHandle) -> Result<MultiInstanceStatus> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let s = app.state::<App>();
-        let v = s.db.settings()?;
-        if !v.multi_instance {
-            return Err(AppError::Invalid(tr!("Turn on multi-instance first.")));
-        }
-        s.multi.take_over()?;
-        protect_running(&s, &v);
-        Ok(s.multi.status(v.multi_instance, v.protect_shared_login))
-    })
-    .await
-    .map_err(|e| AppError::Internal(e.to_string()))?
-}
-
-/// Closes every Roblox client, tracked or not (including Roblox's tray process), then takes
-/// the multi-instance lock if it is enabled.
 #[tauri::command]
 pub async fn roblox_close_all(s: State<'_, App>, force: bool) -> Result<MultiInstanceStatus> {
     close_roblox(&s, force, false).await
 }
 
-/// Panic button (sidebar, tray "Kill all Roblox"): the running batch stops after its current
-/// step, every client counts as closed by the user (no rejoin or restart follows, also for ones
-/// waiting their turn), and every Roblox process is terminated at once, tracked or not.
 #[tauri::command]
 pub async fn panic_kill(s: State<'_, App>) -> Result<MultiInstanceStatus> {
     kill_all(&s).await
 }
 
-/// Makes `key` the system-wide panic hotkey (Kill all) in place of `old`; "" for none. A key
-/// Windows won't give (another app holds it) is an error, and `old` stays (if it was registered:
-/// one refused at start is tried again when saved unchanged).
 pub fn set_panic_hotkey(app: &AppHandle, old: &str, key: &str) -> Result<()> {
     use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
     let parse = |k: &str| {
@@ -1765,7 +1568,6 @@ pub(crate) async fn kill_all(s: &App) -> Result<MultiInstanceStatus> {
     log::info!("kill all Roblox");
     s.bulk.kill();
     s.tracker.mark_all_closing();
-    // First, so that the list of clients taken next has anything they just started.
     for r in close_all(s.tracker.bootstrappers(), true, Duration::ZERO).await? {
         if let Err(e) = r {
             log::warn!("could not close a bootstrapper: {e}");
@@ -1774,8 +1576,6 @@ pub(crate) async fn kill_all(s: &App) -> Result<MultiInstanceStatus> {
     close_roblox(s, true, true).await
 }
 
-/// `keep_closing` (Kill all): a client that couldn't be closed still counts as closed by the
-/// user, so it is never rejoined or restarted when it ends later.
 async fn close_roblox(s: &App, force: bool, keep_closing: bool) -> Result<MultiInstanceStatus> {
     s.tracker.cancel_relaunches();
     for i in s.tracker.list() {
@@ -1786,7 +1586,6 @@ async fn close_roblox(s: &App, force: bool, keep_closing: bool) -> Result<MultiI
     for (p, r) in procs.iter().zip(close_all(targets, force, grace(s)).await?) {
         if let Err(e) = r {
             log::warn!("could not close Roblox process {}: {e}", p.pid);
-            // Still running: its exit stays unexpected (not after Kill all).
             for i in s.tracker.list().iter().filter(|i| !keep_closing && i.pid == p.pid && i.state != InstanceState::Exited) {
                 s.tracker.clear_closing(&i.id);
             }
@@ -1797,8 +1596,6 @@ async fn close_roblox(s: &App, force: bool, keep_closing: bool) -> Result<MultiI
     Ok(s.multi.status(v.multi_instance, v.protect_shared_login))
 }
 
-/// Clients that crashed, were disconnected or hung, newest first (the last 200).
-/// What a diagnostics report reads: the header now, the logs named for a background thread.
 fn diagnostics_sources(s: &App) -> Result<crate::diagnostics::Sources> {
     use windows::Win32::System::Registry::HKEY_LOCAL_MACHINE;
     let reg = |value| crate::launcher::client::reg_string(HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows NT\CurrentVersion", Some(value)).unwrap_or_default();
@@ -1812,6 +1609,26 @@ fn diagnostics_sources(s: &App) -> Result<crate::diagnostics::Sources> {
         v.multi_instance,
         crate::performance::of(&v, None, now_ms()),
     );
+    let now = now_ms();
+    let list = s.tracker.list();
+    let running: Vec<&Instance> = list.iter().filter(|i| i.state != InstanceState::Exited).collect();
+    let mut clients = format!("Clients: {} running\n", running.len());
+    for i in running {
+        let up = (now - i.started_at).max(0) / 1000;
+        let window = crate::instances::window::report_state(i.pid).unwrap_or_else(|| "no window".to_owned());
+        let cell = crate::instances::window::cell_of(i.pid).map_or_else(|| "none".to_owned(), |(x, y, w, h)| format!("{w}x{h} at {x},{y}"));
+        clients.push_str(&format!(
+            "  instance {} account {}: {:?}{}, pid {}, up {}s, rejoins {}, cell {cell}, window {window}, limits {}\n",
+            i.id,
+            i.account_id,
+            i.state,
+            i.note.as_ref().map_or_else(String::new, |n| format!(" ({n})")),
+            i.pid,
+            up,
+            i.rejoins,
+            crate::performance::limits_line(&i.applied_limits),
+        ));
+    }
     let mut names: Vec<String> = s.db.accounts()?.into_iter().flat_map(|a| [a.username, a.display_name, a.alias]).collect();
     names.extend(s.db.favourites()?.into_iter().map(|f| f.name));
     let mut roblox_logs = s.tracker.live_logs();
@@ -1824,7 +1641,7 @@ fn diagnostics_sources(s: &App) -> Result<crate::diagnostics::Sources> {
         }
     }
     roblox_logs.truncate(5);
-    Ok(crate::diagnostics::Sources { head, lram_log: s.data_dir.join("logs").join("lram.log"), roblox_logs, names })
+    Ok(crate::diagnostics::Sources { head, clients, lram_log: s.data_dir.join("logs").join("lram.log"), roblox_logs, names })
 }
 
 #[tauri::command]
@@ -1850,8 +1667,6 @@ pub fn crashes_list(s: State<'_, App>) -> Result<Vec<Crash>> {
     s.db.crashes()
 }
 
-/// Opens a recorded crash's client log in the default app (opener plugin, Rust side). The path
-/// comes from the database, never from the UI.
 #[tauri::command]
 pub fn crash_open_log(app: AppHandle, s: State<'_, App>, id: i64) -> Result<()> {
     use tauri_plugin_opener::OpenerExt;
@@ -1928,13 +1743,10 @@ fn presence_kind(s: Option<&str>) -> PresenceKind {
     }
 }
 
-/// Who `account_id` can join: its friends online on Roblox, then the other stored accounts
-/// with a valid cookie (each asked about itself). Asked when the picker opens, not polled.
 #[tauri::command]
 pub async fn join_candidates(app: AppHandle, s: State<'_, App>, account_id: i64) -> Result<Vec<JoinCandidate>> {
     let me = s.db.account(account_id)?;
     let cookie = stored_cookie(&s, account_id)?;
-    // Friends are optional: a transient failure still offers the other stored accounts.
     let friends = match s.api.friends_online(account_id, &cookie, me.user_id).await {
         Ok(f) => f,
         Err(e) if record_cookie_error(&app, &s, account_id, &e)? => return Err(e),
@@ -1985,7 +1797,81 @@ pub async fn join_candidates(app: AppHandle, s: State<'_, App>, account_id: i64)
     Ok(out)
 }
 
-/// Locks the vault; open session windows close first (they hold a live roblox.com session).
+fn failed(app: &AppHandle, s: &App, account_id: i64, e: AppError) -> AppError {
+    if let Err(db) = record_cookie_error(app, s, account_id, &e) {
+        log::warn!("account {account_id}: could not record its cookie error: {db}");
+    }
+    e
+}
+
+#[tauri::command]
+pub async fn friends_requests(app: AppHandle, s: State<'_, App>, account_id: i64) -> Result<Vec<UserRef>> {
+    let me = s.db.account(account_id)?;
+    let cookie = stored_cookie(&s, account_id)?;
+    let rows = s.api.friend_requests(account_id, &cookie, me.user_id).await.map_err(|e| failed(&app, &s, account_id, e))?;
+    let mut out: Vec<UserRef> = Vec::new();
+    for row in rows {
+        let Some(id) = row.user_id().filter(|&id| id > 0) else { continue };
+        if out.iter().any(|u| u.user_id == id) {
+            continue;
+        }
+        let name = row.name.clone().unwrap_or_default();
+        out.push(UserRef { user_id: id, username: name.clone(), display_name: row.display_name.clone().unwrap_or(name) });
+    }
+    let unnamed: Vec<i64> = out.iter().filter(|u| u.username.is_empty()).map(|u| u.user_id).collect();
+    if !unnamed.is_empty() {
+        match s.api.users_by_ids(&unnamed).await {
+            Ok(users) => {
+                for u in users {
+                    if let Some(row) = out.iter_mut().find(|r| r.user_id == u.id) {
+                        *row = UserRef { user_id: u.id, username: u.name.clone(), display_name: u.display_name };
+                    }
+                }
+            }
+            Err(e) => log::info!("names for account {account_id}'s friend requests: {e}"),
+        }
+    }
+    Ok(out)
+}
+
+#[tauri::command]
+pub async fn friend_request_send(app: AppHandle, s: State<'_, App>, account_id: i64, name: String) -> Result<UserRef> {
+    let me = s.db.account(account_id)?;
+    let cookie = stored_cookie(&s, account_id)?;
+    let name = name.trim().trim_start_matches('@').to_owned();
+    if name.is_empty() {
+        return Err(AppError::Invalid(tr!("Type a Roblox username.")));
+    }
+    let target = s
+        .api
+        .users_by_name(std::slice::from_ref(&name))
+        .await?
+        .into_iter()
+        .next()
+        .ok_or_else(|| AppError::Invalid(tr!("No Roblox user is called \"{name}\".", name = name)))?;
+    if target.id == me.user_id {
+        return Err(AppError::Invalid(tr!("That is this account itself.")));
+    }
+    s.api.friend_request_send(account_id, &cookie, target.id).await.map_err(|e| failed(&app, &s, account_id, e))?;
+    Ok(UserRef { user_id: target.id, username: target.name, display_name: target.display_name })
+}
+
+#[tauri::command]
+pub async fn friend_request_answer(
+    app: AppHandle,
+    s: State<'_, App>,
+    account_id: i64,
+    requester_id: i64,
+    accept: bool,
+) -> Result<()> {
+    if requester_id <= 0 {
+        return Err(AppError::Invalid(tr!("That friend request is gone.")));
+    }
+    s.db.account(account_id)?;
+    let cookie = stored_cookie(&s, account_id)?;
+    s.api.friend_request_answer(account_id, &cookie, requester_id, accept).await.map_err(|e| failed(&app, &s, account_id, e))
+}
+
 pub fn lock_vault(app: &AppHandle) {
     for (label, w) in app.webview_windows() {
         if label.starts_with("session-")
@@ -2000,28 +1886,20 @@ pub fn lock_vault(app: &AppHandle) {
     crate::tray::refresh(app);
 }
 
-// ---------- discord ----------
-
-/// Whether a webhook is set, and its id's last digits (never the URL). `Locked` while locked.
 #[tauri::command]
 pub fn discord_get(s: State<'_, App>) -> Result<DiscordStatus> {
     crate::discord::status(&s)
 }
 
-/// Stores a Discord webhook URL in the vault (only discord.com / discordapp.com webhooks);
-/// None or "" removes it.
 #[tauri::command]
 pub fn discord_set(s: State<'_, App>, url: Option<String>) -> Result<DiscordStatus> {
     crate::discord::set(&s, url.as_deref())
 }
 
-/// Posts a test message to the webhook.
 #[tauri::command]
 pub async fn discord_test(s: State<'_, App>) -> Result<()> {
     crate::discord::test(&s).await
 }
-
-// ---------- groups ----------
 
 #[tauri::command]
 pub fn groups_list(s: State<'_, App>) -> Result<Vec<Group>> {
@@ -2044,8 +1922,6 @@ pub fn group_remove(app: AppHandle, s: State<'_, App>, id: i64) -> Result<()> {
     Ok(())
 }
 
-// ---------- backup ----------
-
 const MIN_BACKUP_PASSWORD: usize = 8;
 
 #[tauri::command]
@@ -2060,7 +1936,6 @@ pub async fn backup_export(
     if password.chars().count() < MIN_BACKUP_PASSWORD {
         return Err(AppError::Invalid(tr!("Use at least {min} characters for the backup password.", min = MIN_BACKUP_PASSWORD)));
     }
-    // Exporting hands out every cookie, so it needs the same check as reveal.
     reauth(&app, &s, current_password, &tr!("Confirm it's you to export your Roblox accounts.")).await?;
     let groups = s.db.groups()?;
     let name_of = |gid: i64| groups.iter().find(|g| g.id == gid).map(|g| g.name.clone());
@@ -2088,7 +1963,6 @@ pub async fn backup_export(
             full_quality: a.full_quality,
         });
     }
-    // By user id: ids don't survive a move to another PC.
     let user_of = |id: i64| accounts.iter().find(|a| s.db.account_id_for_user(a.user_id).ok().flatten() == Some(id)).map(|a| a.user_id);
     let mut favourites = Vec::new();
     for row in s.db.favourites()? {
@@ -2107,7 +1981,6 @@ pub async fn backup_export(
     Ok(count)
 }
 
-/// What a backup entry must be before any of the file is applied.
 fn check_backup(p: &backup::BackupPayload) -> Result<()> {
     let bad = |t: &str| t.chars().count() > 64;
     let wrong = p.version != 1
@@ -2134,8 +2007,6 @@ pub async fn backup_import(app: AppHandle, s: State<'_, App>, path: String, pass
         return Err(AppError::Locked);
     }
     let payload = backup::read(Path::new(&path), &password)?;
-    // The file comes from anyone, and its password with it: all of it is checked before anything
-    // is written, so a bad entry leaves nothing half done.
     check_backup(&payload)?;
     for g in &payload.groups {
         s.db.group_by_name_or_create(&g.name, g.color.as_deref())?;
@@ -2151,8 +2022,6 @@ pub async fn backup_import(app: AppHandle, s: State<'_, App>, path: String, pass
             report.failed += 1;
             continue;
         };
-        // Over a stored cookie only if this one really signs in as that user: else it would
-        // destroy the only copy. Anything else (other user, dead cookie, no network) keeps the row.
         if existing.is_some() {
             match s.api.authenticated_user(0, &cookie).await {
                 Ok((u, rotated)) if u.id == a.user_id => cookie = rotated.unwrap_or(cookie),
@@ -2175,7 +2044,6 @@ pub async fn backup_import(app: AppHandle, s: State<'_, App>, path: String, pass
         s.db.set_meta(id, &AccountMeta { alias: a.alias.clone(), notes: a.notes.clone(), color: a.color.clone(), favourite: a.favourite })?;
         let gids = a.groups.iter().map(|n| s.db.group_by_name_or_create(n, None)).collect::<Result<Vec<_>>>()?;
         s.db.set_account_groups(id, &gids)?;
-        // A backup from before 0.7 never held these: what the account has now stays.
         if a.allow_disconnect.is_some() {
             s.db.update_account(id, &AccountPatch {
                 allow_disconnect: a.allow_disconnect,
@@ -2188,7 +2056,6 @@ pub async fn backup_import(app: AppHandle, s: State<'_, App>, path: String, pass
         }
         if existing.is_some() { report.updated += 1 } else { report.added += 1 }
     }
-    // Favourites this PC doesn't have yet, by name.
     let have: Vec<String> = s.db.favourites()?.into_iter().map(|f| f.name).collect();
     for f in payload.favourites.iter().filter(|f| !have.contains(&f.name)) {
         let ids: Vec<i64> = f.user_ids.iter().filter_map(|u| s.db.account_id_for_user(*u).ok().flatten()).collect();
@@ -2201,14 +2068,11 @@ pub async fn backup_import(app: AppHandle, s: State<'_, App>, path: String, pass
     Ok(report)
 }
 
-// ---------- settings ----------
-
 #[tauri::command]
 pub fn settings_get(s: State<'_, App>) -> Result<Settings> {
     s.db.settings()
 }
 
-/// The current performance settings as a profile (JSON), for a file or a share code.
 #[tauri::command]
 pub fn performance_profile(s: State<'_, App>, preview_fps: Option<u32>) -> Result<String> {
     Ok(crate::performance::of(&s.db.settings()?, preview_fps, now_ms()))
@@ -2220,8 +2084,6 @@ pub async fn performance_export(s: State<'_, App>, path: String, preview_fps: Op
     crate::vault::backup::write_atomic(Path::new(&path), text.as_bytes())
 }
 
-/// The profile in the file at `path`, checked; nothing is saved (the UI shows it, then saves it
-/// through `settings_set`).
 #[tauri::command]
 pub async fn performance_read(s: State<'_, App>, path: String) -> Result<crate::performance::Profile> {
     let refused = || AppError::Invalid(tr!("This isn't a LRAM performance profile."));
@@ -2232,14 +2094,11 @@ pub async fn performance_read(s: State<'_, App>, path: String) -> Result<crate::
     crate::performance::parse(&text, &s.db.settings()?)
 }
 
-/// As `performance_read`, for a profile's text (a pasted share code, decoded by the UI).
 #[tauri::command]
 pub fn performance_parse(s: State<'_, App>, text: String) -> Result<crate::performance::Profile> {
     crate::performance::parse(&text, &s.db.settings()?)
 }
 
-/// The performance part of a settings change, checked and applied to `v` (no side effects): also
-/// what a performance profile is checked with (`performance::parse`).
 pub(crate) fn apply_performance(v: &mut Settings, patch: &SettingsPatch) -> Result<()> {
     if let Some(f) = patch.fps_cap {
         check_fps(f)?;
@@ -2288,6 +2147,7 @@ pub(crate) fn apply_performance(v: &mut Settings, patch: &SettingsPatch) -> Resu
 }
 
 #[tauri::command]
+// -- Main func
 pub fn settings_set(app: AppHandle, s: State<'_, App>, patch: SettingsPatch) -> Result<Settings> {
     if patch.auto_lock_minutes.is_some() {
         unlocked(&s)?;
@@ -2354,11 +2214,15 @@ pub fn settings_set(app: AppHandle, s: State<'_, App>, patch: SettingsPatch) -> 
     if let Some(c) = patch.close_to_tray { v.close_to_tray = c }
     if let Some(s) = patch.skip_splash { v.skip_splash = s }
     if let Some(a) = patch.anti_afk {
-        // Roblox disconnects after 20 idle minutes.
         if !(1..=19).contains(&a.interval_min) {
             return Err(AppError::Invalid(tr!("Anti-AFK must press a key every 1 to 19 minutes.")));
         }
         v.anti_afk = a;
+    }
+    if let Some(m) = patch.mute_clients {
+        v.mute_clients = m;
+        s.tracker.set_all_muted(m);
+        crate::instances::audio::wake();
     }
     if let Some(d) = patch.discord {
         if d.status_every_min != 0 && !(5..=24 * 60).contains(&d.status_every_min) {
@@ -2369,7 +2233,6 @@ pub fn settings_set(app: AppHandle, s: State<'_, App>, patch: SettingsPatch) -> 
     if let Some(a) = patch.auto_update { v.auto_update = a }
     let self_update = patch.self_update.filter(|&u| u != v.self_update);
     if let Some(u) = self_update { v.self_update = u }
-    if let Some(p) = patch.discord_presence { v.discord_presence = p }
     if let Some(c) = patch.clean_logs { v.clean_logs = c }
     if let Some(d) = patch.launch_delay_ms {
         if !(2_000..=60_000).contains(&d) {
@@ -2377,7 +2240,6 @@ pub fn settings_set(app: AppHandle, s: State<'_, App>, patch: SettingsPatch) -> 
         }
         v.launch_delay_ms = d;
     }
-    // Multi-instance itself goes through multi_instance_set (it has to take or drop the lock).
     if let Some(p) = patch.protect_shared_login
         && p != v.protect_shared_login
     {
@@ -2388,8 +2250,6 @@ pub fn settings_set(app: AppHandle, s: State<'_, App>, patch: SettingsPatch) -> 
             protect_running(&s, &v);
         }
     }
-    // Last: it takes effect at once, so only once everything else is valid; put back if the
-    // save then fails, so Windows and the settings agree.
     let had = v.panic_hotkey.clone();
     if let Some(k) = patch.panic_hotkey {
         let k = k.trim();
@@ -2415,9 +2275,6 @@ pub fn settings_set(app: AppHandle, s: State<'_, App>, patch: SettingsPatch) -> 
     Ok(v)
 }
 
-// ---------- network ----------
-
-/// Whether a Public network is connected (`network`); app://network sends changes.
 #[tauri::command]
 pub fn network_status(s: State<'_, App>) -> NetworkStatus {
     s.network.get()
@@ -2436,6 +2293,13 @@ mod tests {
     }
 
     #[test]
+    fn a_ui_message_cannot_forge_a_log_line() {
+        assert_eq!(super::ui_log_text("two\nlines\r\nmore".into()), "two lines  more");
+        let long = super::ui_log_text("ü".repeat(3000));
+        assert_eq!(long.chars().count(), 2048);
+    }
+
+    #[test]
     fn recovery_file_holds_only_a_code() {
         assert!(super::recovery_file_text("abc def 234").unwrap().contains("ABC-DEF-234"));
         for other in ["", "ABC-DEF-23", "ABC-DEF-230", "cookie=_|WARNING:-DO-NOT-SHARE", "ABC-DEF-234\nand more"] {
@@ -2443,7 +2307,7 @@ mod tests {
         }
     }
 
-    use super::{GameDetails, GameInfo, find_cookies, game_info_of, is_image, normalize_cookie, ram_accounts, shutdown_secs};
+    use super::{GameDetails, GameInfo, find_cookies, game_info_of, is_image, looks_like_credentials, normalize_cookie, ram_accounts, shutdown_secs};
 
     #[test]
     fn knows_images_by_their_bytes() {
@@ -2462,7 +2326,7 @@ mod tests {
     fn finds_cookies_in_pasted_lists() {
         let (a, b) = (format!("{W}ABC123"), format!("{W}CAEaAh+/x="));
         let text = format!("user:pass:{a}
-  {b}  
+  {b}
 .ROBLOSECURITY={a};
 \"{b}\", other
 nothing here
@@ -2472,6 +2336,18 @@ nothing here
         assert_eq!(find_cookies(&format!("{a}:user:pass")), std::slice::from_ref(&a));
         assert_eq!(find_cookies(&format!("{a}\u{201d}\u{200b}")), [a], "a smart quote or zero-width space ends it");
         assert!(find_cookies("no cookies").is_empty());
+    }
+
+    #[test]
+    fn tells_a_login_and_password_from_a_cookie() {
+        assert!(looks_like_credentials("coolguy:hunter2"));
+        assert!(looks_like_credentials("  farm3 : s3cret!  \n"));
+        assert!(looks_like_credentials("user:pass:cookie-value"), "the shared list format is recognised too");
+        assert!(!looks_like_credentials(&format!("{W}CAEaAh+/x=")), "a cookie has no colon");
+        assert!(!looks_like_credentials("nothing here"));
+        assert!(!looks_like_credentials("user:"));
+        assert!(!looks_like_credentials(":pass"));
+        assert!(!looks_like_credentials("two words:pass"), "a space before the colon is prose, not a login");
     }
 
     #[test]
@@ -2490,7 +2366,6 @@ nothing here
     fn shutdown_delays() {
         let now = 1_000_000_000_000;
         assert_eq!(shutdown_secs(None, Some(3600), now).unwrap(), 3600);
-        // `in_secs` wins; a time is rounded up to the next second.
         assert_eq!(shutdown_secs(Some(now + 5_000_000), Some(60), now).unwrap(), 60);
         assert_eq!(shutdown_secs(Some(now + 90_001), None, now).unwrap(), 91);
         for bad in [(None, None), (None, Some(59)), (Some(now - 1000), None), (Some(now + 59_000), None), (None, Some(7 * 24 * 3600 + 1))] {
@@ -2533,7 +2408,6 @@ nothing here
             private_servers: true,
         };
         assert_eq!(info, want);
-        // What the cache stores reads back the same.
         assert_eq!(serde_json::from_str::<GameInfo>(&serde_json::to_string(&info).unwrap()).unwrap(), want);
     }
 

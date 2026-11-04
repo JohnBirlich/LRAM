@@ -1,5 +1,3 @@
-//! Roblox login / session windows on throw-away WebView2 profiles.
-
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -26,7 +24,6 @@ const POLL: Duration = Duration::from_millis(700);
 const LOGIN_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 const HOME_PAGE: &str = "https://www.roblox.com/home";
 
-/// Variables WebView2 reads before (and instead of) the options Tauri passes it.
 const WEBVIEW2_VARS: [&str; 6] = [
     "WEBVIEW2_BROWSER_EXECUTABLE_FOLDER",
     "WEBVIEW2_USER_DATA_FOLDER",
@@ -38,11 +35,6 @@ const WEBVIEW2_VARS: [&str; 6] = [
 
 static LOGIN_ACTIVE: AtomicBool = AtomicBool::new(false);
 
-/// Opens `https://www.roblox.com/login` in a `login-<uuid>` window on a fresh profile under
-/// `<data_dir>/tmp-webview/<uuid>` (incognito, no devtools, no autofill, no context menu,
-/// no IPC capability). A worker thread polls `cookies()` every ~700 ms until a non-empty
-/// `.ROBLOSECURITY` appears, then closes the window, waits for its browser process to exit
-/// and deletes the profile. Closing the window first → `AppError::Cancelled`.
 pub async fn capture_login(app: &AppHandle, data_dir: &Path) -> Result<Secret> {
     let slot = LoginSlot::take(app)?;
     let id = uuid::Uuid::new_v4();
@@ -77,15 +69,7 @@ pub async fn capture_login(app: &AppHandle, data_dir: &Path) -> Result<Secret> {
     cookie
 }
 
-/// Opens `https://www.roblox.com/home` signed in as a stored account: a `session-<uuid>`
-/// window titled `title` on a fresh profile under `<data_dir>/tmp-webview/<uuid>` (not
-/// incognito-shared, no devtools in release, no IPC capability, same hardening as login).
-/// The cookie is injected through WebView2's own `ICoreWebView2CookieManager` with domain
-/// `.roblox.com`, path `/`, HttpOnly, Secure, SameSite=Lax (never Tauri's `set_cookie`, which
-/// drops the leading dot), before the first navigation. Returns once the window shows.
-/// When the user closes it, `on_close` gets the profile's last non-empty `.ROBLOSECURITY`
-/// (Roblox may have rotated it, or the user may have signed out / switched accounts), read
-/// before the window is destroyed; then the profile is deleted as in `capture_login`.
+// -- Main func
 pub async fn open_session(
     app: &AppHandle,
     data_dir: &Path,
@@ -97,7 +81,6 @@ pub async fn open_session(
     let id = uuid::Uuid::new_v4();
     let label = format!("session-{id}");
     let profile = data_dir.join(TMP_DIR).join(id.to_string());
-    // Blank first, so nothing loads from Roblox before the cookie is in place.
     let built = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(parse_url("about:blank")?))
         .title(title)
         .inner_size(1180.0, 800.0)
@@ -125,12 +108,9 @@ pub async fn open_session(
             return Err(e);
         }
     };
-    // ponytail: a close in the instant before this handler exists skips on_close; the start-up
-    // sweep deletes the profile, as after an app exit.
     let (app, title) = (app.clone(), title.to_owned());
     let pending = Mutex::new(Some(move || end_session(&app, &label, &title, pid, &profile, on_close)));
     window.on_window_event(move |event| {
-        // `cookies()` deadlocks in here: keep the window and finish on another thread.
         if let WindowEvent::CloseRequested { api, .. } = event {
             api.prevent_close();
             if let Some(end) = take_once(&pending) {
@@ -142,7 +122,6 @@ pub async fn open_session(
     Ok(())
 }
 
-/// Deletes leftover `tmp-webview/*` profiles from earlier runs.
 pub fn sweep_temp_profiles(data_dir: &Path) {
     let entries = match std::fs::read_dir(data_dir.join(TMP_DIR)) {
         Ok(entries) => entries,
@@ -161,17 +140,13 @@ pub fn sweep_temp_profiles(data_dir: &Path) {
     }
 }
 
-/// Removes `WEBVIEW2_*` override variables so they cannot redirect or merge profiles.
-/// Called first thing in `main`, before any thread starts.
 pub fn clear_webview2_env() {
     for name in WEBVIEW2_VARS {
-        // SAFETY: runs first thing in `main`, before any other thread exists, so nothing can
-        // read the environment at the same time.
+        // -- SAFETY: runs first thing in `main`, before any other thread exists, so nothing can read the environment at the same …
         unsafe { std::env::remove_var(name) };
     }
 }
 
-/// One login window at a time (a double click must not open two).
 struct LoginSlot;
 
 impl LoginSlot {
@@ -193,15 +168,12 @@ impl Drop for LoginSlot {
     }
 }
 
-/// Turns off what Tauri does not expose, adds `cookie` as `.ROBLOSECURITY` if given, and
-/// returns the profile's browser process id.
 async fn harden(window: &WebviewWindow, cookie: Option<Secret>) -> Result<u32> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     window.with_webview(move |pv| {
         let r = harden_webview(&pv, cookie.as_ref()).map_err(|e| AppError::Internal(tr!("WebView2 setup failed: {why}", why = e)));
         let _ = tx.send(r);
     })?;
-    // The closure is dropped unrun if the window is already gone.
     rx.await.map_err(|_| {
         log::debug!("webview setup skipped: window {} already gone", window.label());
         AppError::Cancelled
@@ -209,8 +181,7 @@ async fn harden(window: &WebviewWindow, cookie: Option<Secret>) -> Result<u32> {
 }
 
 fn harden_webview(pv: &PlatformWebview, cookie: Option<&Secret>) -> windows::core::Result<u32> {
-    // SAFETY: COM calls on the main thread (with_webview), on live interfaces from WebView2;
-    // `value` outlives the call that reads it.
+    // -- SAFETY: COM calls on the main thread (with_webview), on live interfaces from WebView2; `value` outlives the call that …
     unsafe {
         let wv = pv.controller().CoreWebView2()?;
         let settings = wv.Settings()?;
@@ -218,12 +189,9 @@ fn harden_webview(pv: &PlatformWebview, cookie: Option<&Secret>) -> windows::cor
         let settings = settings.cast::<ICoreWebView2Settings4>()?;
         settings.SetAreBrowserAcceleratorKeysEnabled(false)?;
         settings.SetIsPasswordAutosaveEnabled(false)?;
-        // As well as on_navigation: Tauri lets through any address it can't parse, and a page on
-        // such a host panics Tauri's IPC, which ends the app.
         let guard = webview2_com::NavigationStartingEventHandler::create(Box::new(|_, args| {
             if let Some(args) = args {
                 let mut uri = windows::core::PWSTR::null();
-                // A live args interface; `take_pwstr` frees the string it hands out.
                 args.Uri(&mut uri)?;
                 if !allowed_uri(&webview2_com::take_pwstr(uri)) {
                     args.SetCancel(true)?;
@@ -234,7 +202,6 @@ fn harden_webview(pv: &PlatformWebview, cookie: Option<&Secret>) -> windows::cor
         let mut token = Default::default();
         wv.add_NavigationStarting(&guard, &mut token)?;
         if let Some(cookie) = cookie {
-            // WebView2's own manager: `.roblox.com` keeps its dot (Tauri's `set_cookie` drops it).
             let value = wide(cookie.expose());
             let mgr = wv.cast::<ICoreWebView2_2>()?.CookieManager()?;
             let c = mgr.CreateCookie(w!(".ROBLOSECURITY"), PCWSTR(value.as_ptr()), w!(".roblox.com"), w!("/"))?;
@@ -249,8 +216,6 @@ fn harden_webview(pv: &PlatformWebview, cookie: Option<&Secret>) -> windows::cor
     }
 }
 
-/// Logs WebView2 renderer/GPU/browser process failures of `window` (a white screen otherwise
-/// leaves no trace).
 pub fn log_process_failures(window: &WebviewWindow) {
     let label = window.label().to_string();
     let r = window.with_webview(move |pv| {
@@ -259,14 +224,14 @@ pub fn log_process_failures(window: &WebviewWindow) {
         let handler = ProcessFailedEventHandler::create(Box::new(move |_, args| {
             let mut kind = Default::default();
             if let Some(args) = args {
-                // SAFETY: a live args interface handed to the event handler.
+                // -- SAFETY: a live args interface handed to the event handler
                 unsafe { args.ProcessFailedKind(&mut kind)? };
             }
             log::error!("WebView2 process failed in window \"{label}\" (kind {})", kind.0);
             Ok(())
         }));
         let mut token = Default::default();
-        // SAFETY: COM call on the main thread (with_webview) on a live controller.
+        // -- SAFETY: COM call on the main thread (with_webview) on a live controller
         let added = unsafe { pv.controller().CoreWebView2().and_then(|wv| wv.add_ProcessFailed(&handler, &mut token)) };
         if let Err(e) = added {
             log::warn!("could not watch WebView2 process failures: {e}");
@@ -277,7 +242,6 @@ pub fn log_process_failures(window: &WebviewWindow) {
     }
 }
 
-/// NUL-terminated UTF-16 for a `PCWSTR`, zeroed on drop.
 fn wide(s: &str) -> Zeroizing<Vec<u16>> {
     Zeroizing::new(s.encode_utf16().chain([0]).collect())
 }
@@ -286,13 +250,10 @@ fn parse_url(s: &str) -> Result<Url> {
     s.parse().map_err(|e: url::ParseError| AppError::Internal(e.to_string()))
 }
 
-/// The first close request gets the close path; clicks while it runs get nothing.
 fn take_once<T>(slot: &Mutex<Option<T>>) -> Option<T> {
     slot.lock().unwrap_or_else(|e| e.into_inner()).take()
 }
 
-/// Blocking (see `poll_cookie`): reads the profile's cookie while the window still exists,
-/// hands it to `on_close`, then destroys the window and deletes the profile.
 fn end_session(app: &AppHandle, label: &str, title: &str, pid: u32, profile: &Path, on_close: impl FnOnce(Option<Secret>)) {
     if let Some(window) = app.get_webview_window(label) {
         let _ = window.hide();
@@ -320,19 +281,14 @@ async fn wait_for_cookie(app: AppHandle, label: String) -> Result<Secret> {
     tauri::async_runtime::spawn_blocking(move || poll_cookie(&app, &label)).await?
 }
 
-/// Blocking: `cookies()` deadlocks on the main thread and in event handlers.
 fn poll_cookie(app: &AppHandle, label: &str) -> Result<Secret> {
     let deadline = Instant::now() + LOGIN_TIMEOUT;
     let mut failures = 0;
     while Instant::now() < deadline {
-        // Also how we notice the user closing the window.
         let Some(window) = app.get_webview_window(label) else {
             return Err(AppError::Cancelled);
         };
-        // Signing in (2-step codes, captchas) is activity: don't auto-lock under it, or the
-        // captured cookie could not be encrypted.
         app.state::<crate::App>().vault.touch();
-        // Not `cookies_for_url`: it panics if the window goes away mid-call.
         match window.cookies() {
             Ok(all) => {
                 failures = 0;
@@ -353,7 +309,6 @@ fn poll_cookie(app: &AppHandle, label: &str) -> Result<Secret> {
     Err(AppError::Invalid(tr!("The Roblox sign-in window timed out after 15 minutes. Try again.")))
 }
 
-/// The first non-empty `.ROBLOSECURITY` from roblox.com (Tauri strips the leading dot).
 fn pick_roblosecurity(cookies: Vec<Cookie<'static>>) -> Option<Secret> {
     cookies
         .into_iter()
@@ -361,9 +316,6 @@ fn pick_roblosecurity(cookies: Vec<Cookie<'static>>) -> Option<Secret> {
         .map(|c| Secret::new(c.value()))
 }
 
-/// Where a Roblox window may go: Roblox over https, and the sign-in providers it hands off to.
-/// A Tauri window's page can crash the app through its IPC with a crafted host name, so it stays
-/// off anything else.
 fn allowed(url: &Url) -> bool {
     let ok = url.as_str() == "about:blank"
         || (url.scheme() == "https"
@@ -395,9 +347,8 @@ async fn cleanup(pid: Option<u32>, profile: PathBuf) {
     .await;
 }
 
-/// A profile folder stays locked until its browser process has exited (≤ 5 s here).
 fn wait_for_exit(pid: u32) {
-    // SAFETY: the handle is used only here and closed before returning.
+    // -- SAFETY: the handle is used only here and closed before returning
     unsafe {
         if let Ok(h) = OpenProcess(PROCESS_SYNCHRONIZE, false, pid) {
             if WaitForSingleObject(h, 5_000) == WAIT_TIMEOUT {
@@ -408,7 +359,6 @@ fn wait_for_exit(pid: u32) {
     }
 }
 
-/// Child processes can hold files a moment longer, so retry; the start-up sweep catches the rest.
 fn remove_profile(dir: &Path) {
     for attempt in 1..=5 {
         match std::fs::remove_dir_all(dir) {
@@ -503,8 +453,7 @@ mod tests {
     #[test]
     fn clears_webview2_overrides() {
         for name in WEBVIEW2_VARS {
-            // SAFETY: nothing else in the test binary reads these variables, and std serialises
-            // its own environment access on Windows.
+            // -- SAFETY: nothing else in the test binary reads these variables, and std serialises its own environment access on …
             unsafe { std::env::set_var(name, "x") };
         }
         clear_webview2_env();

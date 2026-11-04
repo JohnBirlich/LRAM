@@ -1,10 +1,3 @@
-//! Performance profiles: the performance settings as a small JSON file (or the share code the UI
-//! makes of it), to pass a working setup to another PC. Only performance settings travel, never
-//! launch arguments, hotkeys, the webhook, the vault or anything per account. Bandwidth isn't one
-//! either: applying it asks for admin rights. An import is checked with the same rules as Settings
-//! (`commands::apply_performance`) and saved through `settings_set` once the user has seen what
-//! changes.
-
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -12,15 +5,11 @@ use crate::error::{AppError, Result};
 use crate::model::{Adaptive, MemThrottle, RenderFlags, Settings, SettingsPatch};
 
 const FORMAT: &str = "lram-performance";
-/// Profiles written before the rename; they still import.
 const LEGACY_FORMAT: &str = "lram-performance";
 const VERSION: u32 = 1;
-/// A profile is a few hundred bytes; anything bigger isn't one.
 pub const MAX_BYTES: usize = 64 * 1024;
-/// The Dashboard's preview frame rates (`src/features/dashboard/previewFps.ts`).
 const PREVIEW_FPS: [u32; 4] = [5, 15, 30, 60];
 
-/// The settings a profile carries; None: not in it (left as it is).
 #[derive(Serialize, Deserialize, TS, Clone, Debug, Default, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
 #[ts(export)]
@@ -70,13 +59,11 @@ pub struct Profile {
     #[ts(optional)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub adaptive: Option<Adaptive>,
-    /// The Dashboard's preview frame rate (this PC's UI keeps it, not the settings).
     #[ts(optional)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub preview_fps: Option<u32>,
 }
 
-/// The file.
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct File {
@@ -92,7 +79,7 @@ fn not_a_profile() -> AppError {
     AppError::Invalid(tr!("This isn't a LRAM performance profile."))
 }
 
-/// The profile of `v` (pure): every performance setting, plus the preview rate.
+// -- Main func
 pub fn of(v: &Settings, preview_fps: Option<u32>, now_ms: i64) -> String {
     let settings = Profile {
         fps_cap: Some(v.fps_cap),
@@ -116,7 +103,27 @@ pub fn of(v: &Settings, preview_fps: Option<u32>, now_ms: i64) -> String {
     serde_json::to_string_pretty(&file).expect("plain data serializes")
 }
 
-/// Which cores are this PC's business: a mask from another one could pin clients to a single core.
+pub fn limits_line(l: &crate::model::Limits) -> String {
+    let mut out = Vec::new();
+    if let Some(c) = l.cpu_cap {
+        out.push(format!("cpu {c}%"));
+    }
+    if l.eco {
+        out.push("eco".to_owned());
+    }
+    if let Some(m) = l.trim_every_min.filter(|m| *m > 0) {
+        out.push(format!("trim {m} min"));
+    }
+    if let Some(mask) = l.affinity {
+        out.push(format!("cores {mask:#x}"));
+    }
+    if out.is_empty() {
+        "none".to_owned()
+    } else {
+        out.join(", ")
+    }
+}
+
 fn without_cores(mut a: Adaptive) -> Adaptive {
     a.background.affinity = None;
     a
@@ -143,8 +150,6 @@ fn patch_of(p: &Profile) -> SettingsPatch {
     }
 }
 
-/// The profile in `text`, checked against the rules Settings applies to `current` (pure; nothing is
-/// saved). Unknown keys are ignored; a preview rate the Dashboard doesn't offer is dropped.
 pub fn parse(text: &str, current: &Settings) -> Result<Profile> {
     if text.len() > MAX_BYTES {
         return Err(not_a_profile());

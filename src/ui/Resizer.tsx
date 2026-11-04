@@ -3,7 +3,6 @@ import { isRtl, t } from "../i18n";
 
 const KEY = "roalt.width.";
 
-/** A panel width the user can drag, remembered per panel (a per-viewer convenience). */
 export function usePanelWidth(id: string, initial: number, min: number, max: number) {
   const clamp = (w: number) => Math.round(Math.min(max, Math.max(min, w)));
   const [width, set] = useState(() => {
@@ -20,22 +19,18 @@ export function usePanelWidth(id: string, initial: number, min: number, max: num
     try {
       localStorage.setItem(KEY + id, String(next));
     } catch {
-      // Only a convenience.
     }
   };
   return { width, setWidth, reset: () => setWidth(initial), min, max };
 }
 
-/** A draggable divider on a panel's edge. `side` is where the panel sits: dragging away from
- * it widens the panel. Arrow keys move it by 16 px; a double click restores the default. */
+// -- Main func
 export function Divider({ panel, side, label }: {
   panel: ReturnType<typeof usePanelWidth>;
   side: "left" | "right";
   label: string;
 }) {
-  // `side` as in a left-to-right language; right to left, the layout has mirrored.
   const sign = (side === "left") !== isRtl() ? 1 : -1;
-  // A view switch mid-drag removes this before the pointer comes up.
   useEffect(() => () => void (document.body.style.cursor = ""), []);
 
   const drag = (e: PointerEvent<HTMLDivElement>) => {

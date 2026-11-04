@@ -1,7 +1,5 @@
 @import "tailwindcss";
 
-/* Soft Deck. Raised: press it. Sunk: type in it, or it is on. Flat: just information.
-   Utilities: bg-panel, text-dim, border-line, ... */
 @theme inline {
   --color-*: initial;
   --color-bg: var(--bg);
@@ -33,7 +31,7 @@
     --hover: #17191d;
     --sel: #1a1c21;
     --line: #23252a;
-    /* Edges of controls: 3.3:1 against the ground, so a control can be told from it. */
+
     --line-strong: #62676f;
     --hair: rgb(255 255 255 / 0.05);
     --text: #eef0f3;
@@ -48,13 +46,13 @@
     --warn: #ffd166;
     --ok: #8ce99a;
     --grid: rgb(255 255 255 / 0.035);
-    /* Checked controls and focus rings: lime on dark, ink on light (lime fails 3:1 there). */
+
     --on: var(--accent);
     --on-ink: #14160a;
     --focus: var(--accent);
     --backdrop: rgb(0 0 0 / 0.72);
     --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
-    /* Depth: one dark and one light shadow make a surface rise from, or sink into, the ground. */
+
     --face: linear-gradient(145deg, #16181c, #0c0d10);
     --sh: rgb(0 0 0 / 0.8);
     --hl: rgb(255 255 255 / 0.05);
@@ -97,8 +95,7 @@
     --primary-edge: color-mix(in oklab, var(--accent) 45%, #000);
     color-scheme: light;
   }
-  /* A chosen accent (Settings, set on <html> by App's useTheme). For text, checked controls and
-     focus it is darkened on light and lightened on dark, since it must keep 3:1 on the ground. */
+
   :root[data-accent] {
     --accent: var(--user-accent);
     --accent-text: var(--accent);
@@ -120,11 +117,11 @@
     --focus: var(--accent-text);
     --sel: color-mix(in srgb, var(--user-accent) 18%, var(--bg));
   }
-  /* A background image under see-through surfaces; floating panels blur what is behind them. */
+
   :root[data-bg] body {
     background: linear-gradient(var(--bg-dim), var(--bg-dim)), var(--bg-image) center / cover no-repeat fixed;
   }
-  /* Words on the bare picture need more contrast than on the ground, and the sidebar a surface. */
+
   :root[data-bg] {
     --dim: color-mix(in srgb, #aeb5bf 40%, var(--text));
   }
@@ -134,7 +131,7 @@
   :root[data-bg] nav {
     background: var(--panel);
   }
-  /* Text right on the picture: a soft halo where a bright or busy part would swallow it. */
+
   :root[data-bg] :is(header, .sheet) {
     text-shadow: 0 1px 3px rgb(0 0 0 / 0.8);
   }
@@ -154,8 +151,6 @@
     backdrop-filter: blur(16px);
   }
 
-  /* The surfaces that cross-fade. Not `*`: a theme switch would animate every element of a long
-     list, and freeze the window. */
   body,
   nav,
   .panel,
@@ -180,7 +175,7 @@
   #root {
     height: 100%;
   }
-  /* Absolute children of a scroller (.sr-only) must not make the window itself scrollable. */
+
   #root {
     position: relative;
     overflow: clip;
@@ -209,11 +204,11 @@
     outline: 2px solid var(--focus);
     outline-offset: 2px;
   }
-  /* Focus moved here when what had it went away: nowhere to show a ring. */
+
   [tabindex="-1"]:focus-visible {
     outline: none;
   }
-  /* WebView2's own eye, beside the app's. */
+
   input::-ms-reveal {
     display: none;
   }
@@ -265,7 +260,7 @@
     scrollbar-width: thin;
     scroll-behavior: smooth;
   }
-  /* Keyboard focus isn't left under a sticky table header. */
+
   .scroll {
     scroll-padding: 4px;
   }
@@ -273,8 +268,6 @@
     scroll-padding-top: 38px;
   }
 
-  /* Title bar: the product block (name, version, one line about the app). Neutral here, so both
-     design directions share it; directions.css sets the height and the border. */
   .titlebar {
     min-height: 44px;
   }
@@ -311,7 +304,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  /* The word above a column of navigation entries. */
+
   .nav-heading {
     padding: 2px 10px 6px;
     font-size: 11px;
@@ -321,7 +314,6 @@
     color: var(--dim);
   }
 
-  /* The page: title bar and sidebar frame it, and what scrolls ends at its rounded edge. */
   .sheet {
     flex: 1;
     min-width: 0;
@@ -475,7 +467,6 @@
   .log-line[data-level="error"] { color: var(--err); }
   .log-line[data-level="debug"] { color: var(--grey); }
 
-  /* Surfaces */
   .panel {
     border-radius: 20px;
     border: 1px solid var(--hair);
@@ -488,7 +479,6 @@
     box-shadow: var(--well);
   }
 
-  /* Keys */
   .btn {
     display: inline-flex;
     align-items: center;
@@ -574,7 +564,7 @@
     border-radius: 18px;
     font-size: 19px;
   }
-  /* A big choice: an account to play, a way to add one. */
+
   .pick {
     width: 100%;
     min-height: 64px;
@@ -847,7 +837,7 @@
     box-shadow: none;
     opacity: 0.55;
   }
-  /* These sit against window and field edges, which would cut a ring outside them. */
+
   .wc:focus-visible {
     outline-offset: -2px;
   }
@@ -886,7 +876,6 @@
     word-break: break-all;
   }
 
-  /* Navigation: the page you are on sinks in. */
   .nav-item {
     display: flex;
     align-items: center;
@@ -936,7 +925,6 @@
     background: var(--hover);
   }
 
-  /* Settings and the like: a row of words and the control for them. */
   .setting {
     display: flex;
     flex-wrap: wrap;
@@ -957,7 +945,6 @@
     min-width: 0;
   }
 
-  /* Status: a light, always with its word. */
   .state {
     display: inline-flex;
     align-items: center;
@@ -974,7 +961,6 @@
     box-shadow: 0 0 0 3px var(--bg), 0 0 0 4px var(--line-strong);
   }
 
-  /* A client's picture, sunk into its tile. */
   .bezel {
     position: relative;
     padding: 6px;
@@ -997,7 +983,7 @@
     font-weight: 500;
     box-shadow: var(--raise-sm);
   }
-  /* Tiles on Home are dragged by a grip on the picture. */
+
   .tile:hover .grip {
     opacity: 1;
   }
@@ -1038,7 +1024,7 @@
     z-index: 2;
     opacity: 0.92;
   }
-  /* Tabs and rows that sort: a line where a drag lands. */
+
   :is(.sort-row, .sort-col) > [data-drop] {
     position: relative;
   }
@@ -1084,7 +1070,6 @@
     inset-inline-end: -13px;
   }
 
-  /* One row however many tabs; the padding keeps focus rings and shadows from being cut off. */
   .tab-strip {
     display: flex;
     align-items: center;
@@ -1096,7 +1081,6 @@
     scrollbar-width: none;
   }
 
-  /* The sections as a row, with accounts on the side. As the strip: padding for rings and shadows. */
   .section-tabs {
     flex: none;
     display: flex;
@@ -1114,7 +1098,6 @@
     padding: 0 12px;
   }
 
-  /* Home's tabs: opaque faces, so they read over a background picture. */
   .tab {
     display: inline-flex;
     flex: none;
@@ -1145,7 +1128,6 @@
     font-weight: 500;
   }
 
-  /* Dials and meters */
   .dial {
     position: relative;
     width: 76px;
@@ -1215,8 +1197,7 @@
   .swatch[aria-pressed="true"]:focus-visible {
     outline-color: var(--focus);
   }
-  /* One of a batch row's four steps (ticket, run, join, in game); .step-live marks the one in
-     progress (half filled, so it stays distinct without motion). */
+
   .step {
     height: 8px;
     border-radius: 99px;
@@ -1259,7 +1240,6 @@
     background-size: 32px 32px;
   }
 
-  /* Accounts table */
   .row {
     height: 60px;
   }
@@ -1334,7 +1314,6 @@
     text-align: start;
   }
 
-  /* Native <dialog>: fades and rises in, and out again (allow-discrete keeps it in the top layer). */
   .dlg {
     margin: auto;
     padding: 0;
@@ -1381,7 +1360,6 @@
     }
   }
 
-  /* Popover menu anchored to its trigger. */
   .menu {
     inset: auto;
     margin: 0 0 6px;
@@ -1465,7 +1443,6 @@
     transform: translateX(-12px);
   }
 
-  /* Windows contrast themes drop shadows and author colours, which is how states show here. */
   @media (forced-colors: active) {
     .tick {
       forced-color-adjust: none;
@@ -1478,7 +1455,7 @@
       background: Highlight;
       color: HighlightText;
     }
-    /* Adjust none: else the browser puts its own Canvas plate behind the text. */
+
     .seg[aria-pressed="true"],
     .seg[aria-checked="true"],
     .tab:has([aria-selected="true"]),
@@ -1581,7 +1558,6 @@
   }
 }
 
-/* "backwards" only: a finished rise must not pin transform (drag-to-reorder sets it inline). */
 .enter {
   animation: rise 0.22s var(--ease) backwards;
 }
@@ -1600,7 +1576,7 @@
 .pulse {
   animation: pulse 1s ease-in-out infinite;
 }
-/* Loading placeholder; reduced motion leaves it still. */
+
 .skel {
   border-radius: 6px;
   background: linear-gradient(90deg, var(--hover) 25%, var(--line) 50%, var(--hover) 75%);
@@ -1621,7 +1597,7 @@
 :root[dir="rtl"] .drain {
   transform-origin: right;
 }
-/* Numbers, IDs and links read left to right in every language. */
+
 .mono {
   unicode-bidi: plaintext;
 }
@@ -1630,9 +1606,7 @@ textarea.mono {
   direction: ltr;
   text-align: left;
 }
-/* "Hold to stop all": fills with a bright edge, its label presses in and trembles near the end, and
-   it drains if let go. The label and not the button: a moving edge would slip out from under the
-   pointer and end the hold. */
+
 .hold-label {
   display: inline-block;
 }
@@ -1672,7 +1646,6 @@ textarea.mono {
   50% { opacity: 0.45; }
 }
 
-/* Not the start-up splash: it plays whatever Windows' animation effects are set to. */
 @media (prefers-reduced-motion: reduce) {
   *:not(.splash, .splash *),
   ::before,
@@ -1684,7 +1657,7 @@ textarea.mono {
   .scroll {
     scroll-behavior: auto;
   }
-  /* How far the hold has got isn't decoration. */
+
   .hold-btn[data-held] .hold-fill {
     transition: transform var(--hold) linear !important;
   }

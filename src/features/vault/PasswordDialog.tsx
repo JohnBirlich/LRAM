@@ -6,11 +6,7 @@ import { getLang, t } from "../../i18n";
 
 export const MIN_PASSWORD = 8;
 
-/**
- * Asks for the current password, a new one (with confirmation), or both.
- * onSubmit rejecting with kind "cancelled" keeps the dialog open quietly; any other
- * rejection shows inline. Passwords are dropped from state when the dialog closes.
- */
+// -- Main func
 export function PasswordDialog({
   open, onClose, title, text, submitLabel, onSubmit,
   current = false, next = false, currentLabel = t("settings.masterPassword"), nextLabel = t("vault.newPassword"), cancelLabel = t("common.cancel"),
@@ -43,7 +39,6 @@ export function PasswordDialog({
     setShakes(0);
   }, [open]);
 
-  // Closing mid-request would not cancel it, so wait for it.
   const close = () => {
     if (!busy) onClose();
   };

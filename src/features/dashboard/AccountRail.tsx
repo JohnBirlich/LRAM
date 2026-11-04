@@ -7,9 +7,7 @@ import { isLive, STATES } from "../launch/Running";
 import type { HomeTabs } from "./homeLayout";
 import { Sortable } from "./Sortable";
 
-/** The "accounts on the side" layout's left part: Overview and every account, each opening on Home.
- * An account's row opens its tab there, as the strip's + does. `onHome`: Home is on screen, the only
- * place a row is the current one. */
+// -- Main func
 export function AccountRail({ width, accounts, instances, home, onHome, onOpen, onAdd, footer }: {
   width: number;
   accounts: AccountSummary[];
@@ -74,7 +72,6 @@ export function AccountRail({ width, accounts, instances, home, onHome, onOpen, 
   );
 }
 
-/** That layout's sections, one row along the top. The wheel runs along it, as on Home's tab strip. */
 export function SectionTabs({ children }: { children: ReactNode }) {
   const strip = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -88,17 +85,14 @@ export function SectionTabs({ children }: { children: ReactNode }) {
     el.addEventListener("wheel", wheel, { passive: false });
     return () => el.removeEventListener("wheel", wheel);
   }, []);
-  // A section picked by keyboard or shortcut stays in sight.
   useEffect(() => {
     strip.current?.querySelector("[aria-current=page]")?.scrollIntoView({ block: "nearest", inline: "nearest" });
   });
-  // An edge fades while there is more past it. On the element: scrolling needn't render anything.
   useEffect(() => {
     const el = strip.current;
     if (!el) return;
     const show = () => {
       const end = el.scrollWidth - el.clientWidth;
-      // Right to left, scrollLeft runs from 0 down to -end.
       const [fromStart, fromEnd] = [Math.abs(el.scrollLeft), end - Math.abs(el.scrollLeft)];
       const [left, right] = isRtl() ? [fromEnd, fromStart] : [fromStart, fromEnd];
       el.style.setProperty("--fade-left", left > 1 ? "28px" : "0px");

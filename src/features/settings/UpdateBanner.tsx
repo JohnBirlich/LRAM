@@ -8,7 +8,6 @@ import { toastError } from "../../ui/Toast";
 import { isRunning } from "../launch/Running";
 import { t, tx } from "../../i18n";
 
-/** The version Later hid: not offered again until LRAM restarts, or Check now finds it. */
 let hidden: string | null = null;
 const subs = new Set<() => void>();
 const hide = (version: string | null) => {
@@ -21,10 +20,8 @@ const subscribe = (f: () => void) => {
 };
 export const unhideUpdate = () => hide(null);
 
-/** "LRAM x.y.z is ready" under the title bar while a newer release is known (self_update). */
+// -- Main func
 export function UpdateBanner() {
-  // The start-up check can finish before the app://update listener exists: ask the cached
-  // result again (no network) until an update is known.
   const version = useQuery({ queryKey: qk.appUpdate, queryFn: api.selfUpdateStatus, refetchInterval: (q) => (q.state.data?.available ? false : 5_000) }).data?.available;
   const running = useInstances().data?.filter(isRunning).length ?? 0;
   const later = useSyncExternalStore(subscribe, () => hidden);
@@ -32,7 +29,6 @@ export function UpdateBanner() {
   const [busy, setBusy] = useState(false);
   if (!version || version === later) return null;
 
-  // Resolves just before LRAM quits for the installer, which starts it again.
   async function update() {
     setConfirm(false);
     setBusy(true);

@@ -1,5 +1,3 @@
-//! Argon2id key derivation and AES-256-GCM sealing shared by the vault and backups.
-
 use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Nonce};
 use argon2::{Algorithm, Argon2, Params, Version};
@@ -8,22 +6,18 @@ use zeroize::Zeroizing;
 use super::{Kdf, Secret};
 use crate::error::{AppError, Result};
 
-/// RFC 9106 second recommendation: 64 MiB, 3 passes, 4 lanes.
 pub const DEFAULT_M_KIB: u32 = 64 * 1024;
 pub const DEFAULT_T: u32 = 3;
 pub const DEFAULT_P: u32 = 4;
 
 const NONCE_LEN: usize = 12;
 
-/// `n` bytes from the OS RNG.
 pub fn random_bytes<const N: usize>() -> [u8; N] {
     let mut b = [0u8; N];
-    // ProcessPrng (Windows 10+) is documented never to fail, so there is nothing to recover.
     getrandom::fill(&mut b).expect("OS random number generator failed");
     b
 }
 
-/// A fresh `Kdf` with the default cost and a random 16-byte salt.
 pub fn new_kdf() -> Kdf {
     let (m_kib, t, p) = COST;
     Kdf { salt: random_bytes::<16>().to_vec(), m_kib, t, p }
@@ -31,12 +25,9 @@ pub fn new_kdf() -> Kdf {
 
 #[cfg(not(test))]
 const COST: (u32, u32, u32) = (DEFAULT_M_KIB, DEFAULT_T, DEFAULT_P);
-// ponytail: unoptimised Argon2 takes ~3 s at the default cost, so tests derive with a cheap one.
 #[cfg(test)]
 const COST: (u32, u32, u32) = (1024, 1, 1);
 
-/// A fresh `Kdf` for a recovery code: a short code needs more cost than a password, and it is
-/// rarely used.
 pub fn new_recovery_kdf() -> Kdf {
     let (m_kib, t, p) = RECOVERY_COST;
     Kdf { salt: random_bytes::<16>().to_vec(), m_kib, t, p }
@@ -47,17 +38,14 @@ const RECOVERY_COST: (u32, u32, u32) = (256 * 1024, 3, 4);
 #[cfg(test)]
 const RECOVERY_COST: (u32, u32, u32) = COST;
 
-/// No `0 O 1 I L`: a code gets read off paper. 9 of these are about 44 bits.
 const CODE_ALPHABET: &[u8; 31] = b"23456789ABCDEFGHJKMNPQRSTUVWXYZ";
 const CODE_LEN: usize = 9;
-/// The largest multiple of the alphabet's size in a byte: above it, `% 31` would be biased.
 const CODE_BYTE_LIMIT: u8 = 248;
 
 fn dashed(code: &str) -> Secret {
     Secret::new(format!("{}-{}-{}", &code[..3], &code[3..6], &code[6..]))
 }
 
-/// A new recovery code from the OS RNG, as `XXX-XXX-XXX`.
 pub fn recovery_code() -> Secret {
     let mut code = Zeroizing::new(String::with_capacity(CODE_LEN));
     while code.len() < CODE_LEN {
@@ -69,7 +57,6 @@ pub fn recovery_code() -> Secret {
     dashed(&code)
 }
 
-/// What the user typed as `XXX-XXX-XXX`, ignoring case, dashes and spaces; None if it can't be a code.
 pub fn normalize_code(raw: &str) -> Option<Secret> {
     let code: Zeroizing<String> = Zeroizing::new(
         raw.chars().filter(|c| *c != '-' && !c.is_whitespace()).map(|c| c.to_ascii_uppercase()).collect(),
@@ -77,7 +64,6 @@ pub fn normalize_code(raw: &str) -> Option<Secret> {
     (code.len() == CODE_LEN && code.bytes().all(|b| CODE_ALPHABET.contains(&b))).then(|| dashed(&code))
 }
 
-/// Argon2id(password, kdf) → 32-byte key.
 pub fn derive_key(password: &str, kdf: &Kdf) -> Result<Zeroizing<[u8; 32]>> {
     let params = Params::new(kdf.m_kib, kdf.t, kdf.p, Some(32)).map_err(|e| {
         log::warn!("bad argon2 parameters (m {} KiB, t {}, p {}): {e}", kdf.m_kib, kdf.t, kdf.p);
@@ -93,7 +79,6 @@ pub fn derive_key(password: &str, kdf: &Kdf) -> Result<Zeroizing<[u8; 32]>> {
     Ok(key)
 }
 
-/// `nonce (12) || ciphertext+tag`.
 pub fn seal(key: &[u8; 32], aad: &[u8], plaintext: &[u8]) -> Result<Vec<u8>> {
     let nonce = random_bytes::<NONCE_LEN>();
     let ct = Aes256Gcm::new(key.into())
@@ -105,7 +90,7 @@ pub fn seal(key: &[u8; 32], aad: &[u8], plaintext: &[u8]) -> Result<Vec<u8>> {
     Ok(out)
 }
 
-/// Inverse of `seal`; `AppError::Crypto` when the key, AAD or blob is wrong.
+// -- Main func
 pub fn open(key: &[u8; 32], aad: &[u8], blob: &[u8]) -> Result<Zeroizing<Vec<u8>>> {
     let (nonce, ct) = blob.split_first_chunk::<NONCE_LEN>().ok_or(AppError::Crypto)?;
     Aes256Gcm::new(key.into())

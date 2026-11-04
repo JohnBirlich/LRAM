@@ -1,15 +1,3 @@
-//! Roblox client updates: the version check, auto-update and the built-in installer.
-//!
-//! - Check: `clientsettingscdn.roblox.com/v2/client-version/WindowsPlayer` → `clientVersionUpload`,
-//!   compared with the `Versions\version-…` folder the client is in. At start and every 30 min;
-//!   `roblox://client` carries the new `RobloxClient` when anything changed.
-//! - Install (`roblox_install`, or auto-update): refused while any Roblox client runs (an update
-//!   ends them all), while a launch, batch or auto-rejoin runs, and over a bootstrapper install.
-//!   Downloads `setup.rbxcdn.com/<version>-RobloxPlayerInstaller.exe` (≤ 50 MB) into a fresh
-//!   temp folder, write-locks it, checks its Authenticode signature is Roblox Corporation's
-//!   (`authenticode`) and only then runs it, waits (≤ 10 min), finds the client again and
-//!   deletes the folder. Progress goes out as `roblox://install`. Launches are refused meanwhile.
-
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::os::windows::fs::OpenOptionsExt;
@@ -32,7 +20,6 @@ pub const INSTALL_EVENT: &str = "roblox://install";
 const CHECK_EVERY: Duration = Duration::from_secs(30 * 60);
 const MAX_INSTALLER: u64 = 50_000_000;
 pub const INSTALL_TIMEOUT: Duration = Duration::from_secs(10 * 60);
-/// Win32 `FILE_SHARE_READ`: others may read (and run) the file, never write or delete it.
 pub(crate) const FILE_SHARE_READ: u32 = 0x1;
 fn bootstrapper() -> String {
     tr!("A bootstrapper (e.g. Bloxstrap) manages this Roblox install and keeps it up to date; LRAM leaves it alone.")
@@ -40,12 +27,9 @@ fn bootstrapper() -> String {
 
 #[derive(Default)]
 pub struct Updater {
-    /// Roblox's live version, once checked.
     latest: Mutex<Option<String>>,
-    /// What `roblox://client` last said.
     sent: Mutex<Option<RobloxClient>>,
     installing: AtomicBool,
-    /// The version auto-update last tried: a failed install isn't retried every 30 minutes.
     auto_tried: Mutex<Option<String>>,
 }
 
@@ -54,7 +38,6 @@ impl Updater {
         Self::default()
     }
 
-    /// The installer runs (or is being downloaded): launches are refused.
     pub fn installing(&self) -> bool {
         self.installing.load(Ordering::SeqCst)
     }
@@ -75,12 +58,10 @@ impl Drop for Installing<'_> {
     }
 }
 
-/// `version-` and 16 lowercase hex digits: the only thing that goes into the installer URL.
 pub fn is_version(s: &str) -> bool {
     s.strip_prefix("version-").is_some_and(|h| h.len() == 16 && h.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)))
 }
 
-/// The installed version of a client at `...\Versions\version-xxxx\RobloxPlayerBeta.exe`.
 pub fn installed_version(exe: &Path) -> Option<String> {
     let dir = exe.parent()?;
     if !dir.parent()?.file_name()?.eq_ignore_ascii_case("Versions") {
@@ -90,32 +71,22 @@ pub fn installed_version(exe: &Path) -> Option<String> {
     is_version(&name).then_some(name)
 }
 
-/// Both versions known and different.
 pub fn outdated(version: Option<&str>, latest: Option<&str>) -> bool {
     matches!((version, latest), (Some(v), Some(l)) if v != l)
 }
 
-/// Auto-update runs only when turned on, Roblox's own client is installed and outdated, no
-/// Roblox client runs and nothing (launch, batch, auto-rejoin, another install) is busy.
 pub fn may_auto_update(enabled: bool, c: &RobloxClient, clients_running: usize, busy: bool) -> bool {
     enabled && c.outdated && c.path.is_some() && !c.bootstrapper && clients_running == 0 && !busy
 }
 
-/// `https://setup.rbxcdn.com/<version>-RobloxPlayerInstaller.exe`; None unless `is_version`.
 pub fn installer_url(version: &str) -> Option<String> {
     is_version(version).then(|| format!("{}{version}-RobloxPlayerInstaller.exe", endpoints::SETUP))
 }
 
-/// A bootstrapper with an older Roblox than the live one closes every client as it updates, so
-/// with clients running a launch through it waits (pure). Anything unknown doesn't hold it up.
-// ponytail: Bloxstrap's optional background updates don't close clients, but only under conditions
-// it decides at launch; such a user is asked to close clients too. Read its settings if they mind.
 fn bootstrapper_would_close(installed: Option<&str>, latest: Option<&str>, running: usize) -> bool {
     running > 0 && outdated(installed, latest)
 }
 
-/// The live version on this PC's release channel, asked now (a bootstrapper follows the channel);
-/// None when Roblox can't be asked, so nothing is held up on a guess.
 async fn live_version(s: &App) -> Option<String> {
     let on_channel = match client::channel() {
         Some(channel) => s.api.client_version_on(&channel).await,
@@ -123,7 +94,6 @@ async fn live_version(s: &App) -> Option<String> {
     };
     match on_channel {
         Ok(v) => Some(v),
-        // Unknown to Roblox or closed to this PC: bootstrappers go back to production then.
         Err(AppError::NotFound | AppError::CookieInvalid | AppError::Roblox(_)) if client::channel().is_some() => s.api.client_version().await.ok(),
         Err(e) => {
             log::info!("bootstrapper check: Roblox version unknown: {e}");
@@ -132,10 +102,6 @@ async fn live_version(s: &App) -> Option<String> {
     }
 }
 
-/// Why this launch must wait for an update that would close running clients, or None: a
-/// bootstrapper's (`bootstrapper_would_close`), or production's build missing (`launch_client`
-/// would start a client that runs Roblox's installer). `closing`: clients about to be closed for
-/// it, which don't count as running.
 pub async fn update_hold(s: &App, closing: usize) -> Option<String> {
     let exe = client::find().ok()?;
     let running = crate::instances::process::roblox_processes().len().saturating_sub(closing);
@@ -156,7 +122,6 @@ pub async fn update_hold(s: &App, closing: usize) -> Option<String> {
         .then(|| tr!("Roblox has an update, and installing it would close every running client. Close your clients first, then launch."))
 }
 
-/// Production's live version, asked now, else the last one known; None when never known.
 async fn production_version(s: &App) -> Option<String> {
     match s.api.client_version().await {
         Ok(v) => {
@@ -170,14 +135,6 @@ async fn production_version(s: &App) -> Option<String> {
     }
 }
 
-/// The client a launch starts, and whether its URI asks for production (`uri::player_uri`).
-///
-/// Roblox rewrites `clientExe` and the registry's channel for whichever account last played (each
-/// is enrolled in a channel of its own). A client whose build doesn't match the channel it asks
-/// about runs the foreground installer, which closes every running client (research multi-instance
-/// M9). So: production's build with an empty `channel:`, as they always agree. Over a bootstrapper,
-/// or with the version unknown, what `client::find` says, as is. Production's build missing: the
-/// client found, asked for production, updates itself (`update_hold` kept it from closing others).
 pub async fn launch_client(s: &App) -> Result<(client::ClientExe, bool)> {
     let exe = client::find()?;
     let managed = client::managed_by_bootstrapper(&exe);
@@ -190,14 +147,12 @@ pub async fn launch_client(s: &App) -> Result<(client::ClientExe, bool)> {
         client::channel(),
         client::handler(),
     );
-    // Asked for production without having it: this client updates itself into a new folder.
     if chosen.1 && live.as_deref().is_some_and(|v| client::installed_build(v).is_none()) {
         log::warn!("Roblox's live version isn't installed: the updated client won't have this launch's graphics flags, which go in the old version's folder");
     }
     Ok(chosen)
 }
 
-/// `launch_client`'s choice (pure but for `installed`).
 fn launch_choice(exe: client::ClientExe, managed: bool, live: Option<&str>, installed: impl FnOnce(&str) -> Option<PathBuf>) -> (client::ClientExe, bool) {
     let Some(live) = live.filter(|_| !managed) else { return (exe, false) };
     match installed(live) {
@@ -206,7 +161,6 @@ fn launch_choice(exe: client::ClientExe, managed: bool, live: Option<&str>, inst
     }
 }
 
-/// The Roblox client as found now, with the last known live version.
 pub fn client(s: &App) -> RobloxClient {
     let exe = client::find().ok();
     let bootstrapper = exe.as_ref().is_some_and(client::managed_by_bootstrapper);
@@ -221,7 +175,6 @@ pub fn client(s: &App) -> RobloxClient {
     }
 }
 
-/// `client`, sent as `roblox://client` when it changed since last time.
 pub fn publish(app: &AppHandle) -> RobloxClient {
     let s = app.state::<App>();
     let c = client(&s);
@@ -233,7 +186,6 @@ pub fn publish(app: &AppHandle) -> RobloxClient {
     c
 }
 
-/// Checks the version a few seconds after start, then every 30 minutes.
 pub fn spawn(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(Duration::from_secs(3)).await;
@@ -277,8 +229,6 @@ async fn check(app: &AppHandle) {
     }
 }
 
-/// Downloads, verifies and runs Roblox's installer (see the module notes). Ends with
-/// `Done` or `Error` on `roblox://install` and a fresh `roblox://client`.
 pub async fn install(app: &AppHandle) -> Result<RobloxClient> {
     let s = app.state::<App>();
     let installing = s.update.begin()?;
@@ -298,7 +248,6 @@ pub async fn install(app: &AppHandle) -> Result<RobloxClient> {
 }
 
 async fn run_install(app: &AppHandle, s: &App) -> Result<()> {
-    // `installing` is set first: a launch from now on is refused, one already going is seen here.
     if s.bulk.any_busy() {
         return Err(AppError::Invalid(tr!("Wait for the running launch, batch or auto-rejoin to finish, then install Roblox.")));
     }
@@ -331,7 +280,6 @@ async fn run_install(app: &AppHandle, s: &App) -> Result<()> {
     let exe = dir.0.join("RobloxPlayerInstaller.exe");
     File::create_new(&exe)?.write_all(&bytes)?;
     drop(bytes);
-    // Nothing can change the file between the check and the run: no write sharing until it ends.
     let pinned = OpenOptions::new().read(true).share_mode(FILE_SHARE_READ).open(&exe)?;
 
     emit(InstallProgress::Verifying);
@@ -362,7 +310,7 @@ async fn run_install(app: &AppHandle, s: &App) -> Result<()> {
     }
 }
 
-/// Runs `exe` in its folder and waits for it, at most `timeout` (then it is ended and Err).
+// -- Main func
 fn run(exe: &Path, timeout: Duration) -> Result<Option<i32>> {
     let dir = exe.parent().ok_or_else(|| AppError::Internal("installer folder unknown".into()))?;
     let mut child = Command::new(exe)
@@ -378,7 +326,6 @@ fn run(exe: &Path, timeout: Duration) -> Result<Option<i32>> {
             return Ok(status.code());
         }
         if Instant::now() > deadline {
-            // Ended, so launches aren't let in under a live installer and its folder can go.
             if let Err(e) = child.kill() {
                 log::warn!("could not end Roblox's installer (pid {}): {e}", child.id());
             }
@@ -395,7 +342,6 @@ pub(crate) async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T> + 
     tauri::async_runtime::spawn_blocking(f).await.map_err(|e| AppError::Internal(e.to_string()))?
 }
 
-/// A fresh, uniquely named folder in %TEMP% (`prefix` + a UUID), deleted with everything in it on drop.
 pub(crate) struct TempDir(pub(crate) PathBuf);
 
 impl TempDir {
@@ -507,8 +453,6 @@ mod tests {
         assert!(!may_auto_update(true, &RobloxClient { path: None, ..old }, 0, false), "not installed");
     }
 
-    /// `run` on a copy of PING.EXE (never Roblox's installer) in a temp folder, write-locked
-    /// as the installer is: it starts, is waited for, and the folder is deleted afterwards.
     #[test]
     fn run_waits_for_a_write_locked_program() {
         let system = std::env::var_os("SystemRoot").map_or_else(|| PathBuf::from(r"C:\Windows"), PathBuf::from);
@@ -517,7 +461,6 @@ mod tests {
         std::fs::copy(system.join(r"System32\PING.EXE"), &exe).unwrap();
         let pinned = OpenOptions::new().read(true).share_mode(FILE_SHARE_READ).open(&exe).unwrap();
         assert!(OpenOptions::new().write(true).open(&exe).is_err(), "no writer while pinned");
-        // PING without arguments prints its usage and exits 1.
         assert_eq!(run(&exe, Duration::from_secs(30)).unwrap(), Some(1));
         drop(pinned);
         let path = dir.0.clone();

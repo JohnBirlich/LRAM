@@ -12,7 +12,6 @@ import { friendly, toast, toastError } from "../../ui/Toast";
 import { MultiNotice, useMultiToggle } from "../launch/Running";
 import { PasswordDialog } from "../vault/PasswordDialog";
 
-/** Accent presets: value ("" is the theme's own lime) and name. Any other colour comes from the picker. */
 const ACCENTS: [string, Key][] = [
   ["", "settings.accent.lime"],
   ["#ff4fd8", "settings.accent.neon"],
@@ -37,7 +36,7 @@ export const SETTINGS_SECTIONS: readonly (readonly [string, Key])[] = [
 ];
 
 const CLOSED_KEY = "roalt.settingsClosed";
-/** The sections folded on this PC; all open on first run. When this PC keeps no storage, they last until LRAM closes. */
+
 const closed = (() => {
   try {
     return new Set<string>(JSON.parse(localStorage.getItem(CLOSED_KEY) ?? "[]"));
@@ -68,25 +67,23 @@ const SHORTCUTS: [Key, string][] = [
 ];
 
 const backupFilter = () => [{ name: t("settings.backupFilter"), extensions: ["lram"] }];
-// Backups written by builds that still said roalt keep their old extension and still open.
 const openBackupFilter = () => [{ name: t("settings.backupFilter"), extensions: ["lram", "roalt"] }];
 const RELEASES = "https://github.com/JohnBirlich/RAM/releases";
 const cancelled = () => ({ kind: "cancelled", message: "" });
 
 type VaultDialog = "set" | "change" | "remove" | "export";
 
+// -- Main func
 export function SettingsView({ vault, settings, onPerformance, onRecoveryCode }: { vault: VaultStatus; settings: Settings; onPerformance: () => void; onRecoveryCode: (code: string) => void }) {
   const qc = useQueryClient();
   const set = useSetSettings();
   const master = vault.mode === "master";
   const [dlg, setDlg] = useState<VaultDialog | null>(null);
-  // Apart from `dlg`: the offer opens as the "set" dialog closes.
   const [recoveryAsk, setRecoveryAsk] = useState<"offer" | "create" | null>(null);
   const [importPath, setImportPath] = useState("");
   const [importOpen, setImportOpen] = useState(false);
   const multi = useMultiStatus().data;
   const multiToggle = useMultiToggle((st) => st.message && toast(st.message, "error"));
-  // Asked again each time Settings opens: Roblox may have been installed meanwhile.
   const client = useQuery({ queryKey: qk.client, queryFn: api.robloxClient, staleTime: 0 }).data;
   const dataDir = useQuery({ queryKey: qk.dataDir, queryFn: api.dataDirInfo }).data;
   const [movePath, setMovePath] = useState("");
@@ -169,9 +166,6 @@ export function SettingsView({ vault, settings, onPerformance, onRecoveryCode }:
             options={[{ value: "detailed", label: t("settings.densityDetailed") }, { value: "compact", label: t("settings.densityCompact") }]}
             onChange={(density) => set.mutate({ density })}
           />
-        </Row>
-        <Row title={t("settings.discord")} hint={t("settings.discordHint")}>
-          <Switch label={t("settings.discord")} checked={settings.discordPresence} onChange={(discordPresence) => set.mutate({ discordPresence })} />
         </Row>
         <Row title={t("settings.closeToTray")} hint={t("settings.closeToTrayHint")}>
           <Switch label={t("settings.closeToTray")} checked={settings.closeToTray} onChange={(closeToTray) => set.mutate({ closeToTray })} />
@@ -386,6 +380,20 @@ export function SettingsView({ vault, settings, onPerformance, onRecoveryCode }:
             />
           </Row>
         )}
+        {settings.antiAfk.enabled && settings.antiAfk.mode === "focus" && (
+          <Row title={t("settings.antiAfkPress")} hint={t("settings.antiAfkPressHint")}>
+            <Segmented
+              label={t("settings.antiAfkPress")}
+              value={settings.antiAfk.press}
+              options={[
+                { value: "space", label: t("settings.antiAfkPressSpace"), title: t("settings.antiAfkPressSpaceHint") },
+                { value: "camera", label: t("settings.antiAfkPressCamera"), title: t("settings.antiAfkPressCameraHint") },
+                { value: "mouse", label: t("settings.antiAfkPressMouse"), title: t("settings.antiAfkPressMouseHint") },
+              ]}
+              onChange={(press) => set.mutate({ antiAfk: { ...settings.antiAfk, press } })}
+            />
+          </Row>
+        )}
         {settings.antiAfk.enabled && (
           <Row title={t("settings.antiAfkEvery")} hint={t("settings.antiAfkEveryHint")}>
             <NumberField
@@ -398,6 +406,9 @@ export function SettingsView({ vault, settings, onPerformance, onRecoveryCode }:
             />
           </Row>
         )}
+        <Row title={t("settings.muteClients")} hint={t("settings.muteClientsHint")}>
+          <Switch label={t("settings.muteClients")} checked={settings.muteClients} onChange={(muteClients) => set.mutate({ muteClients })} />
+        </Row>
         <Row
           title={t("settings.breaker")}
           hint={t("settings.breakerHint")}
@@ -616,7 +627,6 @@ function ImportDialog({ open, path, onClose }: { open: boolean; path: string; on
   );
 }
 
-/** The Roblox bandwidth limit: typed, then applied with admin rights only on the button. */
 export function BandwidthRow() {
   const qc = useQueryClient();
   const status = useQuery({ queryKey: qk.bandwidth, queryFn: api.bandwidthStatus, staleTime: 0 }).data;
@@ -681,7 +691,6 @@ export function BandwidthRow() {
 
 const SHUTDOWN_PRESETS = [30, 60, 120, 240, 480];
 
-/** "1 h 05 min" style, for a preset or what is left. */
 function duration(secs: number) {
   const h = Math.floor(secs / 3600);
   const m = Math.floor((secs % 3600) / 60);
@@ -690,7 +699,6 @@ function duration(secs: number) {
   return h ? t("settings.durHours", { h, m: pad(m) }) : m ? t("settings.durMinutes", { m, s: pad(s) }) : t("settings.durSeconds", { s });
 }
 
-/** The next time the clock shows `hhmm` ("21:30"), as Unix ms. */
 function nextAt(hhmm: string) {
   const [h, m] = hhmm.split(":").map(Number);
   const at = new Date();
@@ -699,7 +707,6 @@ function nextAt(hhmm: string) {
   return at.getTime();
 }
 
-/** Auto-shutdown: Windows' own timer (shutdown /s), with a countdown and Cancel. */
 function ShutdownRow() {
   const qc = useQueryClient();
   const at = useQuery({ queryKey: qk.shutdown, queryFn: api.shutdownStatus, staleTime: 0 }).data ?? null;
@@ -758,8 +765,6 @@ function ShutdownRow() {
   );
 }
 
-/** Public networks: allowed by default; turned off, launching is refused there and a master
- * vault locks on joining one. Allowing them again is confirmed. */
 function PublicNetworkRow({ settings }: { settings: Settings }) {
   const set = useSetSettings();
   const network = useNetwork().data;
@@ -800,7 +805,6 @@ function PublicNetworkRow({ settings }: { settings: Settings }) {
   );
 }
 
-/** Deletes old Roblox logs now and says how much it freed. */
 function CleanLogsButton() {
   const [busy, setBusy] = useState(false);
   const clean = () => {
@@ -829,8 +833,6 @@ export function Heading({ id, children }: { id: string; children: ReactNode }) {
   return <h2 id={id} className="section-title mt-8 first-of-type:mt-5 scroll-mt-3">{children}</h2>;
 }
 
-/** A section that folds. Native <details> keeps its children mounted, so an install's progress and
- * half-typed fields survive folding. The sidebar's jump opens it from outside; onToggle hears that too. */
 function Section({ id, title, children }: { id: string; title: string; children: ReactNode }) {
   const toggled = (open: boolean) => {
     if (open) closed.delete(id);
@@ -838,7 +840,6 @@ function Section({ id, title, children }: { id: string; title: string; children:
     try {
       localStorage.setItem(CLOSED_KEY, JSON.stringify([...closed]));
     } catch {
-      // No storage: kept in `closed`.
     }
   };
   return (
@@ -871,7 +872,6 @@ function installStep(p: InstallProgress | null) {
   }
 }
 
-/** The client LRAM starts, its version, and Install / Update Roblox (Roblox's own client only). */
 function ClientRow({ client }: { client: RobloxClient | undefined }) {
   const qc = useQueryClient();
   const [progress, setProgress] = useState<InstallProgress | null>(null);
@@ -988,7 +988,6 @@ function AccentPicker({ value, onChange }: { value: string; onChange: (v: string
   );
 }
 
-/** Pick, replace or remove the window's background image, and how much the theme covers it. */
 function BackgroundRow({ dim, onDim }: { dim: number; onDim: (v: number) => void }) {
   const qc = useQueryClient();
   const has = !!useQuery({ queryKey: qk.background, queryFn: api.backgroundGet, staleTime: Infinity }).data?.byteLength;

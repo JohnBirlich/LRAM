@@ -1,5 +1,3 @@
-//! Windows Hello confirmation (DPAPI-mode re-authentication).
-
 use windows::Security::Credentials::UI::{
     UserConsentVerificationResult as Outcome, UserConsentVerifier, UserConsentVerifierAvailability,
 };
@@ -10,11 +8,7 @@ use windows_future::IAsyncOperation;
 
 use crate::error::{AppError, Result};
 
-/// Shows the Windows Hello prompt over `window`. `Ok(())` only when the user is verified.
-/// Cancelled → `AppError::Cancelled`; not set up / failed → `AppError::Invalid` with a message
-/// saying what to do (e.g. "Windows Hello isn't set up. Set a master password to reveal cookies.").
 pub async fn windows_hello(window: &tauri::WebviewWindow, message: &str) -> Result<()> {
-    // HWND is not Send; its address is.
     let hwnd = window.hwnd()?.0 as isize;
     let message = HSTRING::from(message);
     tauri::async_runtime::spawn_blocking(move || verify(HWND(hwnd as *mut _), &message))
@@ -22,7 +16,7 @@ pub async fn windows_hello(window: &tauri::WebviewWindow, message: &str) -> Resu
         .map_err(|e| AppError::Internal(e.to_string()))?
 }
 
-/// Whether Windows Hello is set up on this PC.
+// -- Main func
 pub async fn hello_available() -> bool {
     tauri::async_runtime::spawn_blocking(|| {
         UserConsentVerifier::CheckAvailabilityAsync()
@@ -43,7 +37,7 @@ fn verify(hwnd: HWND, message: &HSTRING) -> Result<()> {
         return Err(AppError::Invalid(tr!("Windows Hello isn't set up. Set a master password in Settings to reveal cookies.")));
     }
     let interop = factory::<UserConsentVerifier, IUserConsentVerifierInterop>().map_err(failed)?;
-    // SAFETY: `hwnd` is the live main window; the call only reads it to parent the prompt.
+    // -- SAFETY: `hwnd` is the live main window; the call only reads it to parent the prompt
     let op: IAsyncOperation<Outcome> =
         unsafe { interop.RequestVerificationForWindowAsync(hwnd, message) }.map_err(failed)?;
     match op.join().map_err(failed)? {

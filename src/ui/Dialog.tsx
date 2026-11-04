@@ -2,14 +2,9 @@ import { useEffect, useId, useReducer, useRef, type ReactNode } from "react";
 import { Icon } from "./Icon";
 import { t } from "../i18n";
 
-/** How long .dlg takes to fade out (theme.css), and a little. */
 const FADE_MS = 250;
 
-/**
- * Native modal <dialog>. Keep it mounted and drive `open`, so CSS can animate it out.
- * Esc and a click on the backdrop call onClose. Focus goes to [data-autofocus] or the first text
- * field, else to the close button: a checkbox isn't a place to start (Space would change it).
- */
+// -- Main func
 export function Dialog({ open, onClose, title, width = 420, describedBy, children }: {
   open: boolean;
   onClose: () => void;
@@ -22,8 +17,6 @@ export function Dialog({ open, onClose, title, width = 420, describedBy, childre
   const downOnBackdrop = useRef(false);
   const openedAt = useRef(0);
   const titleId = useId();
-  // While it fades out it keeps showing what it showed, whatever its owner has moved on to; then
-  // that is let go, so a closed dialog holds on to no typed cookie.
   const kept = useRef<{ title: string; children: ReactNode } | null>(null);
   const [, letGo] = useReducer((n: number) => n + 1, 0);
   if (open) kept.current = { title, children };
@@ -35,7 +28,6 @@ export function Dialog({ open, onClose, title, width = 420, describedBy, childre
     }, FADE_MS);
     return () => clearTimeout(timer);
   }, [open]);
-  // Closed and faded, it renders nothing: a closed dialog can hold a thousand rows otherwise.
   const shown = kept.current ?? { title, children: null };
 
   useEffect(() => {
@@ -44,7 +36,6 @@ export function Dialog({ open, onClose, title, width = 420, describedBy, childre
     if (open && !d.open) {
       d.showModal();
       openedAt.current = Date.now();
-      // showModal would focus the header's close button; prefer the marked or first field.
       const first = d.querySelector<HTMLElement>("[data-autofocus]") ?? d.querySelector<HTMLElement>("input:not([disabled]):not([type=checkbox]):not([type=radio]), textarea");
       first?.focus();
     }
@@ -63,13 +54,10 @@ export function Dialog({ open, onClose, title, width = 420, describedBy, childre
         onClose();
       }}
       onPointerDown={(e) => (downOnBackdrop.current = e.target === e.currentTarget)}
-      // A press on the backdrop let go inside is no click on the backdrop.
       onPointerUp={(e) => (downOnBackdrop.current &&= e.target === e.currentTarget)}
       onClick={(e) => {
-        // Not the second click of the double-click that opened it.
         if (downOnBackdrop.current && e.target === e.currentTarget && Date.now() - openedAt.current > 400) onClose();
       }}
-      // A second Esc closes a dialog natively, past onCancel, even while its owner keeps it open.
       onClose={(e) => {
         if (open && !e.currentTarget.open) {
           e.currentTarget.showModal();
@@ -96,7 +84,7 @@ export function ConfirmDialog({ open, onClose, onConfirm, title, text, confirmLa
   text: ReactNode;
   confirmLabel: string;
   busy?: boolean;
-  /** Not destructive: the confirm button is the primary one, not the red one. */
+
   safe?: boolean;
 }) {
   const textId = useId();

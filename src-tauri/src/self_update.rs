@@ -1,6 +1,3 @@
-//! LRAM's own updates. Off in this build: `PUBLIC_KEY` is empty, so nothing is fetched and no
-//! installer is ever run. `scripts/update-key.mjs` makes the key pair that turns it back on.
-
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
 use std::os::windows::fs::OpenOptionsExt;
@@ -34,16 +31,13 @@ const CHECK_EVERY: Duration = Duration::from_secs(6 * 60 * 60);
 const MAX_JSON: u64 = 1_000_000;
 const MAX_INSTALLER: u64 = 200_000_000;
 const MAX_SIG: u64 = 4_096;
-/// Where release assets may come from: github.com, then GitHub's redirect to its storage.
 const ASSET_HOSTS: [&str; 3] = ["github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com"];
 const TEMP_PREFIX: &str = "lram-update-";
-/// Inno Setup's silent install; `/RELAUNCH` is LRAM.iss's own: start LRAM when done.
 const INSTALLER_ARGS: [&str; 5] = ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CLOSEAPPLICATIONS", "/RELAUNCH"];
 const PUBLIC_KEY: &str = "";
 
 #[derive(Default)]
 pub struct SelfUpdater {
-    /// The newer version the last check found.
     available: Mutex<Option<String>>,
     installing: AtomicBool,
 }
@@ -58,7 +52,6 @@ impl SelfUpdater {
     }
 }
 
-/// A newer release and where its signed installer is.
 #[derive(Debug, PartialEq)]
 pub struct Release {
     pub version: String,
@@ -83,8 +76,6 @@ struct Asset {
     browser_download_url: String,
 }
 
-/// `X.Y.Z` (numbers without leading zeros), optionally `-prerelease`, as an ordering key: a
-/// prerelease sorts before its release. None for anything else (build metadata included).
 fn version_key(s: &str) -> Option<(u64, u64, u64, bool)> {
     let (core, pre) = match s.split_once('-') {
         Some((c, p)) => (c, Some(p)),
@@ -103,15 +94,12 @@ fn version_key(s: &str) -> Option<(u64, u64, u64, bool)> {
     parts.next().is_none().then_some(key)
 }
 
-/// The version of `tag` (`vX.Y.Z`, no prerelease) when it is newer than `current`; never the same
-/// or an older one, nor anything when `current` can't be read.
 pub fn newer(current: &str, tag: &str) -> Option<String> {
     let v = tag.strip_prefix('v')?;
     let new = version_key(v).filter(|k| k.3)?;
     (new > version_key(current)?).then(|| v.to_owned())
 }
 
-/// `url` is https on the default port, without credentials, on one of `hosts`.
 fn allowed(url: &Url, hosts: &[&str]) -> bool {
     url.scheme() == "https"
         && url.port().is_none()
@@ -120,8 +108,6 @@ fn allowed(url: &Url, hosts: &[&str]) -> bool {
         && url.host_str().is_some_and(|h| hosts.contains(&h))
 }
 
-/// The update in a releases/latest answer for a build at `current`: None when there is nothing
-/// newer; Err when there is, but without its installer and signature on github.com.
 pub fn pick(body: &[u8], current: &str) -> Result<Option<Release>> {
     let l: Latest = serde_json::from_slice(body).map_err(|e| {
         log::debug!("update: GitHub answer unreadable: {e}");
@@ -149,7 +135,6 @@ pub fn pick(body: &[u8], current: &str) -> Result<Option<Release>> {
     }
 }
 
-/// Standard base64 with `=` padding (surrounding whitespace ignored); None when malformed.
 fn base64(text: &str) -> Option<Vec<u8>> {
     let s = text.trim().as_bytes();
     if !s.len().is_multiple_of(4) {
@@ -192,20 +177,16 @@ fn public_key() -> Option<[u8; 64]> {
     Some(k)
 }
 
-/// True only when `sig` (IEEE P1363 r‖s, 64 bytes) is a valid ECDSA P-256 signature of the
-/// SHA-256 of `data` by `public` (uncompressed X‖Y), checked with Windows CNG.
 fn verify(public: &[u8; 64], data: &[u8], sig: &[u8]) -> bool {
     if sig.len() != 64 {
         return false;
     }
-    // BCRYPT_ECCKEY_BLOB { dwMagic, cbKey } and then X, Y.
     let mut blob = Vec::with_capacity(72);
     blob.extend_from_slice(&BCRYPT_ECDSA_PUBLIC_P256_MAGIC.to_le_bytes());
     blob.extend_from_slice(&32u32.to_le_bytes());
     blob.extend_from_slice(public);
     let mut hash = [0u8; 32];
-    // SAFETY: every buffer is a live slice passed with its own length; the algorithm and key
-    // handles are only used while their `Owned` wrappers (closed on drop, key first) live.
+    // -- SAFETY: every buffer is a live slice passed with its own length; the algorithm and key handles are only used while …
     unsafe {
         let st = BCryptHash(BCRYPT_SHA256_ALG_HANDLE, None, data, &mut hash);
         if st.is_err() {
@@ -230,15 +211,10 @@ fn verify(public: &[u8; 64], data: &[u8], sig: &[u8]) -> bool {
     }
 }
 
-/// What the release workflow signs for `version`: its installer's name and a newline, then the
-/// installer's bytes (appended by the caller).
 fn signed_prefix(version: &str) -> Vec<u8> {
     format!("LRAM-Setup-{version}.exe\n").into_bytes()
 }
 
-/// Writes `bytes` to the new file `path`, reopens it so nothing can write or delete it while the
-/// handle lives, and checks the signature of `version` and what the file holds, read back through
-/// that handle: the bytes checked are the bytes that run. The handle is returned to keep the lock.
 fn write_verified(path: &Path, version: &str, bytes: &[u8], sig: &[u8], key: &[u8; 64]) -> Result<File> {
     File::create_new(path)?.write_all(bytes)?;
     let mut pinned = OpenOptions::new().read(true).share_mode(FILE_SHARE_READ).open(path)?;
@@ -255,7 +231,6 @@ fn failed(why: String) -> AppError {
     AppError::Internal(why)
 }
 
-/// No path or query (asset URLs carry signed tokens): what went wrong, with the host.
 fn network(e: reqwest::Error) -> AppError {
     let e = e.without_url();
     log::warn!("update: GitHub request failed: {e}");
@@ -290,7 +265,6 @@ fn http() -> Result<reqwest::Client> {
         })
 }
 
-/// GETs `url` within `timeout`; refused over `max` bytes (by `Content-Length`, or while reading).
 async fn get(http: &reqwest::Client, url: &str, accept: &'static str, max: u64, timeout: Duration) -> Result<Vec<u8>> {
     let mut resp = http.get(url).header(ACCEPT, accept).timeout(timeout).send().await.map_err(network)?;
     if !resp.status().is_success() {
@@ -314,18 +288,15 @@ async fn get(http: &reqwest::Client, url: &str, accept: &'static str, max: u64, 
     Ok(out)
 }
 
-/// The newer release on GitHub, if any.
 async fn latest(http: &reqwest::Client) -> Result<Option<Release>> {
     let body = get(http, LATEST, "application/vnd.github+json", MAX_JSON, Duration::from_secs(20)).await?;
     pick(&body, CURRENT)
 }
 
-/// This build's version and the newer one found last (no network).
 pub fn status(s: &App) -> AppUpdate {
     AppUpdate { current: CURRENT.into(), available: lock(&s.self_update.available).clone() }
 }
 
-/// Asks GitHub now; does nothing without a release key.
 pub async fn check(app: &AppHandle) -> Result<AppUpdate> {
     let s = app.state::<App>();
     if public_key().is_none() {
@@ -337,7 +308,6 @@ pub async fn check(app: &AppHandle) -> Result<AppUpdate> {
     Ok(status(&s))
 }
 
-/// After the switch changed: off forgets (and hides) what was found, on checks at once.
 pub fn switched(app: &AppHandle, on: bool) {
     if !on {
         *lock(&app.state::<App>().self_update.available) = None;
@@ -355,15 +325,13 @@ pub fn switched(app: &AppHandle, on: bool) {
     });
 }
 
-/// Deletes what earlier updates left in %TEMP%, then checks at start and every 6 hours
-/// while `settings.self_update` is on; `app://update` when there is a newer version.
+// -- Main func
 pub fn spawn(app: AppHandle) {
     if public_key().is_none() {
         log::info!("built-in updater is off: this build carries no release key");
         return;
     }
     tauri::async_runtime::spawn(async move {
-        // First thing at start: no delay before the first check.
         tauri::async_runtime::spawn_blocking(sweep);
         loop {
             let on = app
@@ -401,8 +369,6 @@ fn sweep() {
     }
 }
 
-/// Downloads, verifies and runs the newer release's installer, then quits (see the module notes).
-/// Refused while a launch, batch, auto-rejoin or Roblox install runs, and when nothing is newer.
 pub async fn install(app: &AppHandle) -> Result<()> {
     let s = app.state::<App>();
     s.self_update
@@ -420,7 +386,6 @@ pub async fn install(app: &AppHandle) -> Result<()> {
     result
 }
 
-/// Refused while a launch, batch, auto-rejoin or Roblox install runs: LRAM quits for the installer.
 fn idle(s: &App) -> Result<()> {
     if s.bulk.any_busy() {
         return Err(AppError::Invalid(tr!("Wait for the running launch, batch or auto-rejoin to finish, then update LRAM.")));
@@ -448,7 +413,6 @@ async fn run_install(s: &App) -> Result<()> {
     let exe = dir.0.join(format!("LRAM-Setup-{}.exe", release.version));
     let (checked, version) = (exe.clone(), release.version.clone());
     let pinned = blocking(move || write_verified(&checked, &version, &bytes, &sig, &key)).await?;
-    // Again: one may have started during the download, and quitting now would cut it off.
     idle(s)?;
     log::info!("running LRAM {}'s installer (signature checked)", release.version);
     Command::new(&exe)
@@ -459,8 +423,6 @@ async fn run_install(s: &App) -> Result<()> {
         .stderr(Stdio::null())
         .spawn()
         .map_err(|e| AppError::Internal(tr!("Could not start LRAM's installer: {why}", why = e)))?;
-    // The installer runs from the folder: kept (write-locked until LRAM exits) for the next start
-    // to delete.
     std::mem::forget((pinned, dir));
     Ok(())
 }
@@ -523,7 +485,6 @@ mod tests {
         serde_json::to_vec(v).unwrap()
     }
 
-    /// A recorded releases/latest answer (v0.5.1, which has no `.sig` yet).
     #[test]
     fn picks_the_signed_installer() {
         let recorded = fixture();
@@ -546,7 +507,6 @@ mod tests {
             v[flag] = true.into();
             assert_eq!(pick(&body(&v), "0.5.0").unwrap(), None, "{flag}");
         }
-        // Asset names must match exactly, and come from github.com over https.
         for (field, value) in [
             ("name", "lram-setup-0.5.1.exe"),
             ("browser_download_url", "http://github.com/JohnBirlich/RAM/releases/download/v0.5.1/LRAM-Setup-0.5.1.exe"),
@@ -588,9 +548,6 @@ mod tests {
         }
     }
 
-    /// A throwaway key made with Node for this test only (crypto.generateKeyPairSync("ec",
-    /// P-256), crypto.sign("sha256", MESSAGE, { dsaEncoding: "ieee-p1363" })), as release.yml
-    /// signs `LRAM-Setup-0.6.0.exe\n` + DATA.
     const TEST_KEY: &str = "8ea40c0d614df54e0049f13f158155df9ce39c27b95567d6bc97fd53cb2161602879459c2fbfeb4d2297e0619ba076bc75ca25afe343ff2342148e296886347b";
     const MESSAGE: &[u8] = b"LRAM-Setup-0.6.0.exe\nLRAM self-update test vector";
     const DATA: &[u8] = b"LRAM self-update test vector";

@@ -12,7 +12,6 @@ mod model;
 mod network;
 mod performance;
 mod roblox_api;
-mod rpc;
 mod self_update;
 mod splash;
 mod storage;
@@ -35,13 +34,11 @@ use crate::error::{AppError, Result};
 use crate::model::VaultMode;
 use crate::vault::{Secret, cookie_aad};
 
-/// Everything the commands share.
 pub struct App {
     pub db: storage::Db,
     pub vault: vault::Vault,
     pub api: roblox_api::Client,
     pub data_dir: PathBuf,
-    /// Last cookie put on the clipboard, until it is cleared.
     pub copied: Mutex<Option<Secret>>,
     pub tracker: instances::Tracker,
     pub multi: instances::multi::Multi,
@@ -51,16 +48,12 @@ pub struct App {
     pub discord: discord::Discord,
     pub update: launcher::update::Updater,
     pub self_update: self_update::SelfUpdater,
-    /// Whether a Public network is connected (`network`).
     pub network: network::Network,
-    /// When the shutdown LRAM scheduled is due (Unix ms; `commands::shutdown_schedule`).
     pub shutdown: Mutex<Option<i64>>,
-    /// Rotated cookies that arrived while the vault was locked, stored at the next unlock.
     pub rotated_later: Mutex<Vec<(i64, vault::Secret)>>,
 }
 
 impl App {
-    /// Roblox handed out a new `.ROBLOSECURITY` for a stored account: keep it.
     pub fn store_rotated(&self, account_id: i64, cookie: Secret) {
         if self.vault.is_locked() {
             self.rotated_later.lock().unwrap_or_else(|e| e.into_inner()).push((account_id, cookie));
@@ -79,14 +72,10 @@ impl App {
 }
 
 pub const DB_FILE: &str = "lram.db";
-/// The database, its journal and its key (`storage::key_path`): all a data folder move ever
-/// deletes, from the old folder.
 pub const DB_FILES: [&str; 4] = [DB_FILE, "lram.db-wal", "lram.db-shm", "lram.db.key"];
 pub const LEGACY_DB_FILES: [&str; 4] = ["roalt.db", "roalt.db-wal", "roalt.db-shm", "roalt.db.key"];
 const LOCATION: &str = "location.json";
 
-/// `%LOCALAPPDATA%\LRAM\location.json`: where the data folder was moved to (and from, until
-/// the next start has deleted the old database).
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Location {
@@ -107,15 +96,10 @@ fn data_dir_var() -> Option<std::ffi::OsString> {
     std::env::var_os("LRAM_DATA_DIR").or_else(|| std::env::var_os("ROALT_DATA_DIR"))
 }
 
-/// A test run (`LRAM_DATA_DIR`): its data folder can't be moved.
 pub fn data_dir_overridden() -> bool {
     data_dir_var().is_some()
 }
 
-/// `LRAM_DATA_DIR` (test runs), else the folder `%LOCALAPPDATA%\LRAM\location.json` names
-/// (`dataDir`), else `%LOCALAPPDATA%\LRAM`. After a move, also the folder it left
-/// (`movedFrom`): `init` deletes its database files once the new database has opened, then
-/// drops `movedFrom`. Err: the moved folder isn't available (a message for `fatal`).
 fn data_dir() -> std::result::Result<(PathBuf, Option<PathBuf>), String> {
     let dir = match data_dir_var() {
         Some(d) => Ok((d.into(), None)),
@@ -142,9 +126,6 @@ fn adopt_legacy_names(dir: &Path) {
     }
 }
 
-/// The folder location.json points at, with `movedFrom`: its `dataDir` when that is a full
-/// path; else `default`. Missing or malformed JSON counts as no move. A moved folder without
-/// a database (a drive not connected) is an error, not a fresh empty vault in `default`.
 fn chosen_dir(default: PathBuf, json: Option<&str>) -> std::result::Result<(PathBuf, Option<PathBuf>), String> {
     match json.and_then(|j| serde_json::from_str::<Location>(j).ok()) {
         Some(l) if l.data_dir.is_absolute() => {
@@ -166,7 +147,6 @@ fn chosen_dir(default: PathBuf, json: Option<&str>) -> std::result::Result<(Path
     }
 }
 
-/// Writes location.json through a temporary file, so a crash never leaves half of it.
 pub fn write_location(l: &Location) -> std::io::Result<()> {
     let dir = default_dir();
     std::fs::create_dir_all(&dir)?;
@@ -175,13 +155,11 @@ pub fn write_location(l: &Location) -> std::io::Result<()> {
     std::fs::rename(tmp, dir.join(LOCATION))
 }
 
-/// A path as Windows compares it: absolute, `..` resolved, by component, ignoring case.
 fn path_key(p: &Path) -> Vec<String> {
     let p = std::path::absolute(p).unwrap_or_else(|_| p.to_owned());
     p.components().map(|c| c.as_os_str().to_string_lossy().to_lowercase()).collect()
 }
 
-/// The same folder: judged on disk when both exist (junctions, short names), else by path.
 pub fn same_dir(a: &Path, b: &Path) -> bool {
     match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
         (Ok(a), Ok(b)) => a == b,
@@ -189,8 +167,6 @@ pub fn same_dir(a: &Path, b: &Path) -> bool {
     }
 }
 
-/// Where a data folder move to `path` goes: a full path that isn't the current folder or
-/// inside it, and holds no LRAM database yet.
 pub fn move_target(current: &Path, path: &str) -> Result<PathBuf> {
     let refuse = |why: String| Err(AppError::Invalid(why));
     let path = Path::new(path.trim());
@@ -210,8 +186,6 @@ pub fn move_target(current: &Path, path: &str) -> Result<PathBuf> {
     Ok(target)
 }
 
-/// The moved database opened: the old folder's database files go and location.json forgets
-/// the old folder (kept while a file couldn't be deleted, so the next start tries again).
 fn finish_move(data_dir: &Path, old: &Path) {
     if !remove_old_db(data_dir, old) {
         return;
@@ -221,8 +195,6 @@ fn finish_move(data_dir: &Path, old: &Path) {
     }
 }
 
-/// Deletes the database and its journal files from `old`: nothing else, and nothing when `old` is
-/// the folder in use. True when none of them is left there.
 fn remove_old_db(data_dir: &Path, old: &Path) -> bool {
     if same_dir(old, data_dir) {
         return true;
@@ -242,27 +214,21 @@ fn remove_old_db(data_dir: &Path, old: &Path) -> bool {
 }
 
 fn main_window(app: &TauriApp, data_dir: &Path, skip_splash: bool) -> tauri::Result<()> {
-    // The dark theme's --bg (theme.css) in either theme: the splash is dark, and this is what
-    // shows before the UI paints and while the window grows.
     let bg = Color(5, 5, 6, 255);
 
     let mut builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
         .title("LRAM")
         .inner_size(splash::DEFAULT.0, splash::DEFAULT.1)
-        // The minimum size is set once the splash has grown (`splash`); shown by it too.
         .visible(false)
         .decorations(false)
         .background_color(bg)
-        // The UI's own WebView2 profile; never used for roblox.com.
         .data_directory(data_dir.join("webview"))
         .on_navigation(in_app);
-    // The splash decides before any setting could reach the UI.
     if skip_splash {
         builder = builder.initialization_script("window.__LRAM_SKIP_SPLASH = true;");
     }
-    // Debug builds only: DevTools protocol for automated UI checks on a hidden desktop.
     #[cfg(debug_assertions)]
-    if let Ok(port) = std::env::var("ROALT_CDP_PORT") {
+    if let Ok(port) = std::env::var("LRAM_CDP_PORT") {
         builder = builder.additional_browser_args(&format!(
             "--remote-debugging-port={port} --disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection"
         ));
@@ -272,8 +238,6 @@ fn main_window(app: &TauriApp, data_dir: &Path, skip_splash: bool) -> tauri::Res
     splash::start(app.handle(), &w, skip_splash)
 }
 
-/// Only the LRAM window: pages in Roblox windows are never to reach a command, whatever origin
-/// they manage to appear as.
 fn main_only(handler: impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static) -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
     move |invoke| {
         if invoke.message.webview_ref().label() != "main" {
@@ -285,17 +249,13 @@ fn main_only(handler: impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'stati
     }
 }
 
-/// The LRAM window stays on the app's own pages.
 fn in_app(url: &url::Url) -> bool {
     let host = url.host_str();
     (host == Some("tauri.localhost") && url.port().is_none() && url.username().is_empty() && url.password().is_none())
         || url.scheme() == "tauri"
-        // `tauri dev`.
         || (cfg!(debug_assertions) && host == Some("localhost"))
 }
 
-/// Keeps a folder LRAM creates from being writable by other users of the PC: what lands in it
-/// includes the UI's WebView2 profile. A drive without permissions (exFAT) can't, and is left so.
 pub fn restrict_to_user(dir: &Path) {
     use std::os::windows::process::CommandExt;
     let root = std::env::var_os("SystemRoot").map(PathBuf::from).unwrap_or_else(|| r"C:\Windows".into());
@@ -312,7 +272,6 @@ pub fn restrict_to_user(dir: &Path) {
     }
 }
 
-/// Master-password mode: lock after the configured idle time.
 fn spawn_auto_lock(handle: AppHandle) {
     tauri::async_runtime::spawn(async move {
         loop {
@@ -321,9 +280,6 @@ fn spawn_auto_lock(handle: AppHandle) {
             if s.vault.mode() != VaultMode::Master || s.vault.is_locked() {
                 continue;
             }
-            // Using a Roblox window (signing in, a session) is activity too: its cookie is
-            // encrypted when it closes, which needs the vault open. So is a client auto-rejoin
-            // or auto-restart follows: relaunching needs its cookie.
             if handle.webview_windows().keys().any(|l| l.starts_with("session-") || l.starts_with("login-"))
                 || (s.tracker.any_running()
                     && s.db
@@ -345,13 +301,10 @@ fn spawn_auto_lock(handle: AppHandle) {
     });
 }
 
-/// The log folder once known: `fatal` writes there itself when the logger isn't up yet.
 static LOG_DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
 
-/// `[2026-11-01][21:08:37][lram::instances::metrics][DEBUG] text`: the Windows clock, what the
-/// user compares the timestamp against, and the module named after the app.
 fn log_line(out: tauri_plugin_log::fern::FormatCallback, message: &std::fmt::Arguments<'_>, record: &log::Record<'_>) {
-    // SAFETY: GetLocalTime takes no arguments and writes into the returned struct.
+    // -- SAFETY: GetLocalTime takes no arguments and writes into the returned struct
     let time = unsafe { windows::Win32::System::SystemInformation::GetLocalTime() };
     out.finish(format_args!(
         "[{:04}-{:02}-{:02}][{:02}:{:02}:{:02}][{}][{}] {message}",
@@ -366,7 +319,6 @@ fn log_line(out: tauri_plugin_log::fern::FormatCallback, message: &std::fmt::Arg
     ));
 }
 
-/// Keeps the log written by builds that named it after the old crate.
 fn adopt_old_log(dir: &std::path::Path) {
     let (old, new) = (dir.join("roalt.log"), dir.join("lram.log"));
     if old.is_file() && !new.exists() {
@@ -374,23 +326,20 @@ fn adopt_old_log(dir: &std::path::Path) {
     }
 }
 
-/// A startup failure the user must see: there is no window to show it in.
 fn fatal(message: &str) -> ! {
     use std::io::Write;
     use windows::Win32::UI::WindowsAndMessaging::{MB_ICONERROR, MB_OK, MessageBoxW};
     log::error!("{message}");
-    // Before the log plugin exists `log::error!` goes nowhere, so append the line directly.
     if let Some(dir) = LOG_DIR.get()
         && let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(dir.join("lram.log"))
     {
         let _ = writeln!(f, "[fatal] {message}");
     }
-    // SAFETY: a plain modal message box with no owner window.
+    // -- SAFETY: a plain modal message box with no owner window
     unsafe { MessageBoxW(None, &windows::core::HSTRING::from(message), windows::core::w!("LRAM"), MB_ICONERROR | MB_OK) };
     std::process::exit(1)
 }
 
-/// Panics go to the log (release has no console and aborts on panic, so nothing else sees them).
 fn panic_hook() {
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
@@ -414,7 +363,6 @@ fn init(app: &TauriApp, data_dir: &Path, moved_from: Option<&Path>) -> std::resu
     let db_path = data_dir.join(DB_FILE);
     let db = storage::Db::open(&db_path).map_err(|e| tr!("LRAM can't open its database {path}: {why}", path = db_path.display(), why = e.message()))?;
     let record = db.vault_record().map_err(|e| e.message())?;
-    // Only a database with a vault is the copy that replaces the old one.
     let moved_from = moved_from.filter(|_| record.is_some());
     let vault = match record {
         Some(rec) => vault::Vault::open(&rec).map_err(|e| {
@@ -436,18 +384,21 @@ fn init(app: &TauriApp, data_dir: &Path, moved_from: Option<&Path>) -> std::resu
     }
     let handle = app.handle().clone();
     let api = roblox_api::Client::new(Arc::new(move |id, cookie| handle.state::<App>().store_rotated(id, cookie)));
-    let settings = db.settings().map_err(|e| e.message())?;
+    let mut settings = db.settings().map_err(|e| e.message())?;
+    if settings.upgrade()
+        && let Err(e) = db.save_settings(&settings)
+    {
+        log::warn!("could not store the upgraded settings: {e}");
+    }
     let shutdown = commands::pending_shutdown(&db);
     let multi = instances::multi::Multi::new();
     if settings.multi_instance
         && let Err(e) = multi.enable().inspect(|()| {
-            // Clients from before a restart keep their protection.
             if settings.protect_shared_login && multi.has_survivors() {
                 multi.lock_shared();
             }
         })
     {
-        // Roblox was already running: the UI shows why multi-instance is not active.
         log::info!("multi-instance not active at start: {e}");
     }
     app.manage(App {
@@ -470,7 +421,6 @@ fn init(app: &TauriApp, data_dir: &Path, moved_from: Option<&Path>) -> std::resu
     });
     if let Err(e) = commands::set_panic_hotkey(app.handle(), "", &settings.panic_hotkey) {
         let handle = app.handle().clone();
-        // Said once the window is up.
         tauri::async_runtime::spawn(async move {
             tokio::time::sleep(Duration::from_secs(5)).await;
             commands::notice(&handle, true, tr!("{why} The panic hotkey is off; change it in Settings, Automation.", why = e.message()));
@@ -479,7 +429,6 @@ fn init(app: &TauriApp, data_dir: &Path, moved_from: Option<&Path>) -> std::resu
     if let Err(e) = tray::setup(app.handle()) {
         log::warn!("no tray icon: {e}");
     }
-    // Before anything else is started, so a newer LRAM is offered as soon as possible.
     self_update::spawn(app.handle().clone());
     app.manage(splash::Pending::default());
     main_window(app, data_dir, settings.skip_splash).map_err(|e| {
@@ -492,18 +441,16 @@ fn init(app: &TauriApp, data_dir: &Path, moved_from: Option<&Path>) -> std::resu
     spawn_auto_lock(app.handle().clone());
     instances::Tracker::spawn(app.handle().clone());
     instances::afk::spawn(app.handle().clone());
+    instances::audio::spawn(app.handle().clone());
     network::spawn(app.handle().clone());
     launcher::flags::restore();
     launcher::client_settings::spawn(app.handle().clone());
     discord::spawn(app.handle().clone());
-    rpc::spawn(app.handle().clone());
     launcher::update::spawn(app.handle().clone());
     remind_bandwidth(app.handle().clone());
     Ok(())
 }
 
-/// Windows drops the bandwidth policy when it restarts; LRAM never sets it again on its own
-/// (that needs admin rights), so it says so once the window is up.
 fn remind_bandwidth(handle: AppHandle) {
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(Duration::from_secs(5)).await;
@@ -520,7 +467,6 @@ fn remind_bandwidth(handle: AppHandle) {
     });
 }
 
-/// Closing the main window hides it while `settings.close_to_tray` is on.
 fn on_window_event(window: &tauri::Window, event: &WindowEvent) {
     if let WindowEvent::CloseRequested { api, .. } = event
         && window.label() == "main"
@@ -535,6 +481,7 @@ fn on_window_event(window: &tauri::Window, event: &WindowEvent) {
     }
 }
 
+// -- Main func
 fn main() {
     webview::clear_webview2_env();
     let (data_dir, moved_from) = data_dir().unwrap_or_else(|e| fatal(&e));
@@ -547,23 +494,19 @@ fn main() {
     let _ = LOG_DIR.set(log_dir.clone());
 
     tauri::Builder::default()
-        // Must be first: a second launch shows the running window instead.
         .plugin(tauri_plugin_single_instance::init(|app, _, _| tray::show_main(app)))
         .plugin(
             tauri_plugin_log::Builder::new()
                 .clear_targets()
                 .target(Target::new(TargetKind::Folder { path: log_dir, file_name: Some("lram".into()) }))
                 .format(log_line)
-                // The Debug tab (`log://log` events); its history comes from `commands::debug_tail`.
                 .target(Target::new(TargetKind::Webview))
                 .level(log::LevelFilter::Info)
                 .level_for("lram", log::LevelFilter::Debug)
-                // lram.log plus the 4 before it, 5 MB each.
                 .max_file_size(5 << 20)
                 .rotation_strategy(RotationStrategy::KeepSome(5))
                 .build(),
         )
-        // The panic hotkey (`settings.panic_hotkey`, registered by `commands::set_panic_hotkey`).
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, _, e| {
@@ -573,7 +516,6 @@ fn main() {
                 })
                 .build(),
         )
-        // "main" is restored by `splash::start`, which shows it small first.
         .plugin(tauri_plugin_window_state::Builder::new().with_filter(|label| label == "main").skip_initial_state("main").build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -620,6 +562,9 @@ fn main() {
             commands::favourite_remove,
             commands::favourites_reorder,
             commands::join_candidates,
+            commands::friends_requests,
+            commands::friend_request_send,
+            commands::friend_request_answer,
             commands::instances_list,
             commands::instance_close,
             commands::instances_close_all,
@@ -627,6 +572,7 @@ fn main() {
             commands::instance_set_limits,
             commands::instance_trim,
             commands::instance_set_anti_afk,
+            commands::instance_set_muted,
             commands::instances_metrics,
             commands::system_usage,
             commands::instance_stop_relaunch,
@@ -640,7 +586,6 @@ fn main() {
             commands::bandwidth_apply,
             commands::multi_instance_status,
             commands::multi_instance_set,
-            commands::multi_instance_take_over,
             commands::roblox_close_all,
             commands::panic_kill,
             commands::crashes_list,
@@ -692,13 +637,11 @@ fn main() {
         .build(tauri::generate_context!())
         .unwrap_or_else(|e| fatal(&tr!("LRAM failed to start: {why}", why = e)))
         .run(|app, event| {
-            // Before the Exit event: the clipboard plugin has cleaned up by then.
             if let tauri::RunEvent::ExitRequested { .. } = event {
                 commands::clear_copied_cookie(app);
             }
             if let tauri::RunEvent::Exit = event {
                 log::info!("shutting down");
-                // The next start follows the running clients again (`Tracker::readopt`).
                 if let Some(s) = app.try_state::<App>() {
                     s.tracker.persist(&s.db, true);
                     s.limiter.release_all();
@@ -751,9 +694,7 @@ mod tests {
             assert_eq!(pick(Some(bad)), (default.clone(), None), "{bad}");
         }
         assert_eq!(pick(Some(r#"{"dataDir": "relative\\moved"}"#)), (default.clone(), None));
-        // Moved back to the default folder, which then lost its database: a fresh start there.
         assert_eq!(pick(Some(&json(&default, Some(&moved)))), (default.clone(), None));
-        // A moved folder without a database (a drive not connected) is no fresh start.
         for gone in [empty.clone(), tmp.join("gone")] {
             let err = chosen_dir(default.clone(), Some(&json(&gone, Some(&default)))).unwrap_err();
             assert!(err.contains(&gone.display().to_string()) && err.contains(LOCATION), "{err}");
@@ -806,13 +747,11 @@ mod tests {
             assert!(refused(&taken), "{f}");
         }
 
-        // A new folder, or an existing one without a database (other files are fine).
         let new = tmp.join(r"a\..\new");
         assert_eq!(move_target(&current, &format!("  {}  ", new.display())).unwrap(), tmp.join("new"));
         let existing = tmp.join("existing");
         touch(&existing.join("notes.txt"));
         assert_eq!(move_target(&current, &existing.display().to_string()).unwrap(), existing);
-        // Beside the current folder, or above it.
         assert!(move_target(&current, &tmp.join("Current2").display().to_string()).is_ok());
         std::fs::remove_dir_all(&tmp).unwrap();
     }
@@ -827,11 +766,9 @@ mod tests {
         }
         let left = |dir: &Path| DB_FILES.iter().filter(|f| dir.join(f).exists()).count();
 
-        // Never from the folder in use, however it is spelled.
         assert!(remove_old_db(&new, &tmp.join(r"NEW\.\")));
         assert_eq!(left(&new), DB_FILES.len());
 
-        // Still open elsewhere (no delete sharing, like SQLite's): reported, so it is retried.
         use std::os::windows::fs::OpenOptionsExt;
         let held = std::fs::File::options().read(true).share_mode(1).open(old.join(DB_FILE)).unwrap();
         assert!(!remove_old_db(&new, &old));
@@ -842,7 +779,6 @@ mod tests {
         assert_eq!(left(&old), 0);
         assert_eq!(left(&new), DB_FILES.len());
         assert!(old.join("notes.txt").exists() && old.join(r"logs\lram.log").exists() && old.join(r"webview\x").exists());
-        // Already gone: nothing to do.
         assert!(remove_old_db(&new, &old));
         std::fs::remove_dir_all(&tmp).unwrap();
     }

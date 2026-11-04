@@ -1,8 +1,5 @@
-//! Roblox clients LRAM started: the multi-instance lock, process tracking, log watching
-//! and closing. Nothing here reads or writes another process's memory or handles; anti-AFK
-//! (`afk`) presses a key the way a keyboard does.
-
 pub mod afk;
+pub mod audio;
 mod autopsy;
 mod capture;
 mod gpu;

@@ -9,7 +9,7 @@ import { Icon } from "../../ui/Icon";
 import { friendly, toast } from "../../ui/Toast";
 import { accountName, Avatar, Status } from "../accounts/shared";
 
-/** A row of keys on Play: click fills the target; right-click (or the pencil) renames or deletes. */
+// -- Main func
 export function FavouritesRow({ accounts, active, onPick }: {
   accounts: AccountSummary[];
   active: number | null;
@@ -120,7 +120,6 @@ export function FavouritesRow({ accounts, active, onPick }: {
   );
 }
 
-/** Saves a new favourite (no `initial.id`) or edits one; the target comes from `resolve`. */
 export function FavouriteDialog({ open, onClose, accounts, initial, resolve, onSaved }: {
   open: boolean;
   onClose: () => void;

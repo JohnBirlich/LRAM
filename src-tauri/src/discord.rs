@@ -1,13 +1,3 @@
-//! Discord alerts (opt-in): what happens to the clients, posted to a webhook the user pastes.
-//! The only host besides Roblox LRAM talks to, and only once a webhook is set.
-//!
-//! The webhook URL holds its token, so it is a secret: kept in the vault (AES-GCM, `DISCORD_AAD`)
-//! as hex in the settings table, never logged, never sent to the UI (only its id's last digits).
-//! Messages go out only while the vault is unlocked. Events (`Settings.discord` picks them) are
-//! coalesced: at most one message every 2 s, carrying everything queued since; a 429 is waited
-//! out as Discord says (`retry_after`). Messages name accounts by display name and username,
-//! and never carry a cookie, ticket, launch link or log line.
-
 use std::collections::VecDeque;
 use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
@@ -24,26 +14,19 @@ use crate::model::{AccountSummary, BulkProgress, BulkStage, CrashKind, DiscordEv
 use crate::vault::Secret;
 
 const DISCORD_AAD: &[u8] = b"roalt.discord.webhook";
-/// The settings-table row holding the encrypted webhook (hex).
 const KEY: &str = "discord_webhook";
-/// At most one message this often.
 const GAP: Duration = Duration::from_secs(2);
-/// Events waiting beyond this many drop the oldest.
 const MAX_QUEUED: usize = 50;
-/// Lines in one message; the rest are counted.
 const MAX_LINES: usize = 15;
 const HOSTS: [&str; 6] =
     ["discord.com", "ptb.discord.com", "canary.discord.com", "discordapp.com", "ptb.discordapp.com", "canary.discordapp.com"];
 
-/// A checked webhook: `https://<host>/api/webhooks/<id>/<token>`.
 #[derive(Debug)]
 pub struct Webhook {
     pub url: Secret,
     pub id: String,
 }
 
-/// Accepts only Discord's own webhook URLs (discord.com or discordapp.com, also their ptb. and
-/// canary. hosts), https on the default port, with nothing but `/api/webhooks/<id>/<token>`.
 pub fn parse_webhook(raw: &str) -> Result<Webhook> {
     let bad = || AppError::Invalid(tr!("Paste a Discord webhook URL: https://discord.com/api/webhooks/<id>/<token>."));
     let u = url::Url::parse(raw.trim()).map_err(|_| bad())?;
@@ -64,22 +47,17 @@ pub fn parse_webhook(raw: &str) -> Result<Webhook> {
     Ok(Webhook { url: Secret::new(format!("https://{host}/api/webhooks/{id}/{token}")), id: id.to_owned() })
 }
 
-/// What the UI shows of a webhook id: its last 4 digits.
 fn masked(id: &str) -> String {
     format!("…{}", &id[id.len().saturating_sub(4)..])
 }
 
-/// Something worth telling the user about.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Event {
     Crash { name: String, place_id: Option<i64> },
     Hang { name: String },
     Disconnect { name: String },
-    /// A client first got into a game.
     Launch { name: String, place_id: Option<i64> },
-    /// An auto-rejoin (`Disconnect`) or auto-restart went ahead.
     Restart { name: String, cause: CrashKind },
-    /// The crash breaker gave up on the account.
     Breaker { name: String, count: u32, window_min: u32 },
     BatchDone { total: usize, in_game: usize, done: usize, failed: usize, stopped: Option<String> },
     Status { clients: usize, ram_mb: f64, cpu_pct: Option<f64> },
@@ -100,7 +78,6 @@ impl Event {
         }
     }
 
-    /// 2: bad, 1: worth a look, 0: news.
     fn severity(&self) -> u8 {
         match self {
             Self::Crash { .. } | Self::Breaker { .. } => 2,
@@ -172,7 +149,6 @@ impl Event {
     }
 }
 
-/// An account as messages name it: display name and username (never a cookie or alias notes).
 pub fn name_of(a: Option<&AccountSummary>, account_id: i64) -> String {
     match a {
         Some(a) => escape(&format!("{} (@{})", a.display_name, a.username)),
@@ -180,7 +156,6 @@ pub fn name_of(a: Option<&AccountSummary>, account_id: i64) -> String {
     }
 }
 
-/// Keeps Discord's markdown out of names.
 fn escape(s: &str) -> String {
     s.chars().fold(String::with_capacity(s.len()), |mut out, c| {
         if matches!(c, '\\' | '*' | '_' | '~' | '`' | '|' | '>' | '[' | ']' | '@') {
@@ -191,8 +166,6 @@ fn escape(s: &str) -> String {
     })
 }
 
-/// What a client's change is worth telling (pure): it got disconnected, stopped responding,
-/// or ended by itself (not after a disconnect, which was told already).
 pub fn change_of(t: &Transition) -> Option<CrashKind> {
     let (b, a) = (&t.before, &t.after);
     if a.state == InstanceState::Exited {
@@ -206,7 +179,6 @@ pub fn change_of(t: &Transition) -> Option<CrashKind> {
     (a.note.as_deref() == Some(&*hung) && b.note.as_deref() != Some(&*hung)).then_some(CrashKind::Hang)
 }
 
-/// The client got into a game for the first time (pure): not a rejoin, restart or reconnect.
 pub fn launched(t: &Transition) -> bool {
     let (b, a) = (&t.before, &t.after);
     t.first_game
@@ -215,7 +187,6 @@ pub fn launched(t: &Transition) -> bool {
         && !matches!(b.state, InstanceState::InGame | InstanceState::Disconnected)
 }
 
-/// The webhook body for some events (pure): one embed, one line each.
 pub fn message(events: &[Event]) -> Value {
     let mut lines: Vec<String> = events.iter().take(MAX_LINES).map(Event::line).collect();
     if events.len() > MAX_LINES {
@@ -233,8 +204,6 @@ pub fn message(events: &[Event]) -> Value {
     })
 }
 
-/// How long Discord asks to wait after a 429: its JSON `retry_after` (seconds), else the
-/// Retry-After header, else 5 s; at least `GAP`, at most 10 minutes.
 fn retry_after(body: &str, header: Option<&str>) -> Duration {
     let secs = serde_json::from_str::<Value>(body)
         .ok()
@@ -245,8 +214,6 @@ fn retry_after(body: &str, header: Option<&str>) -> Duration {
     Duration::from_secs_f64(secs.min(600.0)).max(GAP)
 }
 
-/// The events waiting to go out and when the next message may (pure apart from the clock
-/// passed in).
 #[derive(Default)]
 pub struct Outbox {
     queue: VecDeque<Event>,
@@ -262,7 +229,6 @@ impl Outbox {
         self.queue.push_back(e);
     }
 
-    /// Everything queued, once the last message is far enough back.
     fn take(&mut self, now: Instant) -> Vec<Event> {
         if self.not_before.is_some_and(|t| now < t) {
             return Vec::new();
@@ -270,13 +236,10 @@ impl Outbox {
         self.queue.drain(..).collect()
     }
 
-    /// A message went out (or failed for good) at `now`.
-    /// Never shortens a longer wait Discord asked for.
     fn sent(&mut self, now: Instant) {
         self.not_before = Some(self.not_before.map_or(now + GAP, |t| t.max(now + GAP)));
     }
 
-    /// Discord said to wait `after`: the events go back in front.
     fn retry(&mut self, events: Vec<Event>, now: Instant, after: Duration) {
         for e in events.into_iter().rev() {
             self.queue.push_front(e);
@@ -291,7 +254,6 @@ impl Outbox {
 pub struct Discord {
     outbox: Mutex<Outbox>,
     http: std::result::Result<reqwest::Client, String>,
-    /// When the last status summary was queued.
     last_status: Mutex<Option<Instant>>,
 }
 
@@ -318,7 +280,6 @@ impl Default for Discord {
     }
 }
 
-/// Lowercase hex, how vault blobs sit in the settings table.
 pub(crate) fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
@@ -330,14 +291,12 @@ pub(crate) fn unhex(s: &str) -> Option<Vec<u8>> {
     (0..s.len()).step_by(2).map(|i| u8::from_str_radix(s.get(i..i + 2)?, 16).ok()).collect()
 }
 
-/// The stored webhook; None when none is set. `Locked` while the vault is.
 fn webhook(s: &App) -> Result<Option<Webhook>> {
     let Some(stored) = s.db.setting_value(KEY)? else { return Ok(None) };
     let blob = unhex(&stored).ok_or(AppError::Crypto)?;
     parse_webhook(s.vault.decrypt_secret(DISCORD_AAD, &blob)?.expose()).map(Some)
 }
 
-/// While the vault is locked a stored webhook still shows as configured (its id unknown).
 pub fn status(s: &App) -> Result<DiscordStatus> {
     match webhook(s) {
         Ok(hook) => Ok(DiscordStatus { configured: hook.is_some(), webhook: hook.map(|h| masked(&h.id)) }),
@@ -346,7 +305,6 @@ pub fn status(s: &App) -> Result<DiscordStatus> {
     }
 }
 
-/// Stores the webhook (checked by `parse_webhook`), or forgets it on None or "".
 pub fn set(s: &App, url: Option<&str>) -> Result<DiscordStatus> {
     match url.map(str::trim).filter(|u| !u.is_empty()) {
         Some(u) => {
@@ -364,7 +322,6 @@ pub fn set(s: &App, url: Option<&str>) -> Result<DiscordStatus> {
     status(s)
 }
 
-/// Sends a test message at once (it still counts for the 2 s gap).
 pub async fn test(s: &App) -> Result<()> {
     let hook = webhook(s)?.ok_or_else(|| AppError::Invalid(tr!("Set a webhook first.")))?;
     let body = json!({
@@ -384,7 +341,6 @@ pub async fn test(s: &App) -> Result<()> {
     }
 }
 
-/// One POST; Some(wait) when Discord rate-limited it. Errors never carry the URL.
 async fn post(s: &App, hook: &Webhook, body: &Value) -> Result<Option<Duration>> {
     let http = s.discord.http.as_ref().map_err(|e| AppError::Internal(e.clone()))?;
     let r = http
@@ -406,7 +362,6 @@ async fn post(s: &App, hook: &Webhook, body: &Value) -> Result<Option<Duration>>
     }
 }
 
-/// Queues an event when its toggle is on, a webhook is set and the vault is unlocked.
 pub fn notify(app: &AppHandle, event: Event) {
     let s = app.state::<App>();
     let wanted = s
@@ -425,7 +380,7 @@ pub fn notify(app: &AppHandle, event: Event) {
     }
 }
 
-/// The tracker's poll saw these changes. Muted accounts (`discord_muted`) are left out.
+// -- Main func
 pub fn transitions(app: &AppHandle, moved: &[Transition]) {
     for t in moved {
         let kind = change_of(t);
@@ -455,7 +410,6 @@ pub fn transitions(app: &AppHandle, moved: &[Transition]) {
     }
 }
 
-/// A batch finished (`launcher::bulk`).
 pub fn batch_done(app: &AppHandle, p: &BulkProgress) {
     let count = |f: fn(&BulkStage) -> bool| p.items.iter().filter(|i| f(&i.stage)).count();
     notify(
@@ -465,13 +419,11 @@ pub fn batch_done(app: &AppHandle, p: &BulkProgress) {
             in_game: count(|s| *s == BulkStage::InGame),
             done: count(|s| *s == BulkStage::Done),
             failed: count(|s| matches!(s, BulkStage::Failed { .. })),
-            // Its text names accounts by alias, and also muted ones.
             stopped: None,
         },
     );
 }
 
-/// Runs for the app's lifetime: queues the periodic status, sends what is queued.
 pub fn spawn(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         loop {
@@ -502,7 +454,6 @@ async fn deliver(s: &App, events: Vec<Event>) {
             log::info!("discord: rate limited, waiting {} s", wait.as_secs());
             s.discord.outbox().retry(events, now, wait);
         }
-        // An outage is when the alerts matter most: they go when it's over.
         Err(AppError::Network(e)) => {
             log::warn!("discord: message not sent, trying again: {e}");
             s.discord.outbox().retry(events, now, Duration::from_secs(30));
@@ -514,7 +465,6 @@ async fn deliver(s: &App, events: Vec<Event>) {
     }
 }
 
-/// Every `status_every_min` minutes while clients run: how many, their RAM and CPU.
 async fn queue_status(app: &AppHandle) {
     let s = app.state::<App>();
     let every = s.db.settings().map_or(0, |v| v.discord.status_every_min);
@@ -542,7 +492,6 @@ async fn queue_status(app: &AppHandle) {
     });
     if !m.is_empty() {
         let ram_mb = m.iter().map(|c| c.memory_mb).sum();
-        // CPU needs an earlier sample of the same client; without one it's left out, not 0%.
         let cpu: Vec<f64> = m.iter().filter_map(|c| c.cpu_pct).collect();
         let cpu_pct = (!cpu.is_empty()).then(|| cpu.iter().sum());
         notify(app, Event::Status { clients: m.len(), ram_mb, cpu_pct });
@@ -554,7 +503,6 @@ mod tests {
     use super::*;
     use crate::model::{Instance, LaunchTarget};
 
-    // The notes in English (tests run in English).
     const HUNG: &str = "Not responding";
     const UNEXPECTED: &str = "Closed unexpectedly";
 
@@ -568,7 +516,6 @@ mod tests {
             assert_eq!(h.url.expose(), raw.trim(), "{host}");
             assert_eq!((h.id.as_str(), masked(&h.id).as_str()), ("123456789012345678", "…5678"));
         }
-        // Hosts are compared after the parser lowercases them.
         assert!(parse_webhook(&format!("https://Discord.com/api/webhooks/1/{TOKEN}")).is_ok());
         for bad in [
             "",
@@ -620,6 +567,7 @@ mod tests {
             rejoins: 0,
             limits: Default::default(),
             anti_afk: true,
+            muted: false,
             afk_at: None,
             throttled: false,
             micro: false,
@@ -641,17 +589,14 @@ mod tests {
         assert_eq!(t(inst(InGame, Some(HUNG)), inst(InGame, Some(HUNG))), None, "still hung");
         assert_eq!(t(inst(InGame, None), inst(Exited, Some(UNEXPECTED))), Some(CrashKind::Crash));
         assert_eq!(t(inst(Starting, None), inst(Exited, Some(UNEXPECTED))), Some(CrashKind::Crash));
-        // Ended after a disconnect (already told), closed by the user or LRAM, replaced.
         assert_eq!(t(inst(Disconnected, None), inst(Exited, Some(UNEXPECTED))), None);
         assert_eq!(t(inst(InGame, None), inst(Exited, Some("Closed"))), None);
         assert_eq!(t(inst(InGame, Some(HUNG)), inst(Exited, Some("Closed"))), None);
         assert_eq!(t(inst(Joining, None), inst(Exited, Some("Replaced by another Roblox client"))), None);
-        // Ordinary progress.
         assert_eq!(t(inst(Starting, None), inst(Joining, None)), None);
         assert_eq!(t(inst(Joining, None), inst(InGame, None)), None);
         assert_eq!(t(inst(Disconnected, None), inst(InGame, None)), None, "reconnected");
 
-        // Getting into a game is a launch alert, once, and only for the first client.
         let l = |b: Instance, a: Instance| launched(&Transition { before: b, after: a, first_game: true });
         assert!(l(inst(Joining, None), inst(InGame, None)));
         assert!(l(inst(Starting, None), inst(InGame, None)));
@@ -685,7 +630,6 @@ mod tests {
         let no_cpu = Event::Status { clients: 1, ram_mb: 512.0, cpu_pct: None };
         assert_eq!(no_cpu.line(), "📊 1 client running · 512 MB RAM.");
 
-        // Many at once: the first 15 lines, then a count.
         let many: Vec<Event> = (0..20).map(|n| Event::Disconnect { name: format!("A{n}") }).collect();
         let text = message(&many)["embeds"][0]["description"].as_str().unwrap().to_owned();
         assert_eq!(text.lines().count(), 16);
@@ -751,7 +695,6 @@ mod tests {
         o.push(ev(3));
         assert_eq!(o.take(t0 + GAP), [ev(2), ev(3)]);
 
-        // A 429: the same events go again, first, after Discord's wait (never under 2 s).
         o.push(ev(4));
         o.retry(vec![ev(2), ev(3)], t0, Duration::from_secs(7));
         assert!(o.take(t0 + Duration::from_secs(6)).is_empty());
@@ -761,7 +704,6 @@ mod tests {
         o.retry(vec![ev(5)], t0, Duration::ZERO);
         assert!(o.take(t0 + Duration::from_millis(1_999)).is_empty());
 
-        // A flood keeps the newest 50.
         let mut o = Outbox::default();
         (0..60).for_each(|n| o.push(ev(n)));
         let out = o.take(t0);

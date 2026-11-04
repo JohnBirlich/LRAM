@@ -43,6 +43,7 @@ windows = { version = "0.62", features = [
   "Win32_Graphics_Dxgi",
   "Win32_Graphics_Dxgi_Common",
   "Win32_Graphics_Gdi",
+  "Win32_Media_Audio",
   "Win32_Networking_NetworkListManager",
   "Win32_Security",
   "Win32_Security_Cryptography",
@@ -76,7 +77,6 @@ windows = { version = "0.62", features = [
 windows-future = "0.3"
 webview2-com = "0.39"
 
-# Line numbers in backtraces, no variable info in the debugger: keeps target\debug small.
 [profile.dev]
 debug = "line-tables-only"
 

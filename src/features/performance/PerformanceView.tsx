@@ -352,7 +352,9 @@ const PRESETS: readonly { label: Key; tag: Key; facts: () => string[]; profile: 
 ];
 
 function isApplied(profile: Profile, settings: Settings) {
-  return (Object.keys(LABELS) as Field[]).every((k) => profile[k] === undefined || profile[k] === null || JSON.stringify(profile[k]) === JSON.stringify(settings[k]));
+  return (Object.keys(LABELS) as Field[]).every((k) => k === "ultraCpu"
+    ? profile.ultraCpu === undefined || profile.ultraCpu.enabled === settings.ultraCpu.enabled
+    : profile[k] === undefined || profile[k] === null || JSON.stringify(profile[k]) === JSON.stringify(settings[k]));
 }
 
 function ShareRow({ onProfile }: { onProfile: (p: Profile) => void }) {

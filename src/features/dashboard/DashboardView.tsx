@@ -292,7 +292,7 @@ function ClientCard({ inst: i, account: a, groups, metrics: m, now, afkOn, defau
             <button className="btn flex-1 min-w-0 px-2 py-1 whitespace-normal leading-tight" disabled={noWindow} onClick={focus}>
               {t("home.show")}
             </button>
-            {i.state === "disconnected" && !i.relaunching && a ? (
+            {i.state === "disconnected" && !i.checkingProcess && !i.relaunching && a ? (
               <button className="btn btn-primary flex-1 min-w-0 px-2 py-1 whitespace-normal leading-tight" onClick={() => playAgain(a, i)}>
                 {t("home.playAgain")}
               </button>
@@ -400,7 +400,7 @@ function ClientMenu({ at, account, onClose, afkOn, closing, onLimits, onCloseCli
 
   const items: Item[] = i
     ? [
-        ...(i.state === "disconnected" && !i.relaunching && account ? [{ icon: "play", label: t("home.playAgain"), run: () => playAgain(account, i) } as Item] : []),
+        ...(i.state === "disconnected" && !i.checkingProcess && !i.relaunching && account ? [{ icon: "play", label: t("home.playAgain"), run: () => playAgain(account, i) } as Item] : []),
         { icon: "external", label: t("dashboard.focus"), run: () => show("focus") },
         at.hidden ? { label: t("dashboard.restore"), run: () => show("restore") } : { label: t("dashboard.minimize"), run: () => show("minimize") },
         { icon: "grid", label: i.micro ? t("dashboard.normalSize") : t("dashboard.microWindow", tiny), run: micro },

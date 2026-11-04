@@ -262,6 +262,7 @@ pub fn jittered(delay_ms: u32) -> Duration {
 }
 
 pub fn stage_of(instance: &Instance, allow_disconnect: bool) -> BulkStage {
+    if instance.checking_process { return BulkStage::Joining; }
     let failed = |default: fn() -> String| BulkStage::Failed { message: instance.note.clone().unwrap_or_else(default) };
     match instance.state {
         InstanceState::Starting => BulkStage::Starting,

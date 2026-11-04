@@ -88,7 +88,6 @@ const INSTALLING = "Roblox is being installed. Launch again once it is done.";
 let webhook: { id: string; token: string } | null = null;
 const WEBHOOK = /^https:\/\/(?:(?:ptb|canary)\.)?discord(?:app)?\.com\/api\/webhooks\/(\d{1,25})\/([A-Za-z0-9_-]{1,128})$/;
 const discordStatus = () => ({ configured: webhook !== null, webhook: webhook && `…${webhook.id.slice(-4)}` });
-settings.ultraCpu ??= { enabled: false, cap: 3, warmupS: 90 };
 let bandwidthActive = false;
 
 function fakeMetrics() {
@@ -180,7 +179,7 @@ function endInstance(id: string, note: string) {
 }
 
 let lastProfile: string | null = null;
-const PERF_KEYS = ["fpsCap", "lowGraphics", "lighterRendering", "renderFlags", "minimizeOnLaunch", "liveHiddenPreviews", "microWidth", "microHeight", "tinyOnLaunch", "autoTile", "memRestartMb", "memThrottle", "trimEveryMin", "autoSpread", "fairCap", "adaptive"] as const;
+const PERF_KEYS = ["fpsCap", "lowGraphics", "lighterRendering", "renderFlags", "minimizeOnLaunch", "liveHiddenPreviews", "microWidth", "microHeight", "tinyOnLaunch", "autoTile", "memRestartMb", "memThrottle", "trimEveryMin", "autoSpread", "fairCap", "adaptive", "ultraCpu"] as const;
 
 function perfProfile(previewFps: number) {
   const s: Record<string, unknown> = {};
@@ -203,6 +202,8 @@ function perfParse(text: string): Record<string, unknown> | string {
   if (fps && (fps < 5 || fps > 360)) return "The FPS cap must be 0 (off) or 5 to 360.";
   const mem = p.memRestartMb as number | undefined;
   if (mem && mem < 512) return "The memory limit must be 0 (off) or 512 to 65 536 MB.";
+  const ultra = p.ultraCpu as Settings["ultraCpu"] | undefined;
+  if (ultra && (![1, 2, 3].includes(ultra.cap) || ultra.warmupS < 60 || ultra.warmupS > 90)) return "ULTRA CPU must be 1 to 3%, with a 60 to 90 second warm-up.";
   const out: Record<string, unknown> = {};
   for (const k of PERF_KEYS) if (p[k] !== undefined && p[k] !== null) out[k] = p[k];
   if ([5, 15, 30, 60].includes(p.previewFps as number)) out.previewFps = p.previewFps;

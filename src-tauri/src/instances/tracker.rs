@@ -552,12 +552,12 @@ impl Tracker {
         let entries = self.entries();
         let Some(me) = entries.iter().find(|e| e.inst.id == id) else { return false };
         let Some(began) = me.relaunching else { return false };
-        (closed || (!me.closing && me.cause().is_some()))
+        !me.inst.checking_process && (closed || (!me.closing && me.cause().is_some()))
             && !entries.iter().any(|e| e.inst.id != id && e.inst.account_id == me.inst.account_id && e.inst.started_at > began)
     }
 
     pub fn begin_relaunch(&self, id: &str, now: i64) -> bool {
-        self.entries().iter_mut().find(|e| e.inst.id == id).is_some_and(|e| {
+        self.entries().iter_mut().find(|e| e.inst.id == id && !e.inst.checking_process).is_some_and(|e| {
             e.inst.relaunching = true;
             e.relaunching.replace(e.relaunching.unwrap_or(now)).is_none()
         })
@@ -597,6 +597,7 @@ impl Tracker {
     pub fn take_rejoins(&self) -> Vec<Rejoin> {
         let mut out = Vec::new();
         for e in self.entries().iter_mut() {
+            if e.inst.checking_process { continue; }
             let trouble = e.hung() || e.stuck() || e.mem_high() || matches!(e.inst.state, InstanceState::Disconnected | InstanceState::Exited);
             if !trouble {
                 e.rejoin_seen = false;
@@ -897,7 +898,8 @@ impl Tracker {
         let mut moved = Vec::new();
         for w in work {
             let recovering = entries.iter().any(|e| e.inst.id == w.inst.id && e.inst.state == InstanceState::Exited);
-            if recovering && (launching.contains(&w.inst.account_id)
+            if recovering && (entries.iter().any(|e| e.inst.id == w.inst.id && (e.closing || e.relaunching.is_some()))
+                || launching.contains(&w.inst.account_id)
                 || entries.iter().any(|e| e.inst.id != w.inst.id && e.inst.account_id == w.inst.account_id && e.inst.state != InstanceState::Exited)) {
                 continue;
             }
@@ -1148,12 +1150,6 @@ fn observe(
     }
     if e.alive && e.adopted {
         e.hung_polls = if procs.hung(e.inst.pid) { e.hung_polls.saturating_add(1) } else { 0 };
-    }
-    if !e.adopted && e.alive && !e.inst.via_bootstrapper {
-        if let Some(p) = roblox.get_or_insert_with(|| procs.roblox()).iter().find(|p| p.pid == e.inst.pid && Some(p.start_time) == e.start_time).cloned() {
-            log::info!("instance {}: launch PID {} is the Roblox client; tracking it directly", e.inst.id, p.pid);
-            adopt(e, p, taken);
-        }
     }
     let Some(dir) = dir else { return };
     let launched = UNIX_EPOCH.checked_add(Duration::from_millis(e.inst.started_at.max(0) as u64)).unwrap_or(UNIX_EPOCH);
@@ -1934,6 +1930,8 @@ mod tests {
         assert!(t.take_crashes().is_empty());
         procs.set_unreadable(&[]);
         t.poll(Some(&dir), &procs, &user_of, start + 301_000);
+        assert!(t.get(&id).unwrap().checking_process);
+        t.poll(Some(&dir), &procs, &user_of, start + 316_000);
         assert_eq!(state(&t, &id), (Exited, note("Closed unexpectedly"), 100));
         std::fs::remove_dir_all(&dir).unwrap();
     }
@@ -1949,6 +1947,8 @@ mod tests {
         assert_eq!(state(&t, &id).0, Starting);
         procs.set(&[(100, 556)]);
         t.poll(None, &procs, &user_of, start + 301_000);
+        assert!(t.get(&id).unwrap().checking_process);
+        t.poll(None, &procs, &user_of, start + 316_000);
         assert_eq!(state(&t, &id).0, Exited);
     }
 
@@ -1965,6 +1965,8 @@ mod tests {
         assert!(t.take_crashes().is_empty());
         procs.set_windows(&[]);
         t.poll(Some(&dir), &procs, &user_of, start + 41_000);
+        assert!(t.get(&id).unwrap().checking_process);
+        t.poll(Some(&dir), &procs, &user_of, start + 56_000);
         assert_eq!(state(&t, &id), (Exited, note("Closed unexpectedly"), 100));
         std::fs::remove_dir_all(&dir).unwrap();
     }
@@ -2570,6 +2572,7 @@ mod tests {
         let dir = temp_dir();
         let start = now_ms();
         let (t, id, procs, _) = in_game_client(&dir, start);
+        assert_eq!(t.first_in_game(&|_| true), [100]);
         procs.set(&[]);
         t.poll(Some(&dir), &procs, &user_of, start + 2_000);
         t.poll(Some(&dir), &procs, &user_of, start + 17_000);
@@ -2643,6 +2646,24 @@ mod tests {
         assert_eq!(t.entries()[0].in_game_at, Some(start + 1_000), "original game time is not rewritten");
         t.set_limits(&id, Limits { cpu_cap: Some(8), ..Limits::default() });
         assert_eq!(mode(start + 1_003_000, Some(100)), (CpuMode::Manual, false));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn checking_disconnect_does_not_consume_the_later_confirmed_rejoin() {
+        let dir = temp_dir();
+        let start = now_ms();
+        let (t, id, procs, log) = in_game_client(&dir, start);
+        procs.set(&[]);
+        append(&log, &["[FLog::Network] Disconnection Notification. Reason: 267".into()]);
+        t.poll(Some(&dir), &procs, &user_of, start + 2_000);
+        assert!(t.get(&id).unwrap().checking_process);
+        assert!(t.take_rejoins().is_empty());
+        assert!(!t.begin_relaunch(&id, start + 3_000));
+        t.poll(Some(&dir), &procs, &user_of, start + 17_000);
+        assert_eq!(t.get(&id).unwrap().state, Exited);
+        assert_eq!(t.take_rejoins().iter().map(|r| r.cause).collect::<Vec<_>>(), [CrashKind::Disconnect]);
+        assert!(t.claim(1).is_some(), "normal launch permitted after confirmed exit");
         std::fs::remove_dir_all(dir).unwrap();
     }
 

@@ -9,18 +9,18 @@ use tauri::{AppHandle, Manager};
 use super::logwatch::{self, LogFacts};
 use super::metrics::{MEM_STRIKES, mem_strikes, mem_throttled};
 use super::process::{self, ProcInfo};
-use crate::model::{CrashKind, Instance, InstanceState, LaunchInfo, LaunchTarget, Limits};
+use crate::model::{CrashKind, Instance, InstanceState, LaunchInfo, LaunchTarget, Limits, Settings, CpuMode};
 
 const REBIND_MS: i64 = 120_000;
 const DEAD_POLLS: u32 = 2;
+const CHECK_PROCESS_MS: i64 = 15_000;
+const RECOVER_ENDED_MS: i64 = 180_000;
 const INSTALL_WAIT_MS: i64 = 900_000;
 const SLOW_START_MS: i64 = 600_000;
 const STUCK_MS: i64 = 15 * 60 * 1000;
 const STUCK_TRIES: u32 = 3;
 const MAX_ENDED: usize = 30;
 const TELEPORT_MS: i64 = 60_000;
-const LOG_SKEW_SECS: u64 = 3;
-const LATE_REBIND_MS: i64 = 600_000;
 pub fn wrong_account() -> String {
     tr!("Signed in as another account")
 }
@@ -128,6 +128,9 @@ struct Entry {
     log_warned: bool,
     installer: bool,
     slow_start: bool,
+    cpu_ready_at: Option<i64>,
+    last_join_generation: u64,
+    owner_checked_at: Option<i64>,
 }
 
 impl Entry {
@@ -164,6 +167,9 @@ impl Entry {
             log_warned: false,
             installer: false,
             slow_start: false,
+            cpu_ready_at: None,
+            last_join_generation: 0,
+            owner_checked_at: None,
         }
     }
 
@@ -194,6 +200,7 @@ impl Entry {
     }
 
     fn cause(&self) -> Option<CrashKind> {
+        if self.inst.checking_process { return None; }
         wants_rejoin(&self.inst, &self.facts, self.hung(), self.stuck()).or_else(|| {
             (self.mem_high() && self.inst.state != InstanceState::Exited && self.inst.note.is_none()).then_some(CrashKind::Mem)
         })
@@ -239,6 +246,9 @@ impl Tracker {
             relaunch_problem: None,
             sign_in_problem: false,
             applied_limits: Limits::default(),
+            checking_process: false,
+            cpu_mode: Default::default(),
+            cpu_warmup_remaining_s: 0,
         };
         let mut entries = self.entries();
         for e in entries.iter_mut().filter(|e| e.inst.account_id == info.account_id) {
@@ -369,7 +379,7 @@ impl Tracker {
     pub fn has_live_client(&self, account_id: i64) -> bool {
         self.entries().iter().any(|e| {
             e.inst.account_id == account_id
-                && matches!(e.inst.state, InstanceState::Starting | InstanceState::Joining | InstanceState::InGame)
+                && (e.inst.checking_process || matches!(e.inst.state, InstanceState::Starting | InstanceState::Joining | InstanceState::InGame))
         })
     }
 
@@ -497,6 +507,41 @@ impl Tracker {
             .filter(|e| e.inst.state != InstanceState::Exited && (e.runs_free(now) || full_quality.contains(&e.inst.account_id)))
             .map(|e| e.inst.id.clone())
             .collect()
+    }
+
+    pub fn cpu_policy(&self, v: &Settings, foreground: Option<u32>, full_quality: &[i64], now: i64) -> (Vec<String>, bool) {
+        let mut free = Vec::new();
+        let mut changed = false;
+        for e in self.entries().iter_mut().filter(|e| e.inst.state != InstanceState::Exited) {
+            let remaining = e.cpu_ready_at.map_or(v.ultra_cpu.warmup_s, |at| {
+                ((i64::from(v.ultra_cpu.warmup_s) * 1000 - (now - at).max(0)).max(0) + 999).div_euclid(1000) as u32
+            });
+            let (mode, remaining, released) = if !v.ultra_cpu.enabled {
+                (CpuMode::Standard, 0, false)
+            } else if e.inst.checking_process {
+                (CpuMode::Checking, 0, true)
+            } else if e.inst.limits.cpu_cap.is_some() {
+                (CpuMode::Manual, 0, false)
+            } else if full_quality.contains(&e.inst.account_id) {
+                (CpuMode::FullQuality, 0, true)
+            } else if foreground == Some(e.inst.pid) {
+                (CpuMode::Foreground, 0, true)
+            } else if e.inst.state != InstanceState::InGame || e.cpu_ready_at.is_none() {
+                (CpuMode::Loading, 0, true)
+            } else if remaining > 0 {
+                (CpuMode::Warmup, remaining, true)
+            } else {
+                (CpuMode::Background, 0, false)
+            };
+            if released { free.push(e.inst.id.clone()); }
+            if e.inst.cpu_mode != mode {
+                log::info!("instance {} PID {}: CPU mode {:?} -> {:?}; selected ceiling {}%, grace {}s", e.inst.id, e.inst.pid, e.inst.cpu_mode, mode, v.ultra_cpu.cap, v.ultra_cpu.warmup_s);
+            }
+            changed |= e.inst.cpu_mode != mode || e.inst.cpu_warmup_remaining_s != remaining;
+            e.inst.cpu_mode = mode;
+            e.inst.cpu_warmup_remaining_s = remaining;
+        }
+        (free, changed)
     }
 
     pub fn still_wants_rejoin(&self, id: &str) -> bool {
@@ -676,10 +721,12 @@ impl Tracker {
                     let clients = s.tracker.clients();
                     super::resize::set_clients(clients.iter().map(|c| c.1).collect());
                     let (held, throttle_moved) = s.tracker.throttle(v.mem_throttle.mb);
+                    let full_quality = s.db.full_quality_accounts().unwrap_or_default();
+                    let (_, cpu_changed) = s.tracker.cpu_policy(&v, super::process::foreground_pid(), &full_quality, crate::commands::now_ms());
                     if !clients.is_empty() {
                         s.limiter.sync(&super::limits::plan_now(&s, &v, &clients, &held));
                     }
-                    let throttle_moved = s.tracker.set_in_force(&s.limiter.in_force()) || throttle_moved;
+                    let throttle_moved = s.tracker.set_in_force(&s.limiter.in_force()) || throttle_moved || cpu_changed;
                     super::window::set_live_hidden_previews(v.live_hidden_previews);
                     let mut arrange = false;
                     let mut tiny: Vec<(String, u32)> = Vec::new();
@@ -812,11 +859,29 @@ impl Tracker {
     }
 
     fn poll(&self, dir: Option<&Path>, procs: &dyn Procs, user_of: &dyn Fn(i64) -> Option<i64>, now: i64) -> Vec<Transition> {
-        let mut work: Vec<Entry> = self.entries().iter().filter(|e| e.inst.state != InstanceState::Exited).cloned().collect();
+        let snapshot = self.entries().clone();
+        let active_accounts: Vec<i64> = snapshot.iter().filter(|e| e.inst.state != InstanceState::Exited).map(|e| e.inst.account_id).collect();
+        let mut taken: Vec<u32> = snapshot.iter().filter(|e| e.inst.state != InstanceState::Exited).map(|e| e.inst.pid).collect();
+        let mut work = Vec::new();
+        for mut e in snapshot {
+            if e.inst.state == InstanceState::Exited {
+                if e.closing || e.relaunching.is_some() || active_accounts.contains(&e.inst.account_id)
+                    || e.inst.note.as_deref() != Some(&*unexpected())
+                    || !e.inst.ended_at.is_some_and(|at| now - at <= RECOVER_ENDED_MS) {
+                    continue;
+                }
+                if !recover_ended(&mut e, procs, &mut taken, now) {
+                    if let Some(old) = self.entries().iter_mut().find(|old| old.inst.id == e.inst.id) {
+                        old.owner_checked_at = e.owner_checked_at;
+                    }
+                    continue;
+                }
+            }
+            work.push(e);
+        }
         if work.is_empty() {
             return Vec::new();
         }
-        let mut taken: Vec<u32> = work.iter().map(|e| e.inst.pid).collect();
         let mut roblox = None;
         let mut installer = None;
         for e in &mut work {
@@ -826,18 +891,27 @@ impl Tracker {
             }
             observe(e, dir, procs, &mut roblox, &mut installer, &mut taken, now);
         }
+        // Match claim() lock order, so an in-flight/new launch cannot race a late recovery.
+        let launching = self.launching.lock().unwrap_or_else(|e| e.into_inner());
         let mut entries = self.entries();
         let mut moved = Vec::new();
         for w in work {
+            let recovering = entries.iter().any(|e| e.inst.id == w.inst.id && e.inst.state == InstanceState::Exited);
+            if recovering && (launching.contains(&w.inst.account_id)
+                || entries.iter().any(|e| e.inst.id != w.inst.id && e.inst.account_id == w.inst.account_id && e.inst.state != InstanceState::Exited)) {
+                continue;
+            }
             let Some(e) = entries.iter_mut().find(|e| e.inst.id == w.inst.id) else { continue };
             let closing = e.closing && (e.adopted || !w.adopted);
             let old = std::mem::replace(e, w);
             e.closing = closing;
             e.inst.rejoins = old.inst.rejoins;
             (e.inst.limits, e.inst.applied_limits) = (old.inst.limits, old.inst.applied_limits);
+            (e.inst.cpu_mode, e.inst.cpu_warmup_remaining_s) = (old.inst.cpu_mode, old.inst.cpu_warmup_remaining_s);
             (e.inst.anti_afk, e.inst.afk_at) = (old.inst.anti_afk, old.inst.afk_at);
             e.inst.muted = old.inst.muted;
-            (e.inst.throttled, e.inst.micro, e.window_seen) = (old.inst.throttled, old.inst.micro, old.window_seen);
+            let reattached = old.inst.state == InstanceState::Exited || old.inst.pid != e.inst.pid;
+            (e.inst.throttled, e.inst.micro, e.window_seen) = (old.inst.throttled, old.inst.micro && !reattached, old.window_seen && !reattached);
             (e.gave_up, e.relaunching) = (old.gave_up, old.relaunching);
             (e.inst.relaunching, e.inst.relaunch_problem) = (old.inst.relaunching, old.inst.relaunch_problem.clone());
             let had_game = old.in_game_at.is_some();
@@ -925,7 +999,7 @@ pub struct Rejoin {
 }
 
 pub fn wants_rejoin(inst: &Instance, facts: &LogFacts, hung: bool, stuck: bool) -> Option<CrashKind> {
-    if facts.left || facts.replaced {
+    if inst.checking_process || facts.left || facts.replaced {
         return None;
     }
     match inst.state {
@@ -1005,11 +1079,13 @@ trait Procs {
     fn unreadable_client(&self, pid: u32) -> bool;
     fn has_window(&self, pid: u32) -> bool;
     fn installer_running(&self) -> bool;
+    fn log_owners(&self, _path: &Path) -> Vec<ProcInfo> { Vec::new() }
 }
 
 struct Live;
 
 impl Procs for Live {
+    fn log_owners(&self, path: &Path) -> Vec<ProcInfo> { process::log_owners(path) }
     fn start_time(&self, pid: u32) -> Option<u64> {
         process::start_time(pid)
     }
@@ -1073,6 +1149,12 @@ fn observe(
     if e.alive && e.adopted {
         e.hung_polls = if procs.hung(e.inst.pid) { e.hung_polls.saturating_add(1) } else { 0 };
     }
+    if !e.adopted && e.alive && !e.inst.via_bootstrapper {
+        if let Some(p) = roblox.get_or_insert_with(|| procs.roblox()).iter().find(|p| p.pid == e.inst.pid && Some(p.start_time) == e.start_time).cloned() {
+            log::info!("instance {}: launch PID {} is the Roblox client; tracking it directly", e.inst.id, p.pid);
+            adopt(e, p, taken);
+        }
+    }
     let Some(dir) = dir else { return };
     let launched = UNIX_EPOCH.checked_add(Duration::from_millis(e.inst.started_at.max(0) as u64)).unwrap_or(UNIX_EPOCH);
     let after = first.max(u64::try_from(e.inst.started_at / 1000 - 1).unwrap_or(0));
@@ -1080,30 +1162,14 @@ fn observe(
         e.slow_start = logwatch::started_log(dir, after);
     }
 
-    if !e.alive
-        && e.adopted
-        && may_appear(e, now)
-        && let Some(path) = logwatch::find_log(dir, e.btid, launched)
-        && let Some(created) = created_secs(&path).filter(|&c| c > after + LOG_SKEW_SECS)
-        && let Some(p) = pick_client(roblox.get_or_insert_with(|| procs.roblox()), Some(created), after, taken)
-    {
-        log::info!("instance {}: rebound from process {} to {} (updater relaunch)", e.inst.id, e.inst.pid, p.pid);
-        adopt(e, p, taken);
-        if e.log.as_ref() != Some(&path) {
-            e.log = Some(path);
-            e.offset = 0;
-            e.facts = LogFacts::default();
+    if e.log.is_none() || (!e.alive && e.owner_checked_at.is_none_or(|at| now - at >= 5_000)) {
+        if let Some(path) = logwatch::find_log(dir, e.btid, launched) {
+            if e.log.as_ref() != Some(&path) {
+                e.log = Some(path);
+                e.offset = 0;
+                e.facts = LogFacts::default();
+            }
         }
-    }
-    if e.log.is_none() {
-        e.log = logwatch::find_log(dir, e.btid, launched);
-    }
-    if !e.adopted
-        && let Some(path) = &e.log
-        && let Some(p) = pick_client(roblox.get_or_insert_with(|| procs.roblox()), created_secs(path), after, taken)
-    {
-        log::debug!("instance {}: adopted client process {} behind bootstrapper {}", e.inst.id, p.pid, e.inst.pid);
-        adopt(e, p, taken);
     }
     if let Some(path) = &e.log {
         let (account, id) = (e.inst.account_id, &e.inst.id);
@@ -1128,21 +1194,38 @@ fn observe(
             }
         }
     }
-    if e.writer_at.is_some()
-        && let Some(p) = pick_client(roblox.get_or_insert_with(|| procs.roblox()), e.log.as_deref().and_then(created_secs), after, taken)
+    if (!e.alive || !e.adopted) && (!e.closing || (e.inst.via_bootstrapper && !e.adopted))
+        && e.expected_user.zip(e.facts.user_id).is_none_or(|(expected, got)| expected == got)
+        && let Some(p) = owned_client(e, procs, roblox, taken, now)
     {
-        log::info!("instance {}: rebound from process {} to {} (it writes its log)", e.inst.id, e.inst.pid, p.pid);
+        log::info!("instance {}: recovered PID {} as {} using tracker-matched log ownership", e.inst.id, e.inst.pid, p.pid);
         adopt(e, p, taken);
     }
-    if !e.alive
-        && !e.closing
-        && !may_appear(e, now)
-        && (e.window_seen || e.adopted)
-        && let Some(p) = pick_late(roblox.get_or_insert_with(|| procs.roblox()), after, e.inst.started_at, taken)
-    {
-        log::info!("instance {}: rebound from process {} to {} (it is still running)", e.inst.id, e.inst.pid, p.pid);
-        adopt(e, p, taken);
-    }
+
+}
+
+fn owned_client(e: &mut Entry, procs: &dyn Procs, roblox: &mut Option<Vec<ProcInfo>>, taken: &[u32], now: i64) -> Option<ProcInfo> {
+    if e.expected_user.zip(e.facts.user_id).is_some_and(|(expected, got)| expected != got) { return None; }
+    let path = e.log.as_deref()?;
+    if e.owner_checked_at.is_some_and(|at| now - at < 5_000) { return None; }
+    e.owner_checked_at = Some(now);
+    let owners = procs.log_owners(path);
+    let candidates: Vec<_> = roblox.get_or_insert_with(|| procs.roblox()).iter()
+        .filter(|p| ((p.pid == e.inst.pid && e.inst.state != InstanceState::Exited) || !taken.contains(&p.pid))
+            && p.start_time.saturating_add(1) >= (e.inst.started_at.max(0) / 1000) as u64
+            && owners.iter().any(|o| o == *p)).cloned().collect();
+    if candidates.len() == 1 { candidates.into_iter().next() } else { None }
+}
+
+fn recover_ended(e: &mut Entry, procs: &dyn Procs, taken: &mut Vec<u32>, now: i64) -> bool {
+    let mut roblox = Some(procs.roblox());
+    let same = roblox.as_ref().and_then(|ps| ps.iter().find(|p| p.pid == e.inst.pid && Some(p.start_time) == e.start_time && !taken.contains(&p.pid))).cloned();
+    let found = same.or_else(|| owned_client(e, procs, &mut roblox, taken, now));
+    let Some(p) = found else { return false };
+    log::info!("instance {}: restored recently lost PID {} as {}; identity confirmed", e.inst.id, e.inst.pid, p.pid);
+    adopt(e, p, taken);
+    e.gave_up = None;
+    true
 }
 
 fn arranges(auto_tile: bool, launched: bool) -> bool {
@@ -1157,25 +1240,17 @@ fn adopt(e: &mut Entry, p: ProcInfo, taken: &mut Vec<u32>) {
     e.died_at = None;
     e.writer_at = None;
     e.loading_since = None;
+    e.inst.checking_process = false;
+    e.inst.ended_at = None;
+    e.inst.note = None;
+    e.inst.state = InstanceState::Joining;
+    e.cpu_ready_at = None;
+    e.window_seen = false;
+    e.dead_polls = 0;
     taken.push(p.pid);
 }
 
-fn pick_client(procs: &[ProcInfo], log_created: Option<u64>, after: u64, taken: &[u32]) -> Option<ProcInfo> {
-    let c = log_created?;
-    procs.iter().filter(|p| p.start_time >= after && !taken.contains(&p.pid) && p.start_time.abs_diff(c) <= LOG_SKEW_SECS).min_by_key(|p| p.start_time.abs_diff(c)).cloned()
-}
-
-fn pick_late(procs: &[ProcInfo], after: u64, launched_ms: i64, taken: &[u32]) -> Option<ProcInfo> {
-    let launched = u64::try_from(launched_ms.max(0) / 1000).unwrap_or(0);
-    let span = u64::try_from(LATE_REBIND_MS / 1000).unwrap_or(0);
-    let latest = launched.max(after) + span;
-    procs
-        .iter()
-        .filter(|p| !taken.contains(&p.pid) && p.start_time + LOG_SKEW_SECS >= after && p.start_time <= latest)
-        .min_by_key(|p| p.start_time.abs_diff(launched))
-        .cloned()
-}
-
+#[cfg(test)]
 fn created_secs(path: &Path) -> Option<u64> {
     let created = std::fs::metadata(path)
         .and_then(|m| m.created())
@@ -1211,7 +1286,13 @@ fn settle(e: &mut Entry, now: i64) -> Option<CrashKind> {
     }
     let written = !e.closing && e.writer_at.is_some_and(|w| now - w < WRITER_PROOF_MS);
     let silent = !e.window_seen || e.dead_polls >= DEAD_POLLS;
-    let ended = !e.alive && silent && !may_appear(e, now) && !written;
+    let missing = !e.alive && !e.closing;
+    let checking = missing && e.died_at.is_some_and(|at| now - at < CHECK_PROCESS_MS);
+    if checking != e.inst.checking_process {
+        log::info!("instance {} PID {}: {}", e.inst.id, e.inst.pid, if checking { "checking missing process before declaring exit" } else if e.alive { "process tracking confirmed" } else { "process check completed" });
+    }
+    e.inst.checking_process = checking;
+    let ended = !e.alive && silent && !may_appear(e, now) && !written && !checking;
     let (state, mut note) = state_of(&e.facts, e.log.is_some(), ended, e.closing, e.expected_user);
     let crash = match ended {
         true if e.closing && e.mem_restart => Some(CrashKind::Mem),
@@ -1228,6 +1309,15 @@ fn settle(e: &mut Entry, now: i64) -> Option<CrashKind> {
     }
     if let Some(g) = e.gave_up.as_ref().filter(|_| !e.closing) {
         note = Some(g.clone());
+    }
+    if e.last_join_generation != e.facts.join_generation {
+        e.cpu_ready_at = None;
+        e.last_join_generation = e.facts.join_generation;
+    }
+    if state == InstanceState::InGame && !checking && e.alive && !e.facts.teleporting && !e.facts.disconnected {
+        e.cpu_ready_at.get_or_insert(now);
+    } else {
+        e.cpu_ready_at = None;
     }
     e.inst.state = state;
     e.inst.note = note;
@@ -1305,11 +1395,11 @@ mod tests {
     const BTID: i64 = 5_550_001;
     const USER: i64 = 261;
 
-    struct Fake(Mutex<Vec<ProcInfo>>, Mutex<Vec<u32>>, Mutex<Vec<u32>>, Mutex<Vec<u32>>, Mutex<bool>);
+    struct Fake(Mutex<Vec<ProcInfo>>, Mutex<Vec<u32>>, Mutex<Vec<u32>>, Mutex<Vec<u32>>, Mutex<bool>, Mutex<Vec<(PathBuf, Vec<ProcInfo>)>>);
 
     impl Fake {
         fn new(procs: &[(u32, u64)]) -> Fake {
-            let f = Fake(Mutex::new(Vec::new()), Mutex::new(Vec::new()), Mutex::new(Vec::new()), Mutex::new(Vec::new()), Mutex::new(false));
+            let f = Fake(Mutex::new(Vec::new()), Mutex::new(Vec::new()), Mutex::new(Vec::new()), Mutex::new(Vec::new()), Mutex::new(false), Mutex::new(Vec::new()));
             f.set(procs);
             f
         }
@@ -1326,6 +1416,10 @@ mod tests {
             *self.0.lock().unwrap() = procs.iter().map(|&(pid, start_time)| ProcInfo { pid, start_time }).collect();
         }
 
+        fn owners(&self, path: &Path, pairs: &[(u32, u64)]) {
+            self.5.lock().unwrap().push((path.into(), pairs.iter().map(|&(pid, start_time)| ProcInfo { pid, start_time }).collect()));
+        }
+
         fn set_hung(&self, pids: &[u32]) {
             *self.1.lock().unwrap() = pids.to_vec();
         }
@@ -1336,6 +1430,9 @@ mod tests {
     }
 
     impl Procs for Fake {
+        fn log_owners(&self, path: &Path) -> Vec<ProcInfo> {
+            self.5.lock().unwrap().iter().rev().find(|(p, _)| p == path).map(|(_, ps)| ps.clone()).unwrap_or_default()
+        }
         fn start_time(&self, pid: u32) -> Option<u64> {
             self.0.lock().unwrap().iter().find(|p| p.pid == pid).map(|p| p.start_time)
         }
@@ -1637,9 +1734,12 @@ mod tests {
 
         procs.set(&[]);
         assert!(!poll(start + 6_000).is_empty());
+        assert!(t.get(&id).unwrap().checking_process);
+        assert!(t.take_rejoins().is_empty());
+        poll(start + 21_000);
         assert_eq!(state(&t, &id), (Exited, note("Closed unexpectedly"), 100));
-        assert_eq!(t.get(&id).unwrap().ended_at, Some(start + 6_000));
-        assert!(poll(start + 7_000).is_empty());
+        assert_eq!(t.get(&id).unwrap().ended_at, Some(start + 21_000));
+        assert!(poll(start + 22_000).is_empty());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -1662,6 +1762,8 @@ mod tests {
         t.poll(Some(&dir), &procs, &user_of, start + 2_000);
         assert_eq!(state(&t, &id).0, InGame, "one bad read is not proof");
         t.poll(Some(&dir), &procs, &user_of, start + 3_000);
+        assert!(t.get(&id).unwrap().checking_process);
+        t.poll(Some(&dir), &procs, &user_of, start + 17_000);
         assert_eq!(state(&t, &id), (Exited, note("Closed unexpectedly"), 700));
         std::fs::remove_dir_all(&dir).unwrap();
     }
@@ -1739,6 +1841,8 @@ mod tests {
         t.poll(None, &procs, &user_of, start + 1_000);
         procs.set(&[(100, 20)]);
         t.poll(None, &procs, &user_of, start + 121_000);
+        assert!(t.get(&id).unwrap().checking_process);
+        t.poll(None, &procs, &user_of, start + 136_000);
         assert_eq!(state(&t, &id).0, Exited);
     }
 
@@ -1775,6 +1879,7 @@ mod tests {
         append(&new, &[btid_line(BTID)]);
         append(&new, &join_lines(USER));
         procs.set(&[(300, secs), (200, secs + 10)]);
+        procs.owners(&new, &[(200, secs + 10)]);
         poll(start + 12_000);
         assert_eq!(state(&t, &id), (Joining, None, 200));
         append(&new, &[replicator()]);
@@ -1902,20 +2007,10 @@ mod tests {
         assert!(t.take_crashes().is_empty());
 
         procs.set(&[(200, created_secs(&log).unwrap())]);
+        procs.owners(&log, &[(200, created_secs(&log).unwrap())]);
         t.poll(Some(&dir), &procs, &user_of, gone + WRITER_AFTER_MS + 1_000);
         assert_eq!(state(&t, &id), (InGame, None, 200));
         std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[test]
-    fn only_the_client_started_with_the_log_is_picked() {
-        let p = |pid, start_time| ProcInfo { pid, start_time };
-        let procs = [p(1, 100), p(2, 104), p(3, 200), p(4, 106)];
-        assert_eq!(pick_client(&procs, Some(105), 90, &[]).map(|c| c.pid), Some(2), "the closest in time");
-        assert_eq!(pick_client(&procs, Some(105), 90, &[2]).map(|c| c.pid), Some(4), "not one already followed");
-        assert_eq!(pick_client(&procs, Some(105), 105, &[]).map(|c| c.pid), Some(4), "not one from before the launch");
-        assert_eq!(pick_client(&procs, Some(150), 90, &[]), None);
-        assert_eq!(pick_client(&procs, None, 90, &[]), None, "no log, no claim");
     }
 
     #[test]
@@ -1926,6 +2021,8 @@ mod tests {
         procs.set(&[]);
         append(&log, &["[FLog::Network] last words".to_owned()]);
         t.poll(Some(&dir), &procs, &user_of, start + 2_000);
+        assert!(t.get(&id).unwrap().checking_process);
+        t.poll(Some(&dir), &procs, &user_of, start + 17_000);
         assert_eq!(state(&t, &id), (Exited, note("Closed unexpectedly"), 100));
         std::fs::remove_dir_all(&dir).unwrap();
     }
@@ -1978,6 +2075,7 @@ mod tests {
         poll(start + 3_000);
         assert_eq!(state(&t, &id), (Starting, None, 900));
         append(&dir.join("0.744.0.7441080_20261024T120002Z_Player_CCCCC_last.log"), &[btid_line(BTID)]);
+        procs.owners(&dir.join("0.744.0.7441080_20261024T120002Z_Player_CCCCC_last.log"), &[(901, secs + 1)]);
         poll(start + 4_000);
         assert_eq!(state(&t, &id), (Joining, None, 901));
         procs.set(&[(50, secs - 600)]);
@@ -2005,6 +2103,7 @@ mod tests {
         assert_eq!(state(&t, &id).0, Starting, "its log says a client of this launch started");
         procs.set(&[(901, secs + 1)]);
         append(&log, &[btid_line(BTID)]);
+        procs.owners(&log, &[(901, secs + 1)]);
         poll(start + 300_000);
         assert_eq!(state(&t, &id), (Joining, None, 901));
         std::fs::remove_dir_all(&dir).unwrap();
@@ -2026,6 +2125,7 @@ mod tests {
         poll(start + 3_000);
         assert_eq!(state(&t, &id), (Starting, None, 900));
         append(&dir.join("0.744.0.7441080_20261024T120002Z_Player_DDDDD_last.log"), &[btid_line(BTID)]);
+        procs.owners(&dir.join("0.744.0.7441080_20261024T120002Z_Player_DDDDD_last.log"), &[(901, secs + 1)]);
         poll(start + 4_000);
         assert_eq!(state(&t, &id), (Joining, None, 901));
         assert_eq!(t.mark_closing(&id), Some((901, Some(secs + 1))));
@@ -2131,6 +2231,7 @@ mod tests {
         append(&log(100), &["[FLog::Network] Sending disconnect with reason: 267".into()]);
         append(&log(200), &["[FLog::Network] Disconnection Notification. Reason: 285".into()]);
         procs.set(&[(100, secs), (200, secs)]);
+        t.entries().iter_mut().find(|e| e.inst.id == closed).unwrap().died_at = Some(start - CHECK_PROCESS_MS);
         poll(start + 2_000);
         assert_eq!(state(&t, &kicked).0, Disconnected);
         assert_eq!(state(&t, &closed), (Exited, note("Closed unexpectedly"), 300));
@@ -2446,4 +2547,101 @@ mod tests {
         assert!(!arranges(false, true), "the setting is off");
         assert!(!arranges(true, false), "a rejoin keeps its place");
     }
+    #[test]
+    fn temporary_process_loss_is_visible_and_blocks_duplicate_launches() {
+        let dir = temp_dir();
+        let start = now_ms();
+        let (t, id, procs, _) = in_game_client(&dir, start);
+        procs.set(&[]);
+        t.poll(Some(&dir), &procs, &user_of, start + 2_000);
+        t.poll(Some(&dir), &procs, &user_of, start + 8_000);
+        assert!(t.get(&id).unwrap().checking_process);
+        assert!(t.claim(1).is_none() && t.take_rejoins().is_empty() && t.take_crashes().is_empty());
+        procs.set(&[(100, (start / 1000) as u64)]);
+        t.poll(Some(&dir), &procs, &user_of, start + 9_000);
+        let i = t.get(&id).unwrap();
+        assert_eq!((i.state, i.checking_process, i.ended_at), (InGame, false, None));
+        assert_eq!(t.clients().len(), 1);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn recently_ended_exact_client_recovers_but_not_while_a_launch_is_claimed() {
+        let dir = temp_dir();
+        let start = now_ms();
+        let (t, id, procs, _) = in_game_client(&dir, start);
+        procs.set(&[]);
+        t.poll(Some(&dir), &procs, &user_of, start + 2_000);
+        t.poll(Some(&dir), &procs, &user_of, start + 17_000);
+        assert_eq!(t.get(&id).unwrap().state, Exited);
+        let claim = t.claim(1).unwrap();
+        procs.set(&[(100, (start / 1000) as u64)]);
+        t.poll(Some(&dir), &procs, &user_of, start + 18_000);
+        assert_eq!(t.get(&id).unwrap().state, Exited);
+        drop(claim);
+        t.poll(Some(&dir), &procs, &user_of, start + 19_000);
+        assert_eq!(t.get(&id).unwrap().state, InGame);
+        assert!(!t.get(&id).unwrap().checking_process);
+        assert_eq!(t.first_in_game(&|_| true), [100], "window actions can be restored");
+        assert!(t.claim(1).is_none());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn ownership_recovery_is_unique_identity_checked_and_never_nearest_window() {
+        let procs = Fake::new(&[(101, 100), (102, 100)]);
+        let path = PathBuf::from("test-log");
+        let mut e = Entry::new(info(900, 100_000, true), target());
+        e.log = Some(path.clone());
+        e.expected_user = Some(USER);
+        let find = |e: &mut Entry, taken: &[u32]| { e.owner_checked_at = None; owned_client(e, &procs, &mut None, taken, 101_000) };
+        assert!(find(&mut e, &[]).is_none(), "no ownership proof, no guess");
+        procs.owners(&path, &[(101, 100), (102, 100)]);
+        assert!(find(&mut e, &[]).is_none(), "ambiguous owners");
+        procs.owners(&path, &[(102, 99)]);
+        assert!(find(&mut e, &[]).is_none(), "reused PID/start mismatch");
+        procs.owners(&path, &[(102, 100)]);
+        assert!(find(&mut e, &[102]).is_none(), "belongs to another tracker entry");
+        e.facts.user_id = Some(USER + 1);
+        assert!(find(&mut e, &[]).is_none(), "wrong account");
+        e.facts.user_id = Some(USER);
+        assert_eq!(find(&mut e, &[]).unwrap().pid, 102);
+    }
+
+    #[test]
+    fn ultra_waits_for_game_then_warms_up_and_releases_on_focus_or_teleport() {
+        use crate::model::UltraCpu;
+        let dir = temp_dir();
+        let start = now_ms();
+        let (t, id, procs, log) = in_game_client(&dir, start);
+        let v = Settings { ultra_cpu: UltraCpu { enabled: true, cap: 3, warmup_s: 90 }, ..Settings::default() };
+        let mode = |now, front| {
+            let free = t.cpu_policy(&v, front, &[], now).0;
+            (t.get(&id).unwrap().cpu_mode, free.contains(&id))
+        };
+        assert_eq!(mode(start + 2_000, None), (CpuMode::Warmup, true));
+        assert_eq!(t.get(&id).unwrap().cpu_warmup_remaining_s, 89);
+        assert_eq!(mode(start + 90_999, None), (CpuMode::Warmup, true));
+        assert_eq!(mode(start + 91_000, None), (CpuMode::Background, false));
+        assert_eq!(mode(start + 92_000, Some(100)), (CpuMode::Foreground, true));
+        assert_eq!(mode(start + 93_000, None), (CpuMode::Background, false));
+        append(&log, &["[FLog::SingleSurfaceApp] UgcExperienceController: doTeleport".into()]);
+        t.poll(Some(&dir), &procs, &user_of, start + 94_000);
+        assert_eq!(mode(start + 900_000, None), (CpuMode::Loading, true), "no loading timeout cap");
+        append(&log, &join_lines(USER));
+        append(&log, &[replicator()]);
+        t.poll(Some(&dir), &procs, &user_of, start + 901_000);
+        assert_eq!(mode(start + 902_000, None), (CpuMode::Warmup, true));
+        // Teleport and confirmed re-entry can also occur within a single read_new batch.
+        append(&log, &["[FLog::SingleSurfaceApp] UgcExperienceController: doTeleport".into()]);
+        append(&log, &join_lines(USER));
+        append(&log, &[replicator()]);
+        t.poll(Some(&dir), &procs, &user_of, start + 1_001_000);
+        assert_eq!(mode(start + 1_002_000, None), (CpuMode::Warmup, true));
+        assert_eq!(t.entries()[0].in_game_at, Some(start + 1_000), "original game time is not rewritten");
+        t.set_limits(&id, Limits { cpu_cap: Some(8), ..Limits::default() });
+        assert_eq!(mode(start + 1_003_000, Some(100)), (CpuMode::Manual, false));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
 }

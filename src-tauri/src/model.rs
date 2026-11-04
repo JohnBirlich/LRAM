@@ -210,6 +210,7 @@ pub struct Settings {
     pub auto_spread: bool,
     pub fair_cap: bool,
     pub adaptive: Adaptive,
+    pub ultra_cpu: UltraCpu,
     pub bandwidth_kbps: u32,
     pub anti_afk: AntiAfk,
     pub mute_clients: bool,
@@ -383,6 +384,33 @@ impl Default for Adaptive {
     }
 }
 
+#[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", default)]
+#[ts(export)]
+pub struct UltraCpu {
+    pub enabled: bool,
+    pub cap: u8,
+    pub warmup_s: u32,
+}
+impl Default for UltraCpu {
+    fn default() -> Self { Self { enabled: false, cap: 3, warmup_s: 90 } }
+}
+
+#[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum CpuMode {
+    #[default]
+    Standard,
+    Checking,
+    Loading,
+    Warmup,
+    Foreground,
+    Background,
+    Manual,
+    FullQuality,
+}
+
 impl Adaptive {
     fn untouched(&self) -> bool {
         !self.enabled && self.background == Limits { cpu_cap: Some(25), eco: true, ..Limits::default() }
@@ -417,6 +445,7 @@ impl Default for Settings {
             auto_spread: false,
             fair_cap: false,
             adaptive: Adaptive::default(),
+            ultra_cpu: UltraCpu::default(),
             bandwidth_kbps: 0,
             anti_afk: AntiAfk::default(),
             mute_clients: false,
@@ -502,6 +531,8 @@ pub struct SettingsPatch {
     pub fair_cap: Option<bool>,
     #[ts(optional)]
     pub adaptive: Option<Adaptive>,
+    #[ts(optional)]
+    pub ultra_cpu: Option<UltraCpu>,
     #[ts(optional)]
     pub anti_afk: Option<AntiAfk>,
     #[ts(optional)]
@@ -785,6 +816,12 @@ pub struct Instance {
     pub sign_in_problem: bool,
     #[serde(default, skip_deserializing)]
     pub applied_limits: Limits,
+    #[serde(default, skip_deserializing)]
+    pub checking_process: bool,
+    #[serde(default, skip_deserializing)]
+    pub cpu_mode: CpuMode,
+    #[serde(default, skip_deserializing)]
+    pub cpu_warmup_remaining_s: u32,
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, Default, PartialEq, Eq)]

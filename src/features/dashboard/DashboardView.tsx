@@ -8,7 +8,7 @@ import { Icon, type IconName } from "../../ui/Icon";
 import { toast, toastError } from "../../ui/Toast";
 import { fmtList, isRtl, t } from "../../i18n";
 import { accountName, Avatar } from "../accounts/shared";
-import { EndedPanel, isRunning, LimitsDialog, STATES, uptime, useNow } from "../launch/Running";
+import { EndedPanel, isRunning, LimitsDialog, instanceState, cpuStatus, uptime, useNow } from "../launch/Running";
 import { launched, launchFailed } from "../launch/LaunchView";
 import { mb, pct } from "../monitor/MonitorView";
 import { menuKeys } from "../../ui/menu";
@@ -188,7 +188,7 @@ function ClientCard({ inst: i, account: a, groups, metrics: m, now, afkOn, defau
   const hidden = status === "minimized" || ghost;
   const name = a ? accountName(a) : t("dashboard.account", { id: i.accountId });
   const rejoining = i.relaunching && i.state === "disconnected";
-  const [label, color] = closing ? [t("launch.running.closing"), "var(--dim)"] : rejoining ? [t("launch.state.rejoining"), "var(--orange)"] : STATES[i.state];
+  const [label, color] = closing ? [t("launch.running.closing"), "var(--dim)"] : rejoining ? [t("launch.state.rejoining"), "var(--orange)"] : instanceState(i);
   const moving = i.state === "starting" || i.state === "joining" || rejoining || closing;
   const focus = () => api.instanceShow(i.id, "focus").catch(toastError);
   const throttled = t("dashboard.throttled");
@@ -336,6 +336,7 @@ function ClientCard({ inst: i, account: a, groups, metrics: m, now, afkOn, defau
         <span>{t("dashboard.clientUsage", { cpu: m ? pct(m.cpuPct) : "—", ram: m ? mb(m.memoryMb) : "—", commit: m ? mb(m.privateMb) : "—" })}</span>
         <span>{t("dashboard.clientPerformance", { cap: on.cpuCap === null ? t("common.off") : `${on.cpuCap}%`, eco: on.eco ? t("common.on") : t("common.off"), fps: i.fpsCap ?? "—" })}</span>
       </div>
+      {cpuStatus(i) && <p className="text-xs text-dim" role="status">{cpuStatus(i)}</p>}
       <SizeHandle name={name} detailed={detailed} onSize={onSize} />
     </div>
   );

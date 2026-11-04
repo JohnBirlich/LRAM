@@ -28,8 +28,25 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-      - run: cargo test --locked
+      - name: Rust tests
+        run: |
+          $output = & cargo test --locked --color never 2>&1
+          $code = $LASTEXITCODE
+          $output | Write-Output
+          if ($code -ne 0) {
+            $tail = ($output | Select-Object -Last 160) -join "%0A"
+            Write-Output "::error title=Rust tests failed::$tail"
+            exit $code
+          }
         working-directory: src-tauri
       - if: ${{ !cancelled() }}
-        run: cargo clippy --all-targets --locked -- -D warnings
+        run: |
+          $output = & cargo clippy --all-targets --locked --color never -- -D warnings 2>&1
+          $code = $LASTEXITCODE
+          $output | Write-Output
+          if ($code -ne 0) {
+            $tail = ($output | Select-Object -Last 120) -join "%0A"
+            Write-Output "::error title=Clippy failed::$tail"
+            exit $code
+          }
         working-directory: src-tauri

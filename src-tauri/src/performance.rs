@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::error::{AppError, Result};
-use crate::model::{Adaptive, MemThrottle, RenderFlags, Settings, SettingsPatch};
+use crate::model::{Adaptive, MemThrottle, RenderFlags, Settings, SettingsPatch, UltraCpu};
 
 const FORMAT: &str = "lram-performance";
 const LEGACY_FORMAT: &str = "lram-performance";
@@ -61,6 +61,9 @@ pub struct Profile {
     pub adaptive: Option<Adaptive>,
     #[ts(optional)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub ultra_cpu: Option<UltraCpu>,
+    #[ts(optional)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub preview_fps: Option<u32>,
 }
 
@@ -97,6 +100,7 @@ pub fn of(v: &Settings, preview_fps: Option<u32>, now_ms: i64) -> String {
         auto_spread: Some(v.auto_spread),
         fair_cap: Some(v.fair_cap),
         adaptive: Some(without_cores(v.adaptive)),
+        ultra_cpu: Some(v.ultra_cpu),
         preview_fps: preview_fps.filter(|f| PREVIEW_FPS.contains(f)),
     };
     let file = File { format: FORMAT.into(), version: VERSION, exported_at: now_ms, settings };
@@ -146,6 +150,7 @@ fn patch_of(p: &Profile) -> SettingsPatch {
         auto_spread: p.auto_spread,
         fair_cap: p.fair_cap,
         adaptive: p.adaptive,
+        ultra_cpu: p.ultra_cpu,
         ..Default::default()
     }
 }
@@ -229,4 +234,18 @@ mod tests {
         let patch = patch_of(&p);
         assert!(patch.launch_args.is_none() && patch.panic_hotkey.is_none());
     }
+    #[test]
+    fn ultra_profile_round_trip_and_validation() {
+        use crate::model::UltraCpu;
+        let original = Settings { ultra_cpu: UltraCpu { enabled: true, cap: 2, warmup_s: 75 }, ..Settings::default() };
+        let profile = parse(&of(&original, None, 0), &Settings::default()).unwrap();
+        assert_eq!(profile.ultra_cpu, Some(original.ultra_cpu));
+        for (cap, warmup_s) in [(0, 90), (4, 90), (3, 59), (3, 91)] {
+            let patch = SettingsPatch { ultra_cpu: Some(UltraCpu { enabled: true, cap, warmup_s }), ..SettingsPatch::default() };
+            assert!(crate::commands::apply_performance(&mut Settings::default(), &patch).is_err());
+        }
+        let old = parse(r#"{"format":"lram-performance","version":1,"settings":{"fpsCap":30}}"#, &original).unwrap();
+        assert!(old.ultra_cpu.is_none(), "older profiles do not change the selected CPU policy");
+    }
+
 }

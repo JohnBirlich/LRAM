@@ -3,7 +3,7 @@ import type { AccountSummary, Instance } from "../../api";
 import { isRtl, t } from "../../i18n";
 import { Icon } from "../../ui/Icon";
 import { accountName, Avatar } from "../accounts/shared";
-import { isLive, STATES } from "../launch/Running";
+import { isLive, instanceState } from "../launch/Running";
 import type { HomeTabs } from "./homeLayout";
 import { Sortable } from "./Sortable";
 
@@ -48,14 +48,14 @@ export function AccountRail({ width, accounts, instances, home, onHome, onOpen, 
           const tab = home.tabs.find((x) => x.accountId === a.id);
           const inst = instances.find((i) => i.accountId === a.id && isLive(i));
           const busy = tab?.status === "queued" || tab?.status === "launching";
-          const mark = busy ? "var(--dim)" : inst ? STATES[inst.state][1] : tab?.status === "failed" ? "var(--orange)" : null;
+          const mark = busy ? "var(--dim)" : inst ? instanceState(inst)[1] : tab?.status === "failed" ? "var(--orange)" : null;
           const name = accountName(a);
           return (
             <button key={a.id} className="nav-item" style={{ minHeight: 52 }} title={name} aria-current={onHome && home.active === a.id ? "page" : undefined} onClick={() => { home.add(a.id); onOpen(); }} {...drag}>
               <Avatar account={a} size={30} />
               <span className="flex-1 min-w-0 flex flex-col">
                 <span className="truncate">{name}</span>
-                <span className="truncate text-xs font-normal text-dim">{inst ? STATES[inst.state][0] : `@${a.username}`}</span>
+                <span className="truncate text-xs font-normal text-dim">{inst ? instanceState(inst)[0] : `@${a.username}`}</span>
               </span>
               {mark && <span aria-hidden="true" className={`led flex-none ${busy ? "pulse" : ""}`} style={{ color: mark }} />}
             </button>

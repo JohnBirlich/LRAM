@@ -3,7 +3,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import type { AccountSummary, ClientMetrics } from "../../api";
 import { useInstances, useMetrics } from "../../data";
 import { accountName, Avatar } from "../accounts/shared";
-import { isRunning, STATES, uptime, useNow } from "../launch/Running";
+import { isRunning, instanceState, cpuStatus, uptime, useNow } from "../launch/Running";
 import { fmtNum, t } from "../../i18n";
 
 const KEEP = 60;
@@ -144,7 +144,8 @@ export function MonitorView({ accounts }: { accounts: AccountSummary[] }) {
                 const a = byId.get(i.accountId);
                 const m = byInst.get(i.id);
                 const h = hist.per.get(i.id);
-                const [label, color] = STATES[i.state];
+                const [baseLabel, color] = instanceState(i);
+                const label = [baseLabel, cpuStatus(i)].filter(Boolean).join(" · ");
                 return (
                   <tr key={i.id} className="h-12 border-b border-line last:border-b-0" title={`PID ${i.pid}`} style={{ fontVariantNumeric: "tabular-nums" }}>
                     <td className="pe-3 max-w-[180px]">

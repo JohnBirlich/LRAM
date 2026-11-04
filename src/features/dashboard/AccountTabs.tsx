@@ -10,7 +10,7 @@ import { toast, toastError } from "../../ui/Toast";
 import { accountName, Avatar } from "../accounts/shared";
 import { FavouritesRow } from "../launch/Favourites";
 import { launchBlocked, launched, launchFailed, MARK } from "../launch/LaunchView";
-import { isLive, isRunning, MultiNotice, STATES } from "../launch/Running";
+import { isLive, isRunning, MultiNotice, instanceState } from "../launch/Running";
 import { draftFor, readDraft, resolveTarget, type Draft } from "../launch/target";
 import { homeSorted, storedText, type HomeTab, type HomeTabs } from "./homeLayout";
 import { Sortable } from "./Sortable";
@@ -50,7 +50,7 @@ function TabBody({ tab, account: a, accounts, instances, block, onDraft, onLaunc
   const busy = inFlight(tab);
   const name = accountName(a);
   const valid = a.status === "valid";
-  const [state, color] = inst ? STATES[inst.state] : [null, undefined];
+  const [state, color] = inst ? instanceState(inst) : [null, undefined];
   const unsaved = usable && !pending && !storedText(draft);
   return (
     <>
@@ -277,7 +277,7 @@ export function AccountTabs({ accounts, home, onAdd, children }: { accounts: Acc
             const tab = tabs.find((x) => x.accountId === id)!;
             const a = byId.get(id)!;
             const inst = instances.find((i) => i.accountId === a.id && isLive(i));
-            const mark = inFlight(tab) ? "var(--dim)" : inst ? STATES[inst.state][1] : tab.status === "failed" ? "var(--orange)" : null;
+            const mark = inFlight(tab) ? "var(--dim)" : inst ? instanceState(inst)[1] : tab.status === "failed" ? "var(--orange)" : null;
             const selected = active === a.id;
             const name = accountName(a);
             return (

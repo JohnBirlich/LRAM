@@ -177,6 +177,18 @@ export function PerformanceView({ settings }: { settings: Settings }) {
             <h2 id="perf-cpu" className="section-title">{t("performance.section.cpuMemory")}</h2>
             {using}
           </div>
+          <TuneRow title={t("performance.ultraCpu")} hint={t("performance.ultraCpuHint")}>
+            <Switch label={t("performance.ultraCpu")} checked={settings.ultraCpu.enabled} onChange={(enabled) => set.mutate({ ultraCpu: { ...settings.ultraCpu, enabled } })} />
+          </TuneRow>
+          {settings.ultraCpu.enabled && <>
+            <TuneRow title={t("performance.ultraCap")} hint={t("performance.ultraCapHint")}>
+              <Segmented label={t("performance.ultraCap")} value={settings.ultraCpu.cap} options={[1, 2, 3].map((c) => ({ value: c, label: `${c}%` }))} onChange={(cap) => set.mutate({ ultraCpu: { ...settings.ultraCpu, cap } })} />
+            </TuneRow>
+            <TuneRow title={t("performance.ultraWarmup")} hint={t("performance.ultraWarmupHint")}>
+              <NumberField label={t("performance.ultraWarmup")} unit="seconds" short="s" min={60} max={90} value={settings.ultraCpu.warmupS} onCommit={(warmupS) => set.mutate({ ultraCpu: { ...settings.ultraCpu, warmupS } })} />
+            </TuneRow>
+          </>}
+          {!settings.ultraCpu.enabled && <>
           <TuneRow title={t("settings.adaptive")} hint={t("settings.adaptiveHint")}>
             <Switch label={t("settings.adaptive")} checked={settings.adaptive.enabled} onChange={(enabled) => set.mutate({ adaptive: { ...settings.adaptive, enabled } })} />
           </TuneRow>
@@ -212,6 +224,7 @@ export function PerformanceView({ settings }: { settings: Settings }) {
           <TuneRow title={t("settings.fairCap")} hint={t("settings.fairCapHint")}>
             <Switch label={t("settings.fairCap")} checked={settings.fairCap} onChange={(fairCap) => set.mutate({ fairCap })} />
           </TuneRow>
+          </>}
           <TuneRow title={t("settings.trim")} hint={`${t("settings.trimHint")} ${t("settings.commitStays")}`}>
             <NumberField unit={t("settings.unit.minutesOff")} short={t("settings.unit.min")} min={0} max={1440} value={settings.trimEveryMin} onCommit={(trimEveryMin) => set.mutate({ trimEveryMin })} />
           </TuneRow>
@@ -291,14 +304,15 @@ const PRESETS: readonly { label: Key; tag: Key; facts: () => string[]; profile: 
   {
     label: "performance.preset.ultra",
     tag: "performance.tagUltra",
-    facts: () => [t("dashboard.fps", { fps: 5 }), t("settings.lowGraphics"), t("performance.factBg", { n: 10 }), t("performance.ultraWarning"), t("performance.factNextLaunch")],
+    facts: () => [t("dashboard.fps", { fps: 5 }), t("settings.lowGraphics"), t("performance.factBg", { n: 3 }), t("performance.ultraWarning"), t("performance.factNextLaunch")],
     profile: {
       fpsCap: 5, lowGraphics: true, lighterRendering: true,
       renderFlags: { ...lightest, graySky: true, pauseVoxelizer: true },
       minimizeOnLaunch: true, tinyOnLaunch: true, microWidth: 160, microHeight: 120,
-      liveHiddenPreviews: false, trimEveryMin: 0, autoSpread: true, fairCap: true,
+      liveHiddenPreviews: false, trimEveryMin: 0, autoSpread: true, fairCap: false,
       memRestartMb: 0, memThrottle: noThrottle,
-      adaptive: { enabled: true, background: { cpuCap: 10, eco: true, trimEveryMin: 0, affinity: null } },
+      ultraCpu: { enabled: true, cap: 3, warmupS: 90 },
+      adaptive: { enabled: true, background: { cpuCap: 3, eco: true, trimEveryMin: 0, affinity: null } },
       previewFps: 5,
     },
   },
@@ -310,6 +324,7 @@ const PRESETS: readonly { label: Key; tag: Key; facts: () => string[]; profile: 
       t("performance.factMainAccount"), t("performance.factBootstrapper"), t("performance.factAfk"), t("performance.factNextLaunch"),
     ],
     profile: {
+      ultraCpu: { enabled: false, cap: 3, warmupS: 90 },
       fpsCap: 10, lowGraphics: true, lighterRendering: true, renderFlags: { ...lightest, graySky: true, pauseVoxelizer: true }, minimizeOnLaunch: true, tinyOnLaunch: true, microWidth: 240, microHeight: 180, liveHiddenPreviews: false, trimEveryMin: 15, autoSpread: true, fairCap: true,
       adaptive: { enabled: true, background: { cpuCap: 25, eco: true, trimEveryMin: null, affinity: null } }, previewFps: 5,
     },
@@ -319,6 +334,7 @@ const PRESETS: readonly { label: Key; tag: Key; facts: () => string[]; profile: 
     tag: "performance.tagBalanced",
     facts: () => [t("dashboard.fps", { fps: 30 }), t("settings.lowGraphics"), t("performance.factOnScreen"), t("performance.factBg", { n: 50 })],
     profile: {
+      ultraCpu: { enabled: false, cap: 3, warmupS: 90 },
       fpsCap: 30, lowGraphics: true, lighterRendering: true, renderFlags: lightest, minimizeOnLaunch: false, ...normalWindows, trimEveryMin: 30, autoSpread: true,
       adaptive: { enabled: true, background: { cpuCap: 50, eco: true, trimEveryMin: null, affinity: null } }, previewFps: 15,
     },
@@ -328,6 +344,7 @@ const PRESETS: readonly { label: Key; tag: Key; facts: () => string[]; profile: 
     tag: "performance.tagDefaults",
     facts: () => [t("performance.factNoFps"), t("performance.factOwnGraphics"), t("performance.factOnScreen"), t("performance.factNoCpu")],
     profile: {
+      ultraCpu: { enabled: false, cap: 3, warmupS: 90 },
       fpsCap: 0, lowGraphics: false, lighterRendering: false, minimizeOnLaunch: false, ...normalWindows, memRestartMb: 0, memThrottle: noThrottle, trimEveryMin: 0, autoSpread: false,
       adaptive: { enabled: false, background: { cpuCap: 25, eco: true, trimEveryMin: null, affinity: null } }, previewFps: 15,
     },
@@ -456,6 +473,7 @@ const LABELS: Record<Field, Key> = {
   autoSpread: "settings.spread",
   fairCap: "settings.fairCap",
   adaptive: "settings.adaptive",
+  ultraCpu: "performance.ultraCpu",
 };
 
 const capitalize = (s: string) => s[0].toUpperCase() + s.slice(1);
@@ -470,6 +488,7 @@ function shown(k: Field, v: Profile[Field] | Settings[Field]): string {
     return [v.msaa === "default" ? null : `MSAA ${v.msaa}`, v.texture === "default" ? null : `${t("performance.texture")}: ${t(`performance.tex${capitalize(v.texture)}` as Key)}`, v.mode === "default" ? null : MODE_NAMES[v.mode], ...on.map(([b, k]) => (b ? t(k) : null))].filter(Boolean).join(" · ") || t("performance.robloxDefault");
   }
   if ("mb" in v) return `${v.mb ? `${fmtNum(v.mb)} MB` : t("common.off")} · ${pct(v.cpuCap)}`;
+  if ("warmupS" in v) return `${v.enabled ? t("common.on") : t("common.off")} · ${v.cap}% · ${v.warmupS}s`;
   const b = v.background;
   const trim = b.trimEveryMin === null ? t("common.default") : b.trimEveryMin ? t("settings.minutesShort", { n: b.trimEveryMin }) : t("common.off");
   return `${v.enabled ? t("common.on") : t("common.off")} · ${pct(b.cpuCap)} · ${t("settings.efficiency")} ${b.eco ? t("common.on") : t("common.off")} · ${trim}`;

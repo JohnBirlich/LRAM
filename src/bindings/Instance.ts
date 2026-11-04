@@ -1,3 +1,4 @@
+import type { CpuMode } from "./CpuMode";
 import type { InstanceState } from "./InstanceState";
 import type { LaunchTarget } from "./LaunchTarget";
 import type { Limits } from "./Limits";
@@ -28,4 +29,4 @@ relaunchProblem: string | null,
 
 signInProblem: boolean,
 
-appliedLimits: Limits, };
+appliedLimits: Limits, checkingProcess: boolean, cpuMode: CpuMode, cpuWarmupRemainingS: number, };

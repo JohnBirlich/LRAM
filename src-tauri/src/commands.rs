@@ -2158,6 +2158,12 @@ pub(crate) fn apply_performance(v: &mut Settings, patch: &SettingsPatch) -> Resu
     }
     if let Some(a) = patch.auto_spread { v.auto_spread = a }
     if let Some(f) = patch.fair_cap { v.fair_cap = f }
+    if let Some(u) = patch.ultra_cpu {
+        if !(1..=3).contains(&u.cap) || !(60..=90).contains(&u.warmup_s) {
+            return Err(AppError::Invalid(tr!("ULTRA CPU must be 1 to 3%, with a 60 to 90 second warm-up.")));
+        }
+        v.ultra_cpu = u;
+    }
     if let Some(a) = patch.adaptive {
         check_limits(&a.background)?;
         v.adaptive = a;

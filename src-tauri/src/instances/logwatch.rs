@@ -11,6 +11,7 @@ pub struct LogFacts {
     pub place_id: Option<i64>,
     pub user_id: Option<i64>,
     pub in_game: bool,
+    pub join_generation: u64,
     pub teleporting: bool,
     pub disconnected: bool,
     pub left: bool,
@@ -223,6 +224,7 @@ pub fn parse_line(line: &str, facts: &mut LogFacts) {
         if let Some((job, rest)) = line[i + JOINING.len()..].split_once('\'')
             && is_guid(job)
         {
+            facts.join_generation = facts.join_generation.saturating_add(1);
             facts.job_id = Some(job.to_owned());
             facts.place_id = number_after(rest, " place ");
             facts.in_game = false;
@@ -238,8 +240,10 @@ pub fn parse_line(line: &str, facts: &mut LogFacts) {
         facts.left = false;
         facts.reason = None;
     } else if facts.in_game && line.contains(TELEPORT) {
+        facts.join_generation = facts.join_generation.saturating_add(1);
         facts.teleporting = true;
     } else if let Some(m) = DISCONNECTS.iter().find(|m| line.contains(*m)) {
+        if !facts.disconnected { facts.join_generation = facts.join_generation.saturating_add(1); }
         facts.disconnected = true;
         facts.left |= client_initiated(line);
         if !facts.reason.as_deref().is_some_and(names_reason) {

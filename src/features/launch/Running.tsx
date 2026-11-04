@@ -19,9 +19,25 @@ export const STATES: Record<InstanceState, [label: string, color: string]> = {
   get exited(): [string, string] { return [t("launch.state.ended"), "var(--dim)"]; },
 };
 
+export const instanceState = (i: Instance): [string, string] => i.checkingProcess
+  ? [t("launch.state.checking"), "var(--orange)"] : STATES[i.state];
+
+export function cpuStatus(i: Instance): string | null {
+  switch (i.cpuMode) {
+    case "checking": return t("launch.state.checking");
+    case "loading": return t("cpu.loading");
+    case "warmup": return t("cpu.warmup", { seconds: i.cpuWarmupRemainingS });
+    case "foreground": return t("cpu.foreground");
+    case "background": return i.appliedLimits.cpuCap === null ? t("cpu.pending") : t("cpu.background", { cap: i.appliedLimits.cpuCap });
+    case "manual": return t("cpu.manual", { cap: i.limits.cpuCap ?? 0 });
+    case "fullQuality": return t("cpu.fullQuality");
+    default: return null;
+  }
+}
+
 export const isRunning = (i: Instance) => i.state !== "exited";
 
-export const isLive = (i: Instance) => i.state === "starting" || i.state === "joining" || i.state === "inGame";
+export const isLive = (i: Instance) => i.checkingProcess || i.state === "starting" || i.state === "joining" || i.state === "inGame";
 
 export function uptime(from: number, to: number) {
   const m = Math.max(0, Math.floor((to - from) / 60_000));

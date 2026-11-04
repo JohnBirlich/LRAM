@@ -1,6 +1,6 @@
 [package]
 name = "lram"
-version = "0.12.7"
+version = "0.13.0"
 description = "Local-only Roblox account manager"
 authors = ["JohnBirlich"]
 edition = "2024"
@@ -57,6 +57,7 @@ windows = { version = "0.62", features = [
   "Win32_System_Performance",
   "Win32_System_ProcessStatus",
   "Win32_System_Registry",
+  "Win32_System_RestartManager",
   "Win32_System_SystemInformation",
   "Win32_System_Threading",
   "Win32_System_WinRT",

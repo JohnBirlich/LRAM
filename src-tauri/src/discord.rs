@@ -576,6 +576,9 @@ mod tests {
             relaunch_problem: None,
             sign_in_problem: false,
             applied_limits: crate::model::Limits::default(),
+            checking_process: false,
+            cpu_mode: Default::default(),
+            cpu_warmup_remaining_s: 0,
         }
     }
 

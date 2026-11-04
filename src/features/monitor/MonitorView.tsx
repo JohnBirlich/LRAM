@@ -1,3 +1,4 @@
+import { SystemPanel } from "./SystemPanel";
 import { useEffect, useState, type ReactNode } from "react";
 import type { AccountSummary, ClientMetrics } from "../../api";
 import { useInstances, useMetrics } from "../../data";
@@ -100,6 +101,8 @@ export function MonitorView({ accounts }: { accounts: AccountSummary[] }) {
       <div className="enter w-full min-w-0 flex flex-col">
         <h1 className="page-title">{t("monitor.title")}</h1>
         <p className="page-sub">{t("monitor.intro")}</p>
+
+        <SystemPanel running={running} />
 
         <div className="grid gap-6 mt-6" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(165px, 1fr))" }}>
           <Tile label={t("monitor.clients")} value={String(running.length)} />

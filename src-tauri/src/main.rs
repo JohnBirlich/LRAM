@@ -6,6 +6,7 @@ mod commands;
 mod diagnostics;
 mod discord;
 mod error;
+mod hardware;
 mod instances;
 mod launcher;
 mod model;
@@ -575,6 +576,8 @@ fn main() {
             commands::instance_set_muted,
             commands::instances_metrics,
             commands::system_usage,
+            commands::hardware_info,
+            commands::public_location,
             commands::instance_stop_relaunch,
             commands::instances_retry_relaunch,
             commands::instance_thumbnail,

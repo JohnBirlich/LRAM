@@ -2440,3 +2440,15 @@ nothing here
         assert!(normalize_cookie(".ROBLOSECURITY=").is_err());
     }
 }
+
+
+#[tauri::command]
+pub async fn hardware_info() -> Result<crate::hardware::HardwareInfo> {
+    tauri::async_runtime::spawn_blocking(crate::hardware::read)
+        .await.map_err(|e| AppError::Internal(e.to_string()))
+}
+
+#[tauri::command]
+pub async fn public_location() -> Result<crate::hardware::PublicLocation> {
+    crate::hardware::public_location().await
+}

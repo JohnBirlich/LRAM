@@ -46,6 +46,8 @@ jobs:
           npm ci
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run test:capacity
       - name: Rust tests
         run: cargo test --locked
         working-directory: src-tauri
@@ -143,7 +145,9 @@ jobs:
           cat > ../notes.md <<EOF
           ## LRAM $VERSION
 
-          - Responsive full-width Play, Settings, Performance and Monitor pages; two-column Play layout on wide windows.
+          - Adaptive layouts across Play, Performance, Monitor, Discord Alerts and Settings.
+          - Monitor: local CPU/motherboard/GPU/RAM inventory, SMBIOS memory data rates and explicit IP/country lookup via ipwho.is (display only).
+          - 60-second measured CPU/RAM capacity projection with reserve; per-client CPU/RAM/GPU/VRAM ranges. GPU capacity is not guaranteed or used as a bound. No fixed client count is promised.
           - Experimental ULTRA performance preset: low FPS/graphics, tiny windows and background CPU/Eco limits. No fixed RAM, CPU or client-count guarantee.
           - Configurable monitor grid and clearer per-client resource usage/applied limits.
           - Based on 0.12.3 application code, with updated LRAM documentation and repository links.

@@ -147,7 +147,7 @@ export function PerformanceView({ settings }: { settings: Settings }) {
 
   return (
     <main className="page-shell scroll flex-1 min-w-0 pt-5 pb-12">
-      <div className="enter w-full min-w-0 flex flex-col gap-6">
+      <div className="enter performance-layout">
         <header>
           <h1 className="page-title">{t("performance.title")}</h1>
           <p className="page-sub">{t("performance.intro")}</p>

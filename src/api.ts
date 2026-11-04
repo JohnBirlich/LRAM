@@ -1,3 +1,5 @@
+import type { HardwareInfo } from "./bindings/HardwareInfo";
+import type { PublicLocation } from "./bindings/PublicLocation";
 import { invoke as rawInvoke, type InvokeArgs } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { AccountInfo } from "./bindings/AccountInfo";
@@ -182,6 +184,8 @@ export const api = {
 
   instancesMetrics:() => invoke<ClientMetrics[]>("instances_metrics"),
 
+  hardwareInfo: () => invoke<HardwareInfo>("hardware_info"),
+  publicLocation: () => invoke<PublicLocation>("public_location"),
   systemUsage: () => invoke<SystemUsage | null>("system_usage"),
 
   instanceStopRelaunch: (id: string) => invoke<void>("instance_stop_relaunch", { id }),

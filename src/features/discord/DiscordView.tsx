@@ -60,13 +60,14 @@ export function DiscordView({ settings }: { settings: Settings }) {
   };
 
   return (
-    <main className="scroll flex-1 min-w-0 px-8 pt-5 pb-12">
-      <div className="enter max-w-[860px] flex flex-col">
+    <main className="page-shell scroll flex-1 min-w-0 pt-5 pb-12">
+      <div className="enter discord-layout">
         <h1 className="page-title mb-2">{t("app.nav.discord")}</h1>
         <p className="text-dim">
           {t("discord.intro")}
         </p>
 
+        <section className="min-w-0">
         <Heading id="discord-webhook">{t("discord.webhook")}</Heading>
         <div className="panel px-5 py-1 mt-3 [&>*:last-child]:border-b-0">
         <Row
@@ -104,6 +105,8 @@ export function DiscordView({ settings }: { settings: Settings }) {
 
         </div>
 
+        </section>
+        <section className="min-w-0">
         <Heading id="discord-events">{t("discord.events")}</Heading>
         <div className="panel px-5 py-1 mt-3 [&>*:last-child]:border-b-0">
         {EVENTS.map(([key, title, hint]) => (
@@ -122,6 +125,7 @@ export function DiscordView({ settings }: { settings: Settings }) {
           />
         </Row>
         </div>
+        </section>
       </div>
     </main>
   );

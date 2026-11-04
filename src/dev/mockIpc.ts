@@ -942,6 +942,10 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       instancesChanged();
       return shown.length;
     }
+    case "hardware_info":
+      return { board: "Demo motherboard (browser preview)", cpu: "Demo CPU — not your hardware", logicalProcessors: 8, memoryRates: [3200], gpus: [{ name: "Demo GPU", dedicatedMb: 8192 }] };
+    case "public_location":
+      throw new Error("Public IP lookup is disabled in the browser demo.");
     case "instances_metrics":
       return fakeMetrics();
     case "system_usage": {

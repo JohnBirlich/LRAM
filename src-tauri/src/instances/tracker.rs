@@ -1158,14 +1158,13 @@ fn observe(
         e.slow_start = logwatch::started_log(dir, after);
     }
 
-    if e.log.is_none() || (!e.alive && e.owner_checked_at.is_none_or(|at| now - at >= 5_000)) {
-        if let Some(path) = logwatch::find_log(dir, e.btid, launched) {
-            if e.log.as_ref() != Some(&path) {
-                e.log = Some(path);
-                e.offset = 0;
-                e.facts = LogFacts::default();
-            }
-        }
+    if (e.log.is_none() || (!e.alive && e.owner_checked_at.is_none_or(|at| now - at >= 5_000)))
+        && let Some(path) = logwatch::find_log(dir, e.btid, launched)
+        && e.log.as_ref() != Some(&path)
+    {
+        e.log = Some(path);
+        e.offset = 0;
+        e.facts = LogFacts::default();
     }
     if let Some(path) = &e.log {
         let (account, id) = (e.inst.account_id, &e.inst.id);

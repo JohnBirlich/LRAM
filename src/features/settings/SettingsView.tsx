@@ -132,8 +132,8 @@ export function SettingsView({ vault, settings, onPerformance, onRecoveryCode }:
   }
 
   return (
-    <main className="scroll flex-1 min-w-0 px-8 pt-5 pb-12">
-      <div className="enter max-w-[1400px] flex flex-col">
+    <main className="page-shell scroll flex-1 min-w-0 pt-5 pb-12">
+      <div className="enter w-full min-w-0 flex flex-col">
         <header className="flex flex-wrap items-start justify-between gap-3 mb-2">
           <h1 className="page-title">{t("settings.title")}</h1>
           <dl aria-label={t("settings.section.about")} className="panel grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 px-3.5 py-2 text-[13px] max-w-[280px]">

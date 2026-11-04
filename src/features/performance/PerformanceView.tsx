@@ -146,8 +146,8 @@ export function PerformanceView({ settings }: { settings: Settings }) {
   const using = <span className="text-[13px] text-dim">{active ? t("performance.using", { name: t(active.label) }) : t("performance.custom")}</span>;
 
   return (
-    <main className="scroll flex-1 min-w-0 px-8 pt-5 pb-12">
-      <div className="enter max-w-[1000px] flex flex-col gap-6">
+    <main className="page-shell scroll flex-1 min-w-0 pt-5 pb-12">
+      <div className="enter w-full min-w-0 flex flex-col gap-6">
         <header>
           <h1 className="page-title">{t("performance.title")}</h1>
           <p className="page-sub">{t("performance.intro")}</p>

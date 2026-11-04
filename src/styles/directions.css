@@ -531,3 +531,36 @@
     color: #ffffff;
   }
 }
+
+
+/* Size pages by their available content area, not by a fixed desktop width.
+   Container queries account for the sidebar, window size and WebView zoom. */
+.page-shell {
+  container-name: page;
+  container-type: inline-size;
+  padding-inline: clamp(16px, 2vw, 32px);
+}
+
+.play-layout {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  gap: 24px;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+
+.play-layout > * {
+  min-width: 0;
+}
+
+@container page (min-width: 1100px) {
+  .play-layout {
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+    grid-template-rows: auto auto 1fr;
+  }
+  .play-layout > header { grid-column: 1 / -1; }
+  .play-who { grid-column: 1; grid-row: 2 / 4; }
+  .play-where { grid-column: 2; grid-row: 2; }
+  .play-ready { grid-column: 2; grid-row: 3; }
+}

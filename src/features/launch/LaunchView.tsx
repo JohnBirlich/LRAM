@@ -188,14 +188,14 @@ export function LaunchView({ accounts, picked, setPicked, sameServer, setSameSer
   };
 
   return (
-    <main className="scroll flex-1 min-w-0 px-8 pt-5 pb-12">
-      <div className="enter flex flex-col gap-6 max-w-[1000px]">
+    <main className="page-shell scroll flex-1 min-w-0 pt-5 pb-12">
+      <div className="enter play-layout">
         <header>
           <h1 className="page-title">{t("app.nav.launch")}</h1>
           <p className="page-sub">{t("launch.subtitle")}</p>
         </header>
 
-        <section aria-labelledby="play-who" className="panel flex flex-col gap-4 p-5">
+        <section aria-labelledby="play-who" className="play-who panel flex flex-col gap-4 p-5">
           <div className="flex flex-wrap items-center gap-3">
             <span aria-hidden="true" className="num">1</span>
             <h2 id="play-who" className="section-title flex-[1_1_160px]">{t("play.who")}</h2>
@@ -259,7 +259,7 @@ export function LaunchView({ accounts, picked, setPicked, sameServer, setSameSer
           )}
         </section>
 
-        <section aria-labelledby="play-where" className="panel flex flex-col gap-4 p-5">
+        <section aria-labelledby="play-where" className="play-where panel flex flex-col gap-4 p-5">
           <div className="flex flex-wrap items-center gap-3">
             <span aria-hidden="true" className="num">2</span>
             <h2 id="play-where" className="section-title flex-[1_1_160px]">{t("play.where")}</h2>
@@ -347,7 +347,7 @@ export function LaunchView({ accounts, picked, setPicked, sameServer, setSameSer
           <FavouritesRow accounts={accounts} active={draft.favId} onPick={onPickFavourite} />
         </section>
 
-        <section aria-labelledby="play-ready" className="panel flex flex-col gap-4 p-5">
+        <section aria-labelledby="play-ready" className="play-ready panel flex flex-col gap-4 p-5">
           <BatchSection accounts={accounts} onPick={setPicked} />
           <div className="flex items-center gap-3">
             <span aria-hidden="true" className="num">3</span>

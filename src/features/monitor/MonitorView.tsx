@@ -96,8 +96,8 @@ export function MonitorView({ accounts }: { accounts: AccountSummary[] }) {
   const gpuMemNow = list.some((m) => m.gpuMemMb !== null) ? list.reduce((n, m) => n + (m.gpuMemMb ?? 0), 0) : null;
 
   return (
-    <main className="scroll flex-1 min-w-0 px-8 pt-5 pb-12">
-      <div className="enter max-w-[1100px] flex flex-col">
+    <main className="page-shell scroll flex-1 min-w-0 pt-5 pb-12">
+      <div className="enter w-full min-w-0 flex flex-col">
         <h1 className="page-title">{t("monitor.title")}</h1>
         <p className="page-sub">{t("monitor.intro")}</p>
 

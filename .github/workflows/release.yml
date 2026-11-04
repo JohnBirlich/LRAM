@@ -143,6 +143,7 @@ jobs:
           cat > ../notes.md <<EOF
           ## LRAM $VERSION
 
+          - Responsive full-width Play, Settings, Performance and Monitor pages; two-column Play layout on wide windows.
           - Experimental ULTRA performance preset: low FPS/graphics, tiny windows and background CPU/Eco limits. No fixed RAM, CPU or client-count guarantee.
           - Configurable monitor grid and clearer per-client resource usage/applied limits.
           - Based on 0.12.3 application code, with updated LRAM documentation and repository links.

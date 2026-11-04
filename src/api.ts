@@ -194,8 +194,6 @@ export const api = {
   multiInstanceStatus: () => invoke<MultiInstanceStatus>("multi_instance_status"),
   multiInstanceSet: (enabled: boolean) => invoke<MultiInstanceStatus>("multi_instance_set", { enabled }),
 
-  multiInstanceTakeOver: () => invoke<MultiInstanceStatus>("multi_instance_take_over"),
-
   robloxCloseAll: (force: boolean) => invoke<MultiInstanceStatus>("roblox_close_all", { force }),
 
   panicKill: () => invoke<MultiInstanceStatus>("panic_kill"),

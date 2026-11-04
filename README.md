@@ -441,9 +441,11 @@ The installer isn't code-signed yet, so SmartScreen doesn't recognise it. Check 
 
 A few engines (Arctic Wolf, DeepInstinct, SecureAge, Skyhigh) score unsigned installers on
 reputation and entropy rather than on anything the file does, and a compressed Inno Setup installer
-looks like a packer to them. That is why the count is small and the same engines appear on every
-release. Code signing is the fix and is not done yet; [docs/ANTIVIRUS.md](docs/ANTIVIRUS.md) has what
-each flag means, how to report it to the vendor, and how to check the file yourself.
+looks like a packer to them. Windows Defender can go further and convict a build from its behaviour
+alone (`Behavior:Win32/DefenseEvasion.A!ml`) — a cloud guess, pinned to that file's hash, and only
+Microsoft can clear it. Code signing is the fix and is not done yet; [docs/ANTIVIRUS.md](docs/ANTIVIRUS.md)
+has what each flag means, what LRAM does that looks suspicious and what was removed, how to report
+it, and how to check the file yourself.
 
 </details>
 
@@ -543,7 +545,7 @@ flowchart LR
 | [`vault/`](src-tauri/src/vault) | Envelope encryption: one random data key encrypts every secret (AES-256-GCM, row-bound AAD). The key is wrapped with DPAPI, or with an Argon2id key from the master password and then DPAPI. Windows Hello re-auth, `.lram` backups. |
 | [`roblox_api/`](src-tauri/src/roblox_api) | The one typed Roblox client. Every URL in `endpoints.rs`. CSRF from the real request's 403, per-route queues driven by `x-ratelimit-*`, rotated `.ROBLOSECURITY` saved atomically, three error-body shapes parsed. |
 | [`launcher/`](src-tauri/src/launcher) | `target.rs` parses any pasted link locally; `uri.rs` builds the `roblox-player:` URI exactly like the website; `bulk.rs` runs batches and same-server; `client_settings.rs` the FPS cap and lowest graphics; `flags.rs` the rendering flags; `update.rs` + `authenticode.rs` install Roblox updates after `WinVerifyTrust`. |
-| [`instances/`](src-tauri/src/instances) | `tracker.rs` ties each client to its account by PID, start time and log file; `logwatch.rs` reads job IDs and disconnects; `rejoin.rs` and the crash breaker; `limits.rs` CPU caps, affinity, efficiency mode, trims; `metrics.rs`; `multi.rs` the singleton lock and take-over; `capture.rs` live previews; `window.rs` hidden clients, micro and tile; `resize.rs` free resizing; `qos.rs`; `afk.rs`. |
+| [`instances/`](src-tauri/src/instances) | `tracker.rs` ties each client to its account by PID, start time and log file; `logwatch.rs` reads job IDs and disconnects; `rejoin.rs` and the crash breaker; `limits.rs` CPU caps, affinity, efficiency mode, trims; `metrics.rs`; `multi.rs` the singleton lock; `capture.rs` live previews; `window.rs` hidden clients, micro and tile; `resize.rs` free resizing; `qos.rs`; `afk.rs`. |
 | [`discord.rs`](src-tauri/src/discord.rs) | Webhook alerts: host-checked URL, events coalesced every 2 s, `retry_after` honoured. |
 | [`webview.rs`](src-tauri/src/webview.rs) | Sign-in and session windows on temporary WebView2 profiles, deleted after use. |
 | [`storage/`](src-tauri/src/storage) | SQLite through `rusqlite` with numbered migrations. Running clients live in memory only. |
@@ -568,8 +570,8 @@ flowchart LR
 
 Every sample or change opens a short-lived handle checked against the client's start time, with only the right it
 needs: `PROCESS_QUERY_LIMITED_INFORMATION` for metrics, `PROCESS_SET_QUOTA` for trims, `PROCESS_SET_INFORMATION` for
-affinity and efficiency mode. Never `PROCESS_VM_READ`; `PROCESS_DUP_HANDLE` only for a take-over you start. Only the
-CPU-cap job handle is kept.
+affinity and efficiency mode. Never `PROCESS_VM_READ` and never `PROCESS_DUP_HANDLE`: nothing in LRAM reaches into a client's
+handles or memory. Only the CPU-cap job handle is kept.
 
 </details>
 

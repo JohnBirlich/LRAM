@@ -353,13 +353,13 @@ export function useMultiToggle(onStatus?: (s: MultiInstanceStatus) => void) {
 export function MultiNotice({ wanted, replaces, className = "" }: { wanted: boolean; replaces?: boolean; className?: string }) {
   const qc = useQueryClient();
   const status = useMultiStatus().data;
-  const [confirm, setConfirm] = useState<"close" | "takeOver" | null>(null);
+  const [confirm, setConfirm] = useState<"close" | null>(null);
   const [busy, setBusy] = useState(false);
   const apply = (s: MultiInstanceStatus) => qc.setQueryData(qk.multi, s);
   const { toggle, dialog } = useMultiToggle();
   const run = () => {
     setBusy(true);
-    (confirm === "takeOver" ? api.multiInstanceTakeOver() : api.robloxCloseAll(false))
+    api.robloxCloseAll(false)
       .then(apply, toastError)
       .finally(() => {
         setBusy(false);
@@ -390,9 +390,6 @@ export function MultiNotice({ wanted, replaces, className = "" }: { wanted: bool
                   <button className="btn btn-sm" onClick={() => setConfirm("close")}>
                     {t("launch.multi.closeRobloxEllipsis")}
                   </button>
-                  <button className="btn btn-sm" onClick={() => setConfirm("takeOver")}>
-                    {t("launch.multi.takeOverEllipsis")}
-                  </button>
                 </div>
               ) : (
                 <button className="btn btn-sm" onClick={() => api.multiInstanceSet(true).then(apply, toastError)}>{t("common.tryAgain")}</button>
@@ -409,15 +406,6 @@ export function MultiNotice({ wanted, replaces, className = "" }: { wanted: bool
         title={t("launch.multi.closeTitle")}
         text={t("launch.multi.closeText", { count: status.blockedBy.length })}
         confirmLabel={t("launch.multi.closeRoblox")}
-      />
-      <ConfirmDialog
-        open={confirm === "takeOver"}
-        onClose={() => !busy && setConfirm(null)}
-        onConfirm={run}
-        busy={busy}
-        title={t("launch.multi.takeOverTitle")}
-        text={t("launch.multi.takeOverText", { count: status.blockedBy.length })}
-        confirmLabel={t("launch.multi.takeOver")}
       />
       {dialog}
     </>

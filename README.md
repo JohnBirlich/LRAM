@@ -1,13 +1,13 @@
 <div align="center">
 
-# LLRAM
+# LRAM
 
 ### Every Roblox account you own, signed in, checked and one click from any game.
 
 A fast, local-only account manager and multi-client launcher for Windows.<br>
 Your cookies stay encrypted on your PC. Nothing is sent anywhere except Roblox.
 
-<sub>**LLRAM** — Local Roblox Account Manager, a fork of **[RoALT](https://github.com/inspectsoftware/RoALT)**
+<sub>**LRAM** — Local Roblox Account Manager, a fork of **[RoALT](https://github.com/inspectsoftware/RoALT)**
 by **[inspectsoftware](https://github.com/inspectsoftware)**. A personal build: the built-in updater is off
 (no release key ships with it), donations and the community Discord server of the original project are
 not part of it, and releases are installed by hand.</sub>
@@ -32,7 +32,7 @@ not part of it, and releases are installed by hand.</sub>
 
 <br>
 
-<img src="docs/images/banner.png" alt="LLRAM — Local Roblox Account Manager" width="900">
+<img src="docs/images/banner.png" alt="LRAM — Local Roblox Account Manager" width="900">
 
 </div>
 
@@ -42,7 +42,7 @@ not part of it, and releases are installed by hand.</sub>
 
 | For everyone | For developers |
 |---|---|
-| [What is LLRAM?](#-what-is-lLRAM) | [Architecture](#-architecture) |
+| [What is LRAM?](#-what-is-lLRAM) | [Architecture](#-architecture) |
 | [Features](#-features) | [Tech stack](#-tech-stack) |
 | [Install](#-install) | [Build from source](#-build-from-source) |
 | [Quick start](#-quick-start) | [Project layout](#-project-layout) |
@@ -53,19 +53,19 @@ not part of it, and releases are installed by hand.</sub>
 
 <br>
 
-## 💡 What is LLRAM?
+## 💡 What is LRAM?
 
 If you play Roblox on more than one account, you know the routine: sign out, sign in, find the game again,
-and only ever one client open at a time. LLRAM removes all of that.
+and only ever one client open at a time. LRAM removes all of that.
 
-- **Add each account once**, through Roblox's own sign-in page. LLRAM keeps it signed in.
+- **Add each account once**, through Roblox's own sign-in page. LRAM keeps it signed in.
 - **See every account at a glance**: online status, Robux, friends, whether the sign-in still works.
 - **Paste any game link** and launch one account, or ten, into it. Even into the same server.
-- **Run several Roblox windows side by side**, and let LLRAM bring back any that crash or get kicked.
+- **Run several Roblox windows side by side**, and let LRAM bring back any that crash or get kicked.
 
-It runs entirely on your PC. There is no LLRAM account, no LLRAM server and no tracking.
+It runs entirely on your PC. There is no LRAM account, no LRAM server and no tracking.
 
-LLRAM is a fork of **[RoALT](https://github.com/inspectsoftware/RoALT)**, the local-only Roblox account
+LRAM is a fork of **[RoALT](https://github.com/inspectsoftware/RoALT)**, the local-only Roblox account
 manager by **[inspectsoftware](https://github.com/inspectsoftware)** — see [A fork of RoALT](#-a-fork-of-roalt).
 
 | | |
@@ -102,7 +102,7 @@ favourites, search and filters. Check sign-ins, one or all, in a click.
 
 ### 🚀 Launch anything
 Paste a game link, place ID, job ID, private server or share link, a profile or `@username`:
-LLRAM works out what it is. Join a friend, or save a target as a favourite.
+LRAM works out what it is. Join a friend, or save a target as a favourite.
 
 </td>
 <td valign="top">
@@ -169,14 +169,14 @@ it is signed by Roblox Corporation. Optional auto-update when no client runs.
 Browser-style **account tabs**, each with its own game and options. Every running client as a live preview,
 even hidden ones, in cards you can drag and resize, with dials for what your clients use. Right-click one to
 focus, minimize, shrink it, limit it or close it. Tile all clients in one click, or let **Arrange windows on launch** place each new client next to the ones already up. Anti-AFK has its own switch here.
-Prefer vertical tabs? Put your accounts on the side and LLRAM's sections along the top, and drag either into your own order.
+Prefer vertical tabs? Put your accounts on the side and LRAM's sections along the top, and drag either into your own order.
 
 </td>
 <td valign="top">
 
 ### 🛡️ Public networks
 Windows calls some networks **Public** (café, hotel, school Wi-Fi). Turn off **Allow public networks** in Settings,
-Security, and LLRAM won't launch on them and a master-password vault locks there. It is on by default.
+Security, and LRAM won't launch on them and a master-password vault locks there. It is on by default.
 
 </td>
 </tr>
@@ -206,8 +206,8 @@ translation layer to keep in step.
 </td>
 <td valign="top">
 
-### ❤️ Support LLRAM
-LLRAM is free. The **Donate** button in the sidebar opens a [Roblox gamepass](https://www.roblox.com/games/102259086923102/Donation-Experience#!/store)
+### ❤️ Support LRAM
+LRAM is free. The **Donate** button in the sidebar opens a [Roblox gamepass](https://www.roblox.com/games/102259086923102/Donation-Experience#!/store)
 for the amount you pick, and you confirm the purchase on Roblox.
 
 </td>
@@ -225,15 +225,15 @@ for the amount you pick, and you confirm the purchase on Roblox.
 | 🚀 **Play** | Game links, place IDs, `roblox://` links, job IDs, private server links, `roblox.com/share` links (both formats), universes, profiles, `@username`. Join a friend or one of your other accounts. Favourites on the Play page and in the tray. `Ctrl+Enter` to launch. |
 | 🪟 **Batches** | Accounts launch strictly one after another with a stagger (default 6 s). **Same server**: *Pick a server* finds one with room for everyone first; *Follow the first* sends the rest to wherever the first account landed. Cancel at any time; one click re-picks the accounts that didn't launch. |
 | 🔁 **Recovery** | Auto-rejoin after kicks, shutdowns and lost connections (not after you leave on purpose). Opt-in auto-restart for crashes, frozen windows (30 s) and a memory limit. Crash breaker: default 3 relaunches in 10 minutes, with growing backoff. Per-account "Allow disconnect". Crash history with the log's reason. |
-| ↔️ **Free resizing** | Drag a client's edge to any size, past the minimum Roblox holds its window to, and move a small window by its title bar without it growing back. LLRAM sizes the window itself (a mouse hook in LLRAM's own process); nothing goes into the client. **Start clients tiny** opens every new client at a size you choose. |
-| 🖥️ **Home** | Live preview for every client at 5, 15, 30 or 60 FPS, even hidden ones, with state, game, uptime, CPU and LRAM. Drag cards to sort them and resize them from the corner; **Detailed view** off shows only the preview and username. Dials show what all Roblox clients use together. Browser-style **account tabs** give each account its own game and options, and launch one or all of them. **Tab layout** (Settings or the title bar) moves accounts to a list on the side and LLRAM's sections to tabs along the top. Drag accounts and sections to sort them, or use `Alt` and the arrow keys; the order is saved, and a launch of all tabs follows it. The **⋯** key, right-click, the menu key or `Shift+F10` for focus, minimize, restore, tiny window (any size, 320×240 by default) and back, CPU limit, efficiency mode, anti-AFK, close. **Tile** fits all clients in a grid on the screen; **Tile micro** lays out micro windows; with **Arrange windows on launch** that happens by itself whenever a client reaches a game. Minimize all, Restore all. |
+| ↔️ **Free resizing** | Drag a client's edge to any size, past the minimum Roblox holds its window to, and move a small window by its title bar without it growing back. LRAM sizes the window itself (a mouse hook in LRAM's own process); nothing goes into the client. **Start clients tiny** opens every new client at a size you choose. |
+| 🖥️ **Home** | Live preview for every client at 5, 15, 30 or 60 FPS, even hidden ones, with state, game, uptime, CPU and LRAM. Drag cards to sort them and resize them from the corner; **Detailed view** off shows only the preview and username. Dials show what all Roblox clients use together. Browser-style **account tabs** give each account its own game and options, and launch one or all of them. **Tab layout** (Settings or the title bar) moves accounts to a list on the side and LRAM's sections to tabs along the top. Drag accounts and sections to sort them, or use `Alt` and the arrow keys; the order is saved, and a launch of all tabs follows it. The **⋯** key, right-click, the menu key or `Shift+F10` for focus, minimize, restore, tiny window (any size, 320×240 by default) and back, CPU limit, efficiency mode, anti-AFK, close. **Tile** fits all clients in a grid on the screen; **Tile micro** lays out micro windows; with **Arrange windows on launch** that happens by itself whenever a client reaches a game. Minimize all, Restore all. |
 | 🛑 **Stop all** | Hold one button in the sidebar, use the tray, or press a global **panic hotkey** you choose (off by default) to end every Roblox process and stop pending launches and rejoins. |
 | 🧱 **Language** | English only, in the interface and in every log line and error message. |
-| ⏲️ **Automation** | Minimize each new client on launch. Auto-shutdown timer: close the clients and shut the PC down at a set time (survives a LLRAM restart, can be cancelled). Hourly Roblox log cleaner (logs older than a day or over 50 MB). Open logs button; LLRAM's own logs rotate at 5 MB. |
+| ⏲️ **Automation** | Minimize each new client on launch. Auto-shutdown timer: close the clients and shut the PC down at a set time (survives a LRAM restart, can be cancelled). Hourly Roblox log cleaner (logs older than a day or over 50 MB). Open logs button; LRAM's own logs rotate at 5 MB. |
 | ⚙️ **Launch control** | Custom launch arguments (default and per account, checked before use and never logged), a cooldown between launches, a configurable close grace (1–60 s). |
 | 🎚️ **Limits** | Per client: CPU cap, efficiency mode, core affinity, working-set trim (every N minutes and sooner if a background client grows, or "Page memory out now"). A trim lowers the Memory column for a while; commit size doesn't change. Adaptive manager for background clients; a limit you set on a client wins for that limit. **Memory throttle**: a client whose commit size is over a limit gets a CPU cap, which lowers its fLRAMe rate, until it drops under 90 % of the limit. It doesn't free memory; only **Restart on high memory** does, and that disconnects the client. |
-| 🎞️ **FPS cap & graphics** | A default fLRAMe-rate cap (5–360), a per-account override and a per-launch one under Play's More options (a rejoin keeps it), plus the lowest graphics for every client (on by default). Set through Roblox's own Maximum FLRAMe Rate and Graphics Quality just before each client starts; your own Roblox settings are put back once it has read them, and again when such a client closes (or when LLRAM next starts, if it wasn't running then). Everything performance-related lives in its own **Performance** tab. |
-| 🪶 **Lighter rendering** | Clients LLRAM starts get low geometry detail and the graphics flags below (on by default): less GPU time and memory per client. Written just before each client starts and put back once it has read them; skipped under a bootstrapper. |
+| 🎞️ **FPS cap & graphics** | A default fLRAMe-rate cap (5–360), a per-account override and a per-launch one under Play's More options (a rejoin keeps it), plus the lowest graphics for every client (on by default). Set through Roblox's own Maximum FLRAMe Rate and Graphics Quality just before each client starts; your own Roblox settings are put back once it has read them, and again when such a client closes (or when LRAM next starts, if it wasn't running then). Everything performance-related lives in its own **Performance** tab. |
+| 🪶 **Lighter rendering** | Clients LRAM starts get low geometry detail and the graphics flags below (on by default): less GPU time and memory per client. Written just before each client starts and put back once it has read them; skipped under a bootstrapper. |
 | 🎚️ **Graphics flags** | Pick MSAA, texture quality, rendering mode, gray sky, no grass and lowest render quality, from the FastFlags Roblox still allows. Roblox may ignore Vulkan and OpenGL. |
 | 👑 **Main account** | Mark an account **Full quality** and its clients keep your own Roblox graphics, without lowest graphics or lighter rendering. |
 | 🕘 **Recent servers** | Each account remembers the servers it reached (stored on this PC); rejoin a public one in a click. |
@@ -242,8 +242,8 @@ for the amount you pick, and you confirm the purchase on Roblox.
 | 📶 **Bandwidth** | One upload cap for all Roblox clients through a Windows QoS policy. Applied only when you click Apply (admin prompt); cleared when Windows restarts. |
 | 💤 **Anti-AFK** | Off by default, with a switch on Home. While you are away from the PC, every few minutes each client is briefly brought to the front and gets one Space press, so Roblox doesn't kick it after 20 idle minutes. Hidden and minimized clients get it too, invisibly. Stops the moment you touch the mouse. Or **in the background**: a Tab press is posted to the window without bringing it to the front, even when minimized (Roblox may not count it in every game; auto-rejoin stays the fallback). Per-client opt-out. |
 | 🔔 **Discord** | Crash, disconnect, restart and batch alerts, plus an opt-in alert when a client gets into a game. Mute alerts per account. |
-| 🔄 **LLRAM updates** | Looks for a new LLRAM on GitHub Releases at start and every 6 hours (can be turned off; *Check now* in Settings). A banner offers it; *Update now* downloads it, checks its release signature, installs it silently and restarts LLRAM. Never installs on its own. |
-| 🧰 **Comfort** | Tray menu with favourites, close to tray, relaunch an ended client in one click, movable data folder, keyboard shortcuts. Dark, light or system theme, any accent colour, and your own background image, with a choice of how much the theme covers it. Optional skip of the splash screen. Your LLRAM and Roblox versions at the top of Settings. |
+| 🔄 **LRAM updates** | Looks for a new LRAM on GitHub Releases at start and every 6 hours (can be turned off; *Check now* in Settings). A banner offers it; *Update now* downloads it, checks its release signature, installs it silently and restarts LRAM. Never installs on its own. |
+| 🧰 **Comfort** | Tray menu with favourites, close to tray, relaunch an ended client in one click, movable data folder, keyboard shortcuts. Dark, light or system theme, any accent colour, and your own background image, with a choice of how much the theme covers it. Optional skip of the splash screen. Your LRAM and Roblox versions at the top of Settings. |
 
 </details>
 
@@ -251,25 +251,25 @@ for the amount you pick, and you confirm the purchase on Roblox.
 
 ## 📥 Install
 
-1. Download **`LLRAM-Setup-<version>.exe`** from the [latest release](https://github.com/JohnBirlich/LRAM/releases/latest).
-2. Run it. No admin rights needed; it installs to `%LOCALAPPDATA%\ProgLRAMs\LLRAM`.
-3. Start LLRAM from the Start menu or the desktop icon.
+1. Download **`LRAM-Setup-<version>.exe`** from the [latest release](https://github.com/JohnBirlich/LRAM/releases/latest).
+2. Run it. No admin rights needed; it installs to `%LOCALAPPDATA%\ProgLRAMs\LRAM`.
+3. Start LRAM from the Start menu or the desktop icon.
 
 | Requirement | |
 |---|---|
 | Windows | 10 (1809 or later) or 11, x64 |
 | WebView2 Runtime | Built into Windows 11. Setup offers to download it when missing. |
-| Roblox | Installed normally (LLRAM can install or update it for you) |
+| Roblox | Installed normally (LRAM can install or update it for you) |
 
 > [!NOTE]
 > The installer isn't code-signed yet, so Windows SmartScreen warns on first run. To be sure the file is genuine,
 > compare its SHA-256 with `SHA256SUMS.txt` on the release page, then choose **More info → Run anyway**.
 >
 > ```powershell
-> Get-FileHash .\LLRAM-Setup-0.9.0.exe -Algorithm SHA256
+> Get-FileHash .\LRAM-Setup-0.9.0.exe -Algorithm SHA256
 > ```
 
-Your accounts and settings live in `%LOCALAPPDATA%\LLRAM`. Uninstalling keeps them unless you tick
+Your accounts and settings live in `%LOCALAPPDATA%\LRAM`. Uninstalling keeps them unless you tick
 **"also delete my data"**.
 
 <br>
@@ -281,7 +281,7 @@ Your accounts and settings live in `%LOCALAPPDATA%\LLRAM`. Uninstalling keeps th
 <br>
 
 Press **Add account** (or `Ctrl+N`). A clean Roblox sign-in window opens: sign in as usual, including 2-step or
-passkeys. LLRAM keeps the sign-in, closes the window and throws its browser profile away. You can also paste a
+passkeys. LRAM keeps the sign-in, closes the window and throws its browser profile away. You can also paste a
 `.ROBLOSECURITY` cookie; it is checked before it is saved.
 
 </details>
@@ -291,7 +291,7 @@ passkeys. LLRAM keeps the sign-in, closes the window and throws its browser prof
 <br>
 
 By default the vault is locked to your Windows account, so it opens silently. For extra protection, set a master
-password in **Settings**. LLRAM then asks for it on start and locks itself after you've been idle.
+password in **Settings**. LRAM then asks for it on start and locks itself after you've been idle.
 
 </details>
 
@@ -308,8 +308,8 @@ Pick several accounts to launch a batch. Under **More options**, turn on **Same 
 <summary><b>4. Run several clients at once</b></summary>
 <br>
 
-**Multi-instance** is on by default (the switch is in **Settings → Launching**); start LLRAM before Roblox. If Roblox is already open, LLRAM says so and offers
-**Close Roblox** or **Take over**. Every client LLRAM starts shows up on **Home**
+**Multi-instance** is on by default (the switch is in **Settings → Launching**); start LRAM before Roblox. If Roblox is already open, LRAM says so and offers
+**Close Roblox** or **Take over**. Every client LRAM starts shows up on **Home**
 (`Ctrl+1`), with its state, server and uptime.
 
 </details>
@@ -345,23 +345,23 @@ In **Settings → Launching**, turn on **Auto-rejoin** (and, if you like, **Auto
 <tr>
 <td width="50%" valign="top">
 
-#### ✅ What LLRAM does
+#### ✅ What LRAM does
 
-- Talks **only** to `*.roblox.com` and `*.rbxcdn.com`, plus GitHub to look for LLRAM updates (can be turned off), and your Discord webhook.
+- Talks **only** to `*.roblox.com` and `*.rbxcdn.com`, plus GitHub to look for LRAM updates (can be turned off), and your Discord webhook.
 - Encrypts every cookie with **AES-256-GCM** under a key protected by **Windows DPAPI**, plus your master password if you set one.
 - Encrypts the **whole database** too (SQLCipher, AES-256), with its own DPAPI-protected key: a copied `roalt.db` can't be read on another PC or Windows account.
 - Signs you in through **Roblox's own page**, in a throw-away browser profile.
 - Installs Roblox updates **only** when the installer is signed by Roblox Corporation.
-- Updates itself **only** when you click Update now, and only with an installer that carries LLRAM's release signature.
+- Updates itself **only** when you click Update now, and only with an installer that carries LRAM's release signature.
 - Redacts launch tickets from anything it reads in Roblox's logs.
 
 </td>
 <td width="50%" valign="top">
 
-#### 🚫 What LLRAM never does
+#### 🚫 What LRAM never does
 
 - **Never** reads or writes the Roblox client's memory or files, with two exceptions for the clients it starts: Roblox's own settings file (`GlobalBasicSettings_13.xml`, only the fLRAMe-rate cap and graphics quality) and the allowlisted rendering flags in the version folder's `ClientSettings\ClientAppSettings.json`. Both are put back as they were once the client has read them.
-- **Never** sends telemetry. There is no LLRAM server and no LLRAM account.
+- **Never** sends telemetry. There is no LRAM server and no LRAM account.
 - **Never** writes cookies, tickets or launch arguments to its logs.
 - **Never** changes Windows settings, except the opt-in bandwidth limit.
 - **Never** contacts Discord's servers unless you paste a webhook.
@@ -379,37 +379,37 @@ In **Settings → Launching**, turn on **Auto-rejoin** (and, if you like, **Auto
   Nothing is sent while the vault is locked.
 - **Roblox updates** come from Roblox only: the version from `clientsettingscdn.roblox.com`, the installer from
   `setup.rbxcdn.com`, run only when its signature checks out as Roblox Corporation's.
-- **LLRAM updates** are looked up on GitHub (`api.github.com`, this repository's latest published release) as soon
-  as LLRAM starts and every 6 hours, unless you turn *Check for LLRAM updates* off in Settings. The request carries only
-  `LLRAM/<version>` as its user agent. When you click Update now, the installer and its `.sig` are downloaded from
+- **LRAM updates** are looked up on GitHub (`api.github.com`, this repository's latest published release) as soon
+  as LRAM starts and every 6 hours, unless you turn *Check for LRAM updates* off in Settings. The request carries only
+  `LRAM/<version>` as its user agent. When you click Update now, the installer and its `.sig` are downloaded from
   `github.com` (GitHub's own download hosts only), and the installer runs only if its ECDSA P-256 signature checks out
-  against the public key built into LLRAM. The signature covers the version too, so the release must be newer than
-  the LLRAM you run and the installer must be the one signed for that version. It installs silently, and LLRAM starts again.
-  Roblox clients keep running through it, and the restarted LLRAM follows them again (also after you close and reopen
-  LLRAM). Their limits are lifted while LLRAM is closed and set again when it starts.
-- **Multi-instance** works by creating one named Windows object before Roblox starts. LLRAM also holds Roblox's shared
+  against the public key built into LRAM. The signature covers the version too, so the release must be newer than
+  the LRAM you run and the installer must be the one signed for that version. It installs silently, and LRAM starts again.
+  Roblox clients keep running through it, and the restarted LRAM follows them again (also after you close and reopen
+  LRAM). Their limits are lifted while LRAM is closed and set again when it starts.
+- **Multi-instance** works by creating one named Windows object before Roblox starts. LRAM also holds Roblox's shared
   sign-in files while its clients run, so clients can't sign each other out.
-- **Limits** go through Windows itself (job objects, priority, affinity). LLRAM only ever opens a client with the
+- **Limits** go through Windows itself (job objects, priority, affinity). LRAM only ever opens a client with the
   narrow rights a change needs, never to read its memory.
-- **Take over (on request)** closes the one "Roblox is already running" lock inside an open Roblox, so LLRAM's clients
+- **Take over (on request)** closes the one "Roblox is already running" lock inside an open Roblox, so LRAM's clients
   can run next to it. It needs to copy that one handle (`PROCESS_DUP_HANDLE`) and never reads or writes the client's memory.
 - **Anti-AFK (opt-in)** briefly brings a client to the front and presses Space the way a keyboard does, or, in background
   mode, posts a Tab press to its window.
 - **Window tools** (previews, hide, micro, tile) use ordinary Windows calls: Windows.Graphics.Capture for previews, and
   `ShowWindow`, `SetWindowPos`, `SetWindowLongPtr` and `SetLayeredWindowAttributes` for the rest. A hidden client gets the
-  layered and click-through window styles at alpha 1. Clean exit and panics clear them; if LLRAM is killed outright, the
-  client stays invisible until LLRAM starts again.
+  layered and click-through window styles at alpha 1. Clean exit and panics clear them; if LRAM is killed outright, the
+  client stays invisible until LRAM starts again.
 - **Free resizing and hidden clients** use a low-level mouse hook and window-event hooks (foreground, Alt-Tab, minimize,
-  drags) in LLRAM's own process. They see where the mouse is and which window changes across the PC, and store and send
-  nothing. A press only acts on the edge or title bar of a client LLRAM started; a press on the taskbar or its thumbnails
+  drags) in LRAM's own process. They see where the mouse is and which window changes across the PC, and store and send
+  nothing. A press only acts on the edge or title bar of a client LRAM started; a press on the taskbar or its thumbnails
   is only noted, for a moment, as you asking for a hidden client back.
-- **Bandwidth limit (opt-in)** adds a Windows QoS policy named `LLRAM-Roblox` through an admin prompt, only when you click
-  Apply. Windows drops it on restart. It is the only change LLRAM makes to Windows.
+- **Bandwidth limit (opt-in)** adds a Windows QoS policy named `LRAM-Roblox` through an admin prompt, only when you click
+  Apply. Windows drops it on restart. It is the only change LRAM makes to Windows.
 
 </details>
 
 > [!IMPORTANT]
-> Your `.ROBLOSECURITY` cookie is the key to your account. LLRAM keeps it encrypted, but never share a cookie,
+> Your `.ROBLOSECURITY` cookie is the key to your account. LRAM keeps it encrypted, but never share a cookie,
 > a `.lLRAM` backup or its password with anyone, including people who say they are helping you.
 
 <br>
@@ -417,12 +417,12 @@ In **Settings → Launching**, turn on **Auto-rejoin** (and, if you like, **Auto
 ## ❓ FAQ
 
 <details>
-<summary><b>Is LLRAM safe to use with my account?</b></summary>
+<summary><b>Is LRAM safe to use with my account?</b></summary>
 <br>
 
-LLRAM signs in the same way the Roblox website does and never touches the Roblox client. Roblox has said that
+LRAM signs in the same way the Roblox website does and never touches the Roblox client. Roblox has said that
 multi-instance methods which don't modify the client are not affected by its modified-client enforcement, but it
-doesn't officially support running several clients at once. Use LLRAM only with accounts you own.
+doesn't officially support running several clients at once. Use LRAM only with accounts you own.
 
 </details>
 
@@ -444,7 +444,7 @@ reputation and entropy rather than on anything the file does, and a compressed I
 looks like a packer to them. Windows Defender can go further and convict a build from its behaviour
 alone (`Behavior:Win32/DefenseEvasion.A!ml`) — a cloud guess, pinned to that file's hash, and only
 Microsoft can clear it. Code signing is the fix and is not done yet; [docs/ANTIVIRUS.md](docs/ANTIVIRUS.md)
-has what each flag means, what LLRAM does that looks suspicious and what was removed, how to report
+has what each flag means, what LRAM does that looks suspicious and what was removed, how to report
 it, and how to check the file yourself.
 
 </details>
@@ -453,8 +453,8 @@ it, and how to check the file yourself.
 <summary><b>Multi-instance says Roblox is already running.</b></summary>
 <br>
 
-Roblox's tray app or an open client already holds the lock LLRAM needs. Click **Close Roblox** when LLRAM offers it, then
-launch from LLRAM. To keep that client open, click **Take over** instead.
+Roblox's tray app or an open client already holds the lock LRAM needs. Click **Close Roblox** when LRAM offers it, then
+launch from LRAM. To keep that client open, click **Take over** instead.
 
 </details>
 
@@ -480,7 +480,7 @@ password. The code works once and you get a new one. It's optional: make one whe
   `.lLRAM` backup does.
 
 Without a code the password can't be recovered: that is what makes it safe. Remove the data folder
-(`%LOCALAPPDATA%\LLRAM`) and add your accounts again, or import a `.lLRAM` backup whose password you know.
+(`%LOCALAPPDATA%\LRAM`) and add your accounts again, or import a `.lLRAM` backup whose password you know.
 
 </details>
 
@@ -488,8 +488,8 @@ Without a code the password can't be recovered: that is what makes it safe. Remo
 <summary><b>Does it work with Bloxstrap?</b></summary>
 <br>
 
-Yes. LLRAM launches through the registered bootstrapper and follows its clients. It won't install Roblox updates over a
-bootstrapper, since the bootstrapper keeps Roblox up to date itself. LLRAM's graphics flags are skipped there, because a
+Yes. LRAM launches through the registered bootstrapper and follows its clients. It won't install Roblox updates over a
+bootstrapper, since the bootstrapper keeps Roblox up to date itself. LRAM's graphics flags are skipped there, because a
 bootstrapper writes its own.
 
 </details>
@@ -498,7 +498,7 @@ bootstrapper writes its own.
 <summary><b>Where is my data? Can I move it?</b></summary>
 <br>
 
-In `%LOCALAPPDATA%\LLRAM`. **Settings → Data** opens it or moves it to another folder or drive.
+In `%LOCALAPPDATA%\LRAM`. **Settings → Data** opens it or moves it to another folder or drive.
 
 </details>
 
@@ -521,7 +521,7 @@ Questions, ideas or bug reports? Open an **[issue](https://github.com/JohnBirlic
 
 ## 🧭 Architecture
 
-LLRAM is a [Tauri 2](https://tauri.app) app: a Rust backend that owns every secret, process and network call, and a
+LRAM is a [Tauri 2](https://tauri.app) app: a Rust backend that owns every secret, process and network call, and a
 React UI that talks to it over typed IPC. The UI never sees a cookie unless you reveal one.
 
 ```mermaid
@@ -570,7 +570,7 @@ flowchart LR
 
 Every sample or change opens a short-lived handle checked against the client's start time, with only the right it
 needs: `PROCESS_QUERY_LIMITED_INFORMATION` for metrics, `PROCESS_SET_QUOTA` for trims, `PROCESS_SET_INFORMATION` for
-affinity and efficiency mode. Never `PROCESS_VM_READ` and never `PROCESS_DUP_HANDLE`: nothing in LLRAM reaches into a client's
+affinity and efficiency mode. Never `PROCESS_VM_READ` and never `PROCESS_DUP_HANDLE`: nothing in LRAM reaches into a client's
 handles or memory. Only the CPU-cap job handle is kept.
 
 </details>
@@ -600,7 +600,7 @@ What each milestone added and how to test it is in [docs/MILESTONES.md](docs/MIL
 
 ```powershell
 git clone https://github.com/JohnBirlich/LRAM.git
-cd LLRAM
+cd LRAM
 npm ci
 npm run tauri dev        # run the app with hot reload
 ```
@@ -611,11 +611,11 @@ npm run tauri dev        # run the app with hot reload
 | `npm run dev` | Runs the UI alone in a browser, against a built-in mock of the backend (`src/dev/mockIpc.ts`). |
 | `npm run build` | Type-checks and builds the UI into `dist/`. |
 | `npm run bindings` | Regenerates the TypeScript types in `src/bindings/` from the Rust types. Run it after changing a `#[ts(export)]` type. |
-| `powershell -ExecutionPolicy Bypass -File scripts\build-installer.ps1` | Release build plus installer: `dist-installer\LLRAM-Setup-<version>.exe` and its SHA-256. |
-| `…\build-installer.ps1 -Dev` | Also keeps `installers\LLRAM-Setup-<version>-dev-<stamp>.exe`, one per change. |
+| `powershell -ExecutionPolicy Bypass -File scripts\build-installer.ps1` | Release build plus installer: `dist-installer\LRAM-Setup-<version>.exe` and its SHA-256. |
+| `…\build-installer.ps1 -Dev` | Also keeps `installers\LRAM-Setup-<version>-dev-<stamp>.exe`, one per change. |
 
 > [!TIP]
-> Set `LLRAM_DATA_DIR` to a scratch folder to run a build without touching your real accounts.
+> Set `LRAM_DATA_DIR` to a scratch folder to run a build without touching your real accounts.
 
 <br>
 
@@ -638,7 +638,7 @@ npm run tauri dev        # run the app with hot reload
 │  │  ├─ discord.rs  webview.rs  tray.rs  error.rs
 │  ├─ tests/fixtures/      recorded Roblox responses (no real cookies)
 │  └─ tauri.conf.json
-├─ installer/LLRAM.iss     Inno Setup script
+├─ installer/LRAM.iss     Inno Setup script
 ├─ scripts/                build-installer.ps1
 ├─ docs/                   DESIGN.md · MILESTONES.md · research/
 └─ .github/workflows/      ci.yml · release.yml
@@ -690,14 +690,14 @@ Bug reports, ideas and pull requests are welcome.
 
 ## 🧬 A fork of RoALT
 
-LLRAM is a fork of **[RoALT](https://github.com/inspectsoftware/RoALT)**, the local-only Roblox account
+LRAM is a fork of **[RoALT](https://github.com/inspectsoftware/RoALT)**, the local-only Roblox account
 manager written by **[inspectsoftware](https://github.com/inspectsoftware)**. The architecture, the
 encrypted vault, the launcher, the instance tracker and the whole original feature set are that
 project's work, and the credit for them belongs to its author.
 
 What this fork changes:
 
-- **Name and identity**: LLRAM instead of RoALT, its own icon, window title and installer.
+- **Name and identity**: LRAM instead of RoALT, its own icon, window title and installer.
 - **No updater, no donations, no community Discord**: releases are downloaded and installed by hand,
   and nothing in the app asks for money.
 - **English only**: one language, no translations to keep in sync.
@@ -714,14 +714,14 @@ The rest of the credit is Roblox's own API and client, which do the actual work.
 
 | | Who | What |
 |---|---|---|
-| 🧑‍💻 | **[JohnBirlich](https://github.com/JohnBirlich)** — author and maintainer | The project itself: what LLRAM is for, every decision about what it does and does not do, the Roblox-TOS and privacy rules, testing on real clients, the releases, and the last word on every change. By the author's own estimate, about 80% of the work; the rest is the code below. |
+| 🧑‍💻 | **[JohnBirlich](https://github.com/JohnBirlich)** — author and maintainer | The project itself: what LRAM is for, every decision about what it does and does not do, the Roblox-TOS and privacy rules, testing on real clients, the releases, and the last word on every change. By the author's own estimate, about 80% of the work; the rest is the code below. |
 | 🤖 | **Arena Agent** — AI pair-progLRAMmer | Docs, tests and release notes, written to those decisions in this repository's style, checked through CI before anything is merged. |
 
 <br>
 
 ## 📜 Disclaimer
 
-LLRAM is a fork of RoALT by [inspectsoftware](https://github.com/inspectsoftware) and is an independent
+LRAM is a fork of RoALT by [inspectsoftware](https://github.com/inspectsoftware) and is an independent
 project: not affiliated with or endorsed by Roblox Corporation, and not the original author's build.
 Use it only with accounts you own. Roblox doesn't officially support running several clients at once and may
 change how its client behaves at any time.

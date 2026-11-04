@@ -26,7 +26,7 @@ use crate::model::AppUpdate;
 
 pub const UPDATE_EVENT: &str = "app://update";
 const CURRENT: &str = env!("CARGO_PKG_VERSION");
-const LATEST: &str = "https://api.github.com/repos/JohnBirlich/RAM/releases/latest";
+const LATEST: &str = "https://api.github.com/repos/JohnBirlich/LRAM/releases/latest";
 const CHECK_EVERY: Duration = Duration::from_secs(6 * 60 * 60);
 const MAX_JSON: u64 = 1_000_000;
 const MAX_INSTALLER: u64 = 200_000_000;
@@ -476,7 +476,7 @@ mod tests {
     fn with_sig(mut v: Value) -> Value {
         let mut sig = v["assets"][0].clone();
         sig["name"] = "LRAM-Setup-0.5.1.exe.sig".into();
-        sig["browser_download_url"] = "https://github.com/JohnBirlich/RAM/releases/download/v0.5.1/LRAM-Setup-0.5.1.exe.sig".into();
+        sig["browser_download_url"] = "https://github.com/JohnBirlich/LRAM/releases/download/v0.5.1/LRAM-Setup-0.5.1.exe.sig".into();
         v["assets"].as_array_mut().unwrap().push(sig);
         v
     }
@@ -498,8 +498,8 @@ mod tests {
             pick(&body(&signed), "0.5.0").unwrap(),
             Some(Release {
                 version: "0.5.1".into(),
-                exe: "https://github.com/JohnBirlich/RAM/releases/download/v0.5.1/LRAM-Setup-0.5.1.exe".into(),
-                sig: "https://github.com/JohnBirlich/RAM/releases/download/v0.5.1/LRAM-Setup-0.5.1.exe.sig".into(),
+                exe: "https://github.com/JohnBirlich/LRAM/releases/download/v0.5.1/LRAM-Setup-0.5.1.exe".into(),
+                sig: "https://github.com/JohnBirlich/LRAM/releases/download/v0.5.1/LRAM-Setup-0.5.1.exe.sig".into(),
             })
         );
         for flag in ["draft", "prerelease"] {
@@ -509,7 +509,7 @@ mod tests {
         }
         for (field, value) in [
             ("name", "lram-setup-0.5.1.exe"),
-            ("browser_download_url", "http://github.com/JohnBirlich/RAM/releases/download/v0.5.1/LRAM-Setup-0.5.1.exe"),
+            ("browser_download_url", "http://github.com/JohnBirlich/LRAM/releases/download/v0.5.1/LRAM-Setup-0.5.1.exe"),
             ("browser_download_url", "https://evil.example/LRAM-Setup-0.5.1.exe"),
             ("browser_download_url", "https://github.com.evil.example/LRAM-Setup-0.5.1.exe"),
             ("browser_download_url", "https://github.com:8443/LRAM-Setup-0.5.1.exe"),

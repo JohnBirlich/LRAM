@@ -68,7 +68,7 @@ const SHORTCUTS: [Key, string][] = [
 
 const backupFilter = () => [{ name: t("settings.backupFilter"), extensions: ["lram"] }];
 const openBackupFilter = () => [{ name: t("settings.backupFilter"), extensions: ["lram", "roalt"] }];
-const RELEASES = "https://github.com/JohnBirlich/RAM/releases";
+const RELEASES = "https://github.com/JohnBirlich/LRAM/releases";
 const cancelled = () => ({ kind: "cancelled", message: "" });
 
 type VaultDialog = "set" | "change" | "remove" | "export";

@@ -1,0 +1,216 @@
+name: Restore releases
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: restore-releases
+  cancel-in-progress: false
+
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE_REPO: JohnBirlich/RAM
+      TARGET_REPO: ${{ github.repository }}
+
+    steps:
+      - name: Copy releases and verify checksums
+        shell: python
+        run: |
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import subprocess
+          import tempfile
+
+          source = os.environ["SOURCE_REPO"]
+          target = os.environ["TARGET_REPO"]
+
+          def gh(*args):
+              return subprocess.check_output(
+                  ["gh", *args], text=True
+              ).strip()
+
+          def releases(repo):
+              pages = json.loads(gh(
+                  "api", "--paginate", "--slurp",
+                  f"repos/{repo}/releases?per_page=100"
+              ))
+              return [release for page in pages for release in page]
+
+          originals = [
+              release for release in releases(source)
+              if not release["draft"]
+          ]
+          originals.sort(key=lambda release: release["published_at"] or "")
+
+          existing = {
+              release["tag_name"]
+              for release in releases(target)
+          }
+
+          restored = []
+
+          with tempfile.TemporaryDirectory() as temporary:
+              root = pathlib.Path(temporary)
+
+              for release in originals:
+                  tag = release["tag_name"]
+
+                  if tag in existing:
+                      print(f"SKIP: {tag} already exists", flush=True)
+                      continue
+
+                  # Require the original tag to exist in the target.
+                  # Never create or move tags during restoration.
+                  gh("api", f"repos/{target}/git/ref/tags/{tag}")
+
+                  folder = root / str(release["id"])
+                  folder.mkdir()
+
+                  gh(
+                      "release", "download", tag,
+                      "--repo", source,
+                      "--dir", str(folder)
+                  )
+
+                  expected = {
+                      asset["name"]: asset
+                      for asset in release["assets"]
+                  }
+                  actual = {
+                      path.name
+                      for path in folder.iterdir()
+                      if path.is_file()
+                  }
+
+                  if actual != set(expected):
+                      raise RuntimeError(
+                          f"{tag}: downloaded asset list does not match"
+                      )
+
+                  for name, asset in expected.items():
+                      if (folder / name).stat().st_size != asset["size"]:
+                          raise RuntimeError(
+                              f"{tag}: incorrect file size: {name}"
+                          )
+
+                  sums = folder / "SHA256SUMS.txt"
+                  if not sums.is_file():
+                      raise RuntimeError(f"{tag}: SHA256SUMS.txt missing")
+
+                  verified = set()
+
+                  for line in sums.read_text().splitlines():
+                      if not line.strip():
+                          continue
+
+                      digest, name = line.split(maxsplit=1)
+                      name = name.removeprefix("*")
+
+                      if (
+                          "/" in name
+                          or "\\" in name
+                          or name in {".", ".."}
+                      ):
+                          raise RuntimeError(
+                              f"{tag}: unsafe checksum filename"
+                          )
+
+                      path = folder / name
+                      calculated = hashlib.sha256(
+                          path.read_bytes()
+                      ).hexdigest()
+
+                      if calculated.lower() != digest.lower():
+                          raise RuntimeError(
+                              f"{tag}: SHA-256 mismatch: {name}"
+                          )
+
+                      verified.add(name)
+
+                  installers = {
+                      name for name in actual
+                      if name.lower().endswith(".exe")
+                  }
+
+                  if not installers or not installers <= verified:
+                      raise RuntimeError(
+                          f"{tag}: not all installers have verified checksums"
+                      )
+
+                  notes = root / f"{release['id']}-notes.md"
+                  notes.write_text(
+                      release["body"] or "", encoding="utf-8"
+                  )
+
+                  # Upload as a draft first: incomplete releases
+                  # must never become publicly visible.
+                  gh(
+                      "release", "create", tag,
+                      "--repo", target,
+                      "--verify-tag",
+                      "--draft",
+                      "--title", release["name"] or tag,
+                      "--notes-file", str(notes),
+                      *[
+                          str(folder / name)
+                          for name in sorted(actual)
+                      ]
+                  )
+
+                  uploaded = json.loads(gh(
+                      "release", "view", tag,
+                      "--repo", target,
+                      "--json", "assets"
+                  ))
+
+                  uploaded_sizes = {
+                      asset["name"]: asset["size"]
+                      for asset in uploaded["assets"]
+                  }
+                  expected_sizes = {
+                      name: asset["size"]
+                      for name, asset in expected.items()
+                  }
+
+                  if uploaded_sizes != expected_sizes:
+                      raise RuntimeError(
+                          f"{tag}: uploaded assets do not match; "
+                          "release left as draft"
+                      )
+
+                  args = [
+                      "release", "edit", tag,
+                      "--repo", target,
+                      "--draft=false",
+                      "--latest=false",
+                  ]
+
+                  if release["prerelease"]:
+                      args.append("--prerelease")
+
+                  gh(*args)
+                  restored.append(tag)
+                  print(f"RESTORED: {tag}", flush=True)
+
+          summary = [
+              "## Release restoration",
+              "",
+              f"Restored: {len(restored)}",
+              "",
+              *[f"- {tag}" for tag in restored],
+          ]
+          with open(
+              os.environ["GITHUB_STEP_SUMMARY"], "a",
+              encoding="utf-8"
+          ) as output:
+              output.write("\n".join(summary) + "\n")

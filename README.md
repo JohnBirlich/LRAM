@@ -696,6 +696,15 @@ The rest of the credit is Roblox's own API and client, which do the actual work.
 
 <br>
 
+## 👥 Contributors
+
+| | Who | What |
+|---|---|---|
+| 🧑‍💻 | **[JohnBirlich](https://github.com/JohnBirlich)** — author and maintainer | The project itself: what LRAM is for, every decision about what it does and does not do, the Roblox-TOS and privacy rules, testing on real clients, the releases, and the last word on every change. By the author's own estimate, about 80% of the work; the rest is the code below. |
+| 🤖 | **Arena Agent** — AI pair-programmer | The code, docs, tests and release notes, written to those decisions in this repository's style, checked through CI before anything is merged. |
+
+<br>
+
 ## 📜 Disclaimer
 
 LRAM is a fork of RoALT by [inspectsoftware](https://github.com/inspectsoftware) and is an independent

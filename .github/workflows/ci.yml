@@ -35,7 +35,8 @@ jobs:
           $code = $LASTEXITCODE
           $output | Write-Output
           if ($code -ne 0) {
-            $tail = ($output | Select-Object -Last 160) -join "`n"
+            $tail = ($output | Where-Object { $_ -notmatch "warning LNK4099" } | Select-Object -Last 100) -join "`n"
+            if ($tail.Length -gt 24000) { $tail = $tail.Substring($tail.Length - 24000) }
             for ($i = 0; $i -lt $tail.Length; $i += 3000) {
               $part = $tail.Substring($i, [Math]::Min(3000, $tail.Length - $i)).Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
               Write-Output "::error title=Rust tests failed ($i)::$part"
@@ -49,7 +50,8 @@ jobs:
           $code = $LASTEXITCODE
           $output | Write-Output
           if ($code -ne 0) {
-            $tail = ($output | Select-Object -Last 120) -join "`n"
+            $tail = ($output | Where-Object { $_ -notmatch "warning LNK4099" } | Select-Object -Last 100) -join "`n"
+            if ($tail.Length -gt 24000) { $tail = $tail.Substring($tail.Length - 24000) }
             for ($i = 0; $i -lt $tail.Length; $i += 3000) {
               $part = $tail.Substring($i, [Math]::Min(3000, $tail.Length - $i)).Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
               Write-Output "::error title=Clippy failed ($i)::$part"

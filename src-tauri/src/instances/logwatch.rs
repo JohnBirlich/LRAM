@@ -453,6 +453,7 @@ mod tests {
                 | "tray_user_exit" | "tray_spawned" => {}
                 other => panic!("new fixture sample {other}: say here what it means"),
             }
+            want.join_generation = u64::from(want.disconnected || want.job_id.is_some());
             let mut got = parsed(&[l]);
             assert_eq!(got.reason.is_some(), want.disconnected, "{key}");
             got.reason = None;

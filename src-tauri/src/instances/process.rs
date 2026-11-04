@@ -286,6 +286,44 @@ fn is_named(exe: &[u16], name: &str) -> bool {
     String::from_utf16_lossy(&exe[..len]).eq_ignore_ascii_case(name)
 }
 
+/// Read-only ownership query for a Roblox log already matched to a launch tracker ID.
+/// Never closes handles, shuts down applications or reads Roblox process memory.
+pub fn log_owners(path: &std::path::Path) -> Vec<ProcInfo> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows::Win32::Foundation::{ERROR_MORE_DATA, ERROR_SUCCESS};
+    use windows::Win32::System::RestartManager::{RmStartSession, RmRegisterResources, RmGetList, RmEndSession, RM_PROCESS_INFO};
+    use windows::core::{PCWSTR, PWSTR};
+    struct Session(u32);
+    impl Drop for Session {
+        fn drop(&mut self) {
+            // SAFETY: this session was successfully opened below; no shutdown/restart API is used.
+            unsafe { let _ = RmEndSession(self.0); }
+        }
+    }
+    let mut handle = 0;
+    let mut key = [0u16; 33];
+    // SAFETY: the session key buffer has CCH_RM_SESSION_KEY + 1 UTF-16 code units.
+    if unsafe { RmStartSession(&mut handle, None, PWSTR(key.as_mut_ptr())) } != ERROR_SUCCESS { return Vec::new(); }
+    let session = Session(handle);
+    let name: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+    let files = [PCWSTR(name.as_ptr())];
+    // SAFETY: the file name remains alive through registration; all outputs are local allocations.
+    unsafe {
+        if RmRegisterResources(session.0, Some(&files), None, None) != ERROR_SUCCESS { return Vec::new(); }
+        let (mut needed, mut count, mut reasons) = (0, 0, 0);
+        if RmGetList(session.0, &mut needed, &mut count, None, &mut reasons) != ERROR_MORE_DATA || needed > 256 { return Vec::new(); }
+        let mut apps = vec![RM_PROCESS_INFO::default(); needed as usize];
+        count = needed;
+        if RmGetList(session.0, &mut needed, &mut count, Some(apps.as_mut_ptr()), &mut reasons) != ERROR_SUCCESS { return Vec::new(); }
+        apps.truncate((count as usize).min(apps.len()));
+        apps.into_iter().map(|a| {
+            let time = a.Process.ProcessStartTime;
+            let ticks = (u64::from(time.dwHighDateTime) << 32) | u64::from(time.dwLowDateTime);
+            ProcInfo { pid: a.Process.dwProcessId, start_time: ticks.saturating_sub(UNIX_EPOCH_TICKS) / 10_000_000 }
+        }).collect()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::os::windows::process::CommandExt;
@@ -375,43 +413,5 @@ mod tests {
         assert!(!is_named(&utf16("RobloxPlayerBeta.exe.bak"), CLIENT_EXE));
         assert!(is_named(&utf16("RobloxPlayerInstaller.exe\0"), INSTALLER_EXE));
         let _ = installer_running();
-    }
-}
-
-/// Read-only ownership query for a Roblox log already matched to a launch tracker ID.
-/// Never closes handles, shuts down applications or reads Roblox process memory.
-pub fn log_owners(path: &std::path::Path) -> Vec<ProcInfo> {
-    use std::os::windows::ffi::OsStrExt;
-    use windows::Win32::Foundation::{ERROR_MORE_DATA, ERROR_SUCCESS};
-    use windows::Win32::System::RestartManager::{RmStartSession, RmRegisterResources, RmGetList, RmEndSession, RM_PROCESS_INFO};
-    use windows::core::{PCWSTR, PWSTR};
-    struct Session(u32);
-    impl Drop for Session {
-        fn drop(&mut self) {
-            // SAFETY: this session was successfully opened below; no shutdown/restart API is used.
-            unsafe { let _ = RmEndSession(self.0); }
-        }
-    }
-    let mut handle = 0;
-    let mut key = [0u16; 33];
-    // SAFETY: the session key buffer has CCH_RM_SESSION_KEY + 1 UTF-16 code units.
-    if unsafe { RmStartSession(&mut handle, None, PWSTR(key.as_mut_ptr())) } != ERROR_SUCCESS { return Vec::new(); }
-    let session = Session(handle);
-    let name: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
-    let files = [PCWSTR(name.as_ptr())];
-    // SAFETY: the file name remains alive through registration; all outputs are local allocations.
-    unsafe {
-        if RmRegisterResources(session.0, Some(&files), None, None) != ERROR_SUCCESS { return Vec::new(); }
-        let (mut needed, mut count, mut reasons) = (0, 0, 0);
-        if RmGetList(session.0, &mut needed, &mut count, None, &mut reasons) != ERROR_MORE_DATA || needed > 256 { return Vec::new(); }
-        let mut apps = vec![RM_PROCESS_INFO::default(); needed as usize];
-        count = needed;
-        if RmGetList(session.0, &mut needed, &mut count, Some(apps.as_mut_ptr()), &mut reasons) != ERROR_SUCCESS { return Vec::new(); }
-        apps.truncate((count as usize).min(apps.len()));
-        apps.into_iter().map(|a| {
-            let time = a.Process.ProcessStartTime;
-            let ticks = (u64::from(time.dwHighDateTime) << 32) | u64::from(time.dwLowDateTime);
-            ProcInfo { pid: a.Process.dwProcessId, start_time: ticks.saturating_sub(UNIX_EPOCH_TICKS) / 10_000_000 }
-        }).collect()
     }
 }

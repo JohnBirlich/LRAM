@@ -1281,7 +1281,7 @@ fn settle(e: &mut Entry, now: i64) -> Option<CrashKind> {
     }
     let written = !e.closing && e.writer_at.is_some_and(|w| now - w < WRITER_PROOF_MS);
     let silent = !e.window_seen || e.dead_polls >= DEAD_POLLS;
-    let missing = !e.alive && !e.closing;
+    let missing = !e.alive && !e.closing && !e.facts.replaced;
     let checking = missing && e.died_at.is_some_and(|at| now - at < CHECK_PROCESS_MS);
     if checking != e.inst.checking_process {
         log::info!("instance {} PID {}: {}", e.inst.id, e.inst.pid, if checking { "checking missing process before declaring exit" } else if e.alive { "process tracking confirmed" } else { "process check completed" });
@@ -2269,12 +2269,14 @@ mod tests {
         poll(start + 1_000);
         procs.set(&[]);
         poll(start + 200_000);
+        assert!(t.get(&id).unwrap().checking_process && t.take_rejoins().is_empty());
+        poll(start + 215_000);
         assert_eq!(t.take_rejoins().len(), 1);
         assert!(!t.relaunch_wanted(&id, false), "no task at work");
 
         assert!(t.begin_relaunch(&id, start));
         assert!(!t.begin_relaunch(&id, start) && t.is_relaunching(&id));
-        poll(start + 201_000);
+        poll(start + 216_000);
         assert!(t.relaunch_wanted(&id, false));
         t.entries()[0].closing = true;
         assert!(!t.relaunch_wanted(&id, false));
@@ -2299,6 +2301,8 @@ mod tests {
         poll(start + 400_000);
         procs.set(&[]);
         poll(start + 600_000);
+        assert!(t.get(&second).unwrap().checking_process);
+        poll(start + 615_000);
         assert!(t.begin_relaunch(&second, start) && t.relaunch_wanted(&second, false));
         assert_eq!(t.relaunches_open(), 0, "ended: nothing to close");
         t.cancel_relaunches();
@@ -2393,6 +2397,8 @@ mod tests {
         poll(start + 4_000);
         procs.set(&[]);
         poll(start + 200_000);
+        assert!(t.get(&crashed).unwrap().checking_process && !t.still_wants_rejoin(&crashed));
+        poll(start + 215_000);
         assert!(t.still_wants_rejoin(&crashed));
         t.mark_all_closing();
         assert!(!t.still_wants_rejoin(&crashed));
@@ -2436,6 +2442,8 @@ mod tests {
 
         procs.set(&[]);
         poll(200);
+        assert!(t.get(&id).unwrap().checking_process);
+        poll(215);
         assert_eq!(state(&t, &id), (Exited, note("Gave up after 3 restarts"), 100));
         let ended = t.take_crashes();
         assert_eq!((ended.len(), ended[0].kind, ended[0].reason.as_deref()), (1, CrashKind::Hang, Some(HUNG)));

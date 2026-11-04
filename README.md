@@ -436,6 +436,18 @@ The installer isn't code-signed yet, so SmartScreen doesn't recognise it. Check 
 </details>
 
 <details>
+<summary><b>Why does my antivirus or VirusTotal flag the installer?</b></summary>
+<br>
+
+A few engines (Arctic Wolf, DeepInstinct, SecureAge, Skyhigh) score unsigned installers on
+reputation and entropy rather than on anything the file does, and a compressed Inno Setup installer
+looks like a packer to them. That is why the count is small and the same engines appear on every
+release. Code signing is the fix and is not done yet; [docs/ANTIVIRUS.md](docs/ANTIVIRUS.md) has what
+each flag means, how to report it to the vendor, and how to check the file yourself.
+
+</details>
+
+<details>
 <summary><b>Multi-instance says Roblox is already running.</b></summary>
 <br>
 

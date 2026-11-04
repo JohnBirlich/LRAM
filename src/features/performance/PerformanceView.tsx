@@ -142,7 +142,7 @@ export function PerformanceView({ settings }: { settings: Settings }) {
   const [previewFps, setFps] = usePreviewFps();
   const [incoming, setIncoming] = useState<Profile | null>(null);
   const closedAt = useRef(0);
-  const active = ownCaps(useAccounts().data ?? []) ? undefined : PRESETS.find((p) => isApplied(p.profile, settings));
+  const active = ownCaps(useAccounts().data ?? []) ? undefined : PRESETS.find((p) => isApplied(p.profile, settings) && (p.profile.previewFps === undefined || p.profile.previewFps === previewFps));
   const using = <span className="text-[13px] text-dim">{active ? t("performance.using", { name: t(active.label) }) : t("performance.custom")}</span>;
 
   return (
@@ -288,6 +288,20 @@ const lightest: RenderFlags = { msaa: "x1", texture: "lowest", mode: "default", 
 const normalWindows = { tinyOnLaunch: false, microWidth: 320, microHeight: 240, fairCap: false, liveHiddenPreviews: true };
 
 const PRESETS: readonly { label: Key; tag: Key; facts: () => string[]; profile: Profile }[] = [
+  {
+    label: "performance.preset.ultra",
+    tag: "performance.tagUltra",
+    facts: () => [t("dashboard.fps", { fps: 5 }), t("settings.lowGraphics"), t("performance.factBg", { n: 10 }), t("performance.ultraWarning"), t("performance.factNextLaunch")],
+    profile: {
+      fpsCap: 5, lowGraphics: true, lighterRendering: true,
+      renderFlags: { ...lightest, graySky: true, pauseVoxelizer: true },
+      minimizeOnLaunch: true, tinyOnLaunch: true, microWidth: 160, microHeight: 120,
+      liveHiddenPreviews: false, trimEveryMin: 0, autoSpread: true, fairCap: true,
+      memRestartMb: 0, memThrottle: noThrottle,
+      adaptive: { enabled: true, background: { cpuCap: 10, eco: true, trimEveryMin: 0, affinity: null } },
+      previewFps: 5,
+    },
+  },
   {
     label: "performance.preset.maxAlts",
     tag: "performance.tagMaxAlts",
@@ -483,7 +497,9 @@ function ReviewDialog({ profile, settings, onClose }: { profile: Profile | null;
   if (clearing.length) changes.push({ label: t("performance.accountCaps"), from: ownCaps(clearing), to: t("performance.capsCleared") });
   const running = (useInstances().data ?? []).filter(isLive);
   const reshape = running.filter((i) => i.state === "inGame" && !accounts.find((a) => a.id === i.accountId)?.fullQuality);
-  const makeTiny = !!profile?.tinyOnLaunch && !settings.tinyOnLaunch;
+  const makeTiny = !!profile?.tinyOnLaunch && (!settings.tinyOnLaunch
+    || (profile.microWidth !== undefined && profile.microWidth !== settings.microWidth)
+    || (profile.microHeight !== undefined && profile.microHeight !== settings.microHeight));
   const hide = !!profile?.minimizeOnLaunch && !settings.minimizeOnLaunch;
   if (reshape.length && (makeTiny || hide)) changes.push({ label: t("performance.runningClients"), from: "", to: t("performance.runningNow") });
   const presetFacts = PRESETS.find((p) => p.profile === profile)?.facts().slice(FACTS_SHOWN) ?? [];
@@ -499,7 +515,7 @@ function ReviewDialog({ profile, settings, onClose }: { profile: Profile | null;
       for (const a of clearing) await update.mutateAsync({ id: a.id, patch: { fpsCap: 0 } });
       if (previewFps) setPreviewFps(previewFps as PreviewFps);
       await Promise.allSettled(reshape.flatMap((i) => [
-        ...(makeTiny && !i.micro ? [api.instanceMicro(i.id, true)] : []),
+        ...(makeTiny ? [api.instanceMicro(i.id, true, [profile.microWidth ?? settings.microWidth, profile.microHeight ?? settings.microHeight])] : []),
         ...(hide ? [api.instanceShow(i.id, "minimize")] : []),
       ]));
       toast(t(running.length && nextLaunch ? "performance.appliedRelaunch" : "performance.applied"));
@@ -536,6 +552,7 @@ function ReviewDialog({ profile, settings, onClose }: { profile: Profile | null;
             {presetFacts.map((f) => <li key={f}>{f}</li>)}
           </ul>
         )}
+        {profile === PRESETS[0].profile && <p role="note" className="alert">{t("performance.ultraWarning")}</p>}
         {error && <div role="alert" className="alert">{error}</div>}
         <div className="flex justify-end gap-2 pt-1">
           <button className="btn" onClick={onClose}>{changes.length ? t("common.cancel") : t("common.close")}</button>

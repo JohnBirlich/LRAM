@@ -178,7 +178,7 @@ export const api = {
 
   instanceMicro: (id: string, on: boolean, size?: [number, number]) => invoke<[number, number]>("instance_micro", { id, on, size }),
 
-  instancesTile: (micro: boolean) => invoke<number>("instances_tile", { micro }),
+  instancesTile: (micro: boolean, columns?: number) => invoke<number>("instances_tile", { micro, columns }),
 
   instancesMetrics:() => invoke<ClientMetrics[]>("instances_metrics"),
 
@@ -193,6 +193,8 @@ export const api = {
   bandwidthApply: (kbps: number) => invoke<BandwidthStatus>("bandwidth_apply", { kbps }),
   multiInstanceStatus: () => invoke<MultiInstanceStatus>("multi_instance_status"),
   multiInstanceSet: (enabled: boolean) => invoke<MultiInstanceStatus>("multi_instance_set", { enabled }),
+
+  multiInstanceTakeOver: () => invoke<MultiInstanceStatus>("multi_instance_take_over"),
 
   robloxCloseAll: (force: boolean) => invoke<MultiInstanceStatus>("roblox_close_all", { force }),
 

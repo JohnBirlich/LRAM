@@ -2,8 +2,8 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type AccountSummary, type ClientMetrics, type GameInfo, type Group, type Instance, type Limits, type WindowShow } from "../../api";
 import { groupColor, qk, queryClient, useInstances, useMetrics, useSetSettings, useSettings, useSystemUsage } from "../../data";
-import { Segmented, Switch } from "../../ui/controls";
-import { ConfirmDialog } from "../../ui/Dialog";
+import { NumberField, Segmented, Switch } from "../../ui/controls";
+import { ConfirmDialog, Dialog } from "../../ui/Dialog";
 import { Icon, type IconName } from "../../ui/Icon";
 import { toast, toastError } from "../../ui/Toast";
 import { fmtList, isRtl, t } from "../../i18n";
@@ -332,6 +332,10 @@ function ClientCard({ inst: i, account: a, groups, metrics: m, now, afkOn, defau
           {i.note && !rejoining && <span className="px-1 text-[13px] text-orange">{i.note}</span>}
         </>
       )}
+      <div className="mono text-xs text-dim flex flex-col gap-1" title={t("dashboard.usageHint")}>
+        <span>{t("dashboard.clientUsage", { cpu: m ? pct(m.cpuPct) : "—", ram: m ? mb(m.memoryMb) : "—", commit: m ? mb(m.privateMb) : "—" })}</span>
+        <span>{t("dashboard.clientPerformance", { cap: on.cpuCap === null ? t("common.off") : `${on.cpuCap}%`, eco: on.eco ? t("common.on") : t("common.off"), fps: i.fpsCap ?? "—" })}</span>
+      </div>
       <SizeHandle name={name} detailed={detailed} onSize={onSize} />
     </div>
   );
@@ -643,6 +647,8 @@ export function DashboardView({ accounts, groups, home, onLaunch, onAdd, onImpor
     setBusy(true);
     f().catch(toastError).finally(() => setBusy(false));
   };
+  const [gridOpen, setGridOpen] = useState(false);
+  const [gridColumns, setGridColumns] = useState(4);
   const tile = (micro: boolean) =>
     act(() =>
       api.instancesTile(micro).then((n) => {
@@ -697,6 +703,7 @@ export function DashboardView({ accounts, groups, home, onLaunch, onAdd, onImpor
                     {t("dashboard.detailedView")}
                     <Switch label={t("dashboard.detailedView")} checked={detailed} onChange={setDetailed} />
                   </label>
+                  <button className="btn" disabled={busy} onClick={() => setGridOpen(true)}>{t("dashboard.gridTitle")}</button>
                   <button className="btn" disabled={busy} onClick={tile(false)} title={t("dashboard.tileHint")}>{t("dashboard.tile")}</button>
                   <button className="btn" disabled={busy} onClick={act(() => api.instancesShowAll("minimize"))}>{t("dashboard.minimizeAll")}</button>
                   <button className="btn btn-icon" popoverTarget="home-more" style={{ anchorName: "--home-more" }} aria-label={t("home.more")} title={t("home.more")}>
@@ -746,6 +753,19 @@ export function DashboardView({ accounts, groups, home, onLaunch, onAdd, onImpor
       </div>
       <ClientMenu at={menu} account={menu ? byId.get(menu.inst.accountId) : undefined} onClose={closeMenu} afkOn={afkOn} closing={closingOne} onLimits={setLimitsFor} onCloseClient={closeOne} />
       <LimitsDialog instanceId={limitsFor} name={limitedName} onClose={() => setLimitsFor(null)} />
+      <Dialog open={gridOpen} onClose={() => !busy && setGridOpen(false)} title={t("dashboard.gridTitle")} width={480}>
+        <div className="flex flex-col gap-4 px-5 pb-5">
+          <p className="text-dim">{t("dashboard.gridHint")}</p>
+          <NumberField unit={t("dashboard.gridColumns")} short={t("dashboard.gridColumns")} min={1} max={20} value={gridColumns} onCommit={setGridColumns} />
+          <div aria-hidden="true" className="grid gap-1" style={{ gridTemplateColumns: `repeat(${Math.min(gridColumns, Math.max(1, running.length))}, 1fr)` }}>
+            {Array.from({ length: running.length }, (_, n) => <span key={n} className="well p-2 text-center mono text-xs">{n + 1}</span>)}
+          </div>
+          <button className="btn btn-primary" disabled={busy || running.length === 0} onClick={act(() => api.instancesTile(false, gridColumns).then((count) => {
+            toast(t("dashboard.laidOut", { count }));
+            setGridOpen(false);
+          }))}>{t("dashboard.gridApply")}</button>
+        </div>
+      </Dialog>
       <ConfirmDialog
         open={confirmClose}
         onClose={() => !closing && setConfirmClose(false)}

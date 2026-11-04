@@ -1409,13 +1409,16 @@ fn check_window_size((w, h): (u32, u32)) -> Result<()> {
 }
 
 #[tauri::command]
-pub async fn instances_tile(app: AppHandle, s: State<'_, App>, micro: bool) -> Result<usize> {
+pub async fn instances_tile(app: AppHandle, s: State<'_, App>, micro: bool, columns: Option<u32>) -> Result<usize> {
+    if columns.is_some_and(|c| !(1..=20).contains(&c)) {
+        return Err(AppError::Invalid(tr!("Grid columns must be between 1 and 20.")));
+    }
     let clients: Vec<(String, u32)> = s.tracker.clients().into_iter().map(|c| (c.0, c.1)).collect();
     let near = app.get_webview_window("main").and_then(|w| w.hwnd().ok()).map_or(0, |h| h.0 as isize);
     let v = s.db.settings()?;
     let size = micro.then_some((v.micro_width, v.micro_height));
     let tiled = blocking(move || {
-        crate::instances::window::tile(&clients, windows::Win32::Foundation::HWND(near as *mut _), size)
+        crate::instances::window::tile_columns(&clients, windows::Win32::Foundation::HWND(near as *mut _), size, columns)
     })
     .await?;
     for id in &tiled {
@@ -1521,6 +1524,22 @@ pub fn multi_instance_set(s: State<'_, App>, enabled: bool) -> Result<MultiInsta
         s.multi.disable();
     }
     Ok(s.multi.status(v.multi_instance, v.protect_shared_login))
+}
+
+#[tauri::command]
+pub async fn multi_instance_take_over(app: AppHandle) -> Result<MultiInstanceStatus> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let s = app.state::<App>();
+        let v = s.db.settings()?;
+        if !v.multi_instance {
+            return Err(AppError::Invalid(tr!("Turn on multi-instance first.")));
+        }
+        s.multi.take_over()?;
+        protect_running(&s, &v);
+        Ok(s.multi.status(v.multi_instance, v.protect_shared_login))
+    })
+    .await
+    .map_err(|e| AppError::Internal(e.to_string()))?
 }
 
 #[tauri::command]

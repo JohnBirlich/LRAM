@@ -1000,6 +1000,13 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       if (args.enabled) retakeLock();
       else lockHeld = false;
       return multiStatus();
+    case "multi_instance_take_over":
+      await sleep(600);
+      if (!settings.multiInstance) return fail("invalid", "Turn on multi-instance first.");
+      strangerRunning = false;
+      eventHolder = null;
+      lockHeld = true;
+      return multiStatus();
     case "roblox_close_all":
       await sleep(1200);
       strangerRunning = false;

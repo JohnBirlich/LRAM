@@ -470,7 +470,10 @@ mod tests {
 
     fn fixture() -> Value {
         let path = format!("{}/../docs/research/fixtures/github-releases-latest.json", env!("CARGO_MANIFEST_DIR"));
-        serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
+        // Keep the recorded response intact on disk, but adapt its repository URLs
+        // to LRAM when testing the current release configuration.
+        let recorded = std::fs::read_to_string(path).unwrap();
+        serde_json::from_str(&recorded.replace("JohnBirlich/RAM", "JohnBirlich/LRAM")).unwrap()
     }
 
     fn with_sig(mut v: Value) -> Value {

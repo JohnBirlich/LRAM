@@ -1,3 +1,4 @@
+import { privateText, isPrivate } from "../../privacy";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import type { GameServer, PrivateServer } from "../../api";
 import { Icon } from "../../ui/Icon";
@@ -40,7 +41,7 @@ export function PublicTable({ servers, pick, onPick }: { servers: GameServer[]; 
       </thead>
       <tbody>
         {servers.map((s) => {
-          const id = short(s.id);
+          const id = privateText(short(s.id));
           return (
             <tr key={s.id} className="row h-11 cursor-pointer" data-selected={pick === s.id || undefined} onClick={() => onPick(s.id)}>
               <td className="ps-6">
@@ -56,6 +57,7 @@ export function PublicTable({ servers, pick, onPick }: { servers: GameServer[]; 
                   className="wc w-9 h-8 ms-auto"
                   aria-label={t("servers.copyJobIdFor", { id })}
                   title={t("servers.copyJobId")}
+                  disabled={isPrivate()}
                   onClick={(e) => {
                     e.stopPropagation();
                     void copyJob(s.id);
@@ -87,7 +89,7 @@ export function PrivateTable({ servers, pick, onPick }: { servers: PrivateServer
       </thead>
       <tbody>
         {servers.map((s) => {
-          const name = s.name || t("servers.unnamed");
+          const name = privateText(s.name || t("servers.unnamed"));
           const can = s.accessCode !== null;
           return (
             <tr
@@ -108,7 +110,7 @@ export function PrivateTable({ servers, pick, onPick }: { servers: PrivateServer
                 />
               </td>
               <td className="pe-3 max-w-0 truncate" title={name}>{name}</td>
-              <td className="pe-3 max-w-0 truncate text-dim">{s.ownerName ? `@${s.ownerName}` : "—"}</td>
+              <td className="pe-3 max-w-0 truncate text-dim">{isPrivate() ? "@hidden" : s.ownerName ? `@${s.ownerName}` : "—"}</td>
               <td><Players playing={s.playing} max={s.maxPlayers} /></td>
               <td className={`text-end pe-6 ${can ? "" : "text-dim"}`}>{can ? t("servers.joinable") : t("servers.noAccess")}</td>
             </tr>

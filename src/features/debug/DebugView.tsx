@@ -1,3 +1,4 @@
+import { usePrivacy } from "../../privacy";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { api, events } from "../../api";
@@ -47,7 +48,7 @@ function afterMarker(lines: string[], marker: string | null): string[] {
 }
 
 // -- Main func
-export function DebugView() {
+function DebugViewContent() {
   const [lines, setLines] = useState<Line[]>([]);
   const [shown, setShown] = useState<Record<Level, boolean>>({ error: true, warn: true, info: true, debug: false });
   const [query, setQuery] = useState("");
@@ -198,3 +199,5 @@ export function DebugView() {
     </main>
   );
 }
+
+export function DebugView() { const privacy = usePrivacy(); return privacy ? <div className="p-3 text-dim">Hidden</div> : <DebugViewContent />; }

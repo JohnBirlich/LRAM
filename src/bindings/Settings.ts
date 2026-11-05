@@ -1,3 +1,4 @@
+import type { UltraCpu } from "./UltraCpu";
 import type { Adaptive } from "./Adaptive";
 import type { AntiAfk } from "./AntiAfk";
 import type { Density } from "./Density";
@@ -47,7 +48,7 @@ trimEveryMin: number,
 
 autoSpread: boolean,
 
-fairCap: boolean, adaptive: Adaptive,
+fairCap: boolean, adaptive: Adaptive, ultraCpu: UltraCpu, privacyMode: boolean,
 
 bandwidthKbps: number, antiAfk: AntiAfk,
 

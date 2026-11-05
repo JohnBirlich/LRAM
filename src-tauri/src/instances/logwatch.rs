@@ -11,8 +11,10 @@ pub struct LogFacts {
     pub place_id: Option<i64>,
     pub user_id: Option<i64>,
     pub in_game: bool,
+    pub join_generation: u64,
     pub teleporting: bool,
     pub disconnected: bool,
+    pub connection_lost: bool,
     pub left: bool,
     pub reason: Option<String>,
     pub challenged: bool,
@@ -39,10 +41,29 @@ const DISCONNECTS: [&str; 6] = [
 
 const AUTH_FAILED: [&str; 2] = ["encountered during authentication", "Error Code: 403"];
 
+fn disconnect_code(line: &str) -> Option<u32> {
+    // Read only a structured reason/error code, not timestamps, ports or job IDs.
+    let lower = line.to_ascii_lowercase();
+    for marker in ["error code", "reason"] {
+        if let Some((_, rest)) = lower.split_once(marker) {
+            let rest = rest.trim_start_matches(|c: char| c.is_whitespace() || ":=([".contains(c));
+            let rest = rest.strip_prefix("player").map_or(rest, |r| r.trim_start_matches(|c: char| c.is_whitespace() || ":=".contains(c)));
+            let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+            if let Ok(code) = digits.parse() { return Some(code); }
+        }
+    }
+    None
+}
+fn duplicate_login(line: &str) -> bool {
+    line.contains("Same account launched") || line.contains("DuplicateLogin") || disconnect_code(line) == Some(273)
+}
 fn client_initiated(line: &str) -> bool {
-    let msg = line.find(" [").map_or(line, |i| &line[i..]);
-    ["DisconnectClientInitiated", "Same account launched", "DuplicateLogin"].iter().any(|m| msg.contains(m))
-        || msg.split(|c: char| !c.is_ascii_digit()).any(|n| n == "285" || n == "273")
+    line.contains("DisconnectClientInitiated") || duplicate_login(line) || disconnect_code(line) == Some(285)
+}
+fn transport_loss(line: &str, tag: Option<&str>) -> bool {
+    matches!(tag, Some("FLog::Network" | "FLog::NetworkPacket" | "FLog::NetworkError" | "FLog::RakNet" | "FLog::NetworkClient"))
+        && (["ID_CONNECTION_LOST", "ID_CONNECTION_ATTEMPT_FAILED", "Connection lost", "Lost connection with reason"].iter().any(|m| line.contains(m)) && !client_initiated(line)
+            || matches!(disconnect_code(line), Some(277 | 279)))
 }
 
 pub fn logs_dir() -> Option<PathBuf> {
@@ -223,25 +244,36 @@ pub fn parse_line(line: &str, facts: &mut LogFacts) {
         if let Some((job, rest)) = line[i + JOINING.len()..].split_once('\'')
             && is_guid(job)
         {
+            facts.join_generation = facts.join_generation.saturating_add(1);
             facts.job_id = Some(job.to_owned());
             facts.place_id = number_after(rest, " place ");
             facts.in_game = false;
             facts.teleporting = false;
             facts.disconnected = false;
+            facts.connection_lost = false;
             facts.left = false;
             facts.auth_failed = false;
             facts.reason = None;
         }
     } else if line.contains("[FLog::Network] Replicator created") || line.contains("[FLog::Network] serverId:") {
         facts.in_game = true;
+        facts.teleporting = false;
         facts.disconnected = false;
+        facts.connection_lost = false;
         facts.left = false;
         facts.reason = None;
     } else if facts.in_game && line.contains(TELEPORT) {
+        facts.join_generation = facts.join_generation.saturating_add(1);
+        facts.in_game = false;
         facts.teleporting = true;
-    } else if let Some(m) = DISCONNECTS.iter().find(|m| line.contains(*m)) {
+    } else if let Some(m) = DISCONNECTS.iter().copied().find(|m| line.contains(*m)).or_else(|| transport_loss(line, tag).then(|| line.split_once(']').map_or(line, |(_, message)| message).trim())) {
+        if !facts.disconnected { facts.join_generation = facts.join_generation.saturating_add(1); }
         facts.disconnected = true;
-        facts.left |= client_initiated(line);
+        facts.connection_lost |= transport_loss(line, tag);
+        // Native transport failure is not turned into an intentional leave by
+        // the client's later cleanup. Explicit duplicate-login events still win.
+        facts.left |= duplicate_login(line) || (client_initiated(line) && !facts.connection_lost);
+        if facts.connection_lost { facts.teleporting = false; }
         if !facts.reason.as_deref().is_some_and(names_reason) {
             facts.reason = reason_of(line, m).or(facts.reason.take());
         }
@@ -343,6 +375,25 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("lram-logwatch-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    #[test]
+    fn native_transport_loss_is_detected_without_trusting_game_output_or_cleanup() {
+        for event in ["ID_CONNECTION_LOST", "ID_CONNECTION_ATTEMPT_FAILED", "Disconnect. Reason: 277", "Error Code: 279"] {
+            let mut f = LogFacts { in_game: true, teleporting: true, ..Default::default() };
+            parse_line(&line(&format!("[FLog::Network] {event}")), &mut f);
+            assert!(f.disconnected && f.connection_lost && !f.teleporting && !f.left, "{event}");
+            assert!(f.reason.is_some(), "retain the native failure reason");
+            parse_line(&line("[FLog::Network] Sending disconnect with reason: 285 (DisconnectClientInitiated)"), &mut f);
+            assert!(!f.left, "cleanup after known connection loss is not a healthy-game manual leave");
+            parse_line(&line("[FLog::Network] Replicator created"), &mut f);
+            assert!(!f.disconnected && !f.connection_lost);
+            let mut fake = LogFacts { in_game: true, ..Default::default() };
+            parse_line(&line(&format!("[FLog::Output] [FLog::Network] {event}")), &mut fake);
+            assert!(!fake.disconnected && !fake.connection_lost);
+        }
+        assert!(!client_initiated("[FLog::Network] Lost connection with reason : timeout on port 273"));
+        assert!(client_initiated("[DFLog::RbxTransportDummyClient] Disconnected from server for reason: Player: 285 (DisconnectClientInitiated)"));
     }
 
     #[test]
@@ -449,6 +500,8 @@ mod tests {
                 | "tray_user_exit" | "tray_spawned" => {}
                 other => panic!("new fixture sample {other}: say here what it means"),
             }
+            want.connection_lost = key == "lost_connection";
+            want.join_generation = u64::from(want.disconnected || want.job_id.is_some());
             let mut got = parsed(&[l]);
             assert_eq!(got.reason.is_some(), want.disconnected, "{key}");
             got.reason = None;

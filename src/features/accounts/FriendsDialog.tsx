@@ -1,3 +1,4 @@
+import { usePrivacy } from "../../privacy";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, asError, type AccountSummary, type UserRef } from "../../api";
@@ -9,7 +10,7 @@ import { t } from "../../i18n";
 import { accountName } from "./shared";
 
 // -- Main func
-export function FriendsDialog({ open, onClose, account }: {
+function FriendsDialogContent({ open, onClose, account }: {
   open: boolean;
   onClose: () => void;
   account: AccountSummary | null;
@@ -128,3 +129,5 @@ export function FriendsDialog({ open, onClose, account }: {
     </Dialog>
   );
 }
+
+export function FriendsDialog(props: Parameters<typeof FriendsDialogContent>[0]) { const privacy = usePrivacy(); return privacy ? null : <FriendsDialogContent {...props} />; }

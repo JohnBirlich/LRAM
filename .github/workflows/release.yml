@@ -41,6 +41,21 @@ jobs:
         with:
           node-version: 24
       - uses: dtolnay/rust-toolchain@stable
+      - name: Install dependencies and verify frontend
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run test:capacity
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run test:privacy
+      - name: Rust tests
+        run: cargo test --locked
+        working-directory: src-tauri
+      - name: Clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+        working-directory: src-tauri
       - name: Inno Setup 6.6+
         run: choco upgrade innosetup --no-progress -y
       - run: powershell -ExecutionPolicy Bypass -File scripts\build-installer.ps1
@@ -130,9 +145,18 @@ jobs:
           signing="No Authenticode signature yet: SmartScreen warns."
           if [ "$SIGNED" = true ]; then signing="Code signed."; fi
           cat > ../notes.md <<EOF
+          ## LRAM $VERSION
+
+          - Warm-up removed for all profiles at the user's request: CPU/Eco settings apply immediately, including loading, teleport and rejoin. Low ceilings can slow loading and affect stability. FPS/graphics remain launch-time only, without silent restarts.
+          - Official-client process handoff recovery now has a read-only exact launch-token fallback when Restart Manager cannot identify the client log owner. Keeps unique candidate, executable, start-time, account and already-tracked checks; never guesses by window proximity.
+          - Close on an already-missing tracked PID reports a tracking error instead of silently pretending to close a different live window. Recovered identities re-enable window setup and route metrics/close to the actual PID.
+          - Retains disconnect recovery, physical/virtual hardware inventory, Privacy and per-client Profile controls. Actual Windows handoff behavior still requires real-PC validation; Roblox HTTP 403/429 refusals and blocked third-party overlays are not bypassed.
+
+          **Security notice:** Defender detections were reported for 0.12.4. Their cause has not been established and this release has not been cleared by Microsoft. Do not disable antivirus or add exclusions to run LRAM. SHA-256 verifies file identity, not safety.
+
           $signing The SHA-256 sums are below and in SHA256SUMS.txt. $updater
 
-          - **Windows** 10 1809 or later, or Windows 11, x64: LRAM-Setup-$VERSION.exe. SmartScreen warns on first run: More info → Run anyway.
+          - **Windows** 10 1809 or later, or Windows 11, x64: LRAM-Setup-$VERSION.exe. Do not bypass antivirus detections.
           - Needs the Microsoft Edge WebView2 Runtime (Windows 11 has it). Setup checks, and offers Microsoft's download when it is missing.
 
           ~~~

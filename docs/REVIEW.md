@@ -136,11 +136,12 @@ allowlist and size limits. The RoALT update verifies an **ECDSA P-256** signatur
    go without them. So the master password protects against "someone sat down at my PC", not against a
    stealer. This deserves to be said plainly in the README and in Settings, not just "Encrypted on
    this PC".
-2. **Resolved: `take_over()` is gone.** It closed Roblox's singleton handle inside the running
-   client (`OpenProcess(PROCESS_DUP_HANDLE)` + `DuplicateHandle(DUPLICATE_CLOSE_SOURCE)`), which both
-   risked a ban under Hyperion and looked like process tampering to Defender's behaviour monitor
-   (`Behavior:Win32/DefenseEvasion.A!ml`). Multi-instance now only holds the name before Roblox
-   starts; an already running client has to be closed first.
+2. **`take_over()` is the riskiest place in the project.** To take `ROBLOX_singletonEvent` away from an
+   already running client, the code does `OpenProcess(PROCESS_DUP_HANDLE)` into the Roblox process and
+   `DuplicateHandle(..., DUPLICATE_CLOSE_SOURCE)`. Hyperion/Byfron generally blocks such operations on
+   current clients, and from an anti-cheat's point of view it looks like outside interference in the
+   process. The function is not on by default (only behind a confirmation), but it should either go or
+   carry an explicit warning about ban risk and it not working.
 3. **`protect_shared_login` (on by default) holds `RobloxCookies.dat` and `appStorage.json` with share
    mode 0.** That blocks Roblox itself and any third-party tool; with unlucky timing it can leave a
    client without saved session. The reasoning is in the code (error 773), but the default is

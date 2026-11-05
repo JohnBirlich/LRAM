@@ -262,6 +262,7 @@ pub fn jittered(delay_ms: u32) -> Duration {
 }
 
 pub fn stage_of(instance: &Instance, allow_disconnect: bool) -> BulkStage {
+    if instance.checking_process { return BulkStage::Joining; }
     let failed = |default: fn() -> String| BulkStage::Failed { message: instance.note.clone().unwrap_or_else(default) };
     match instance.state {
         InstanceState::Starting => BulkStage::Starting,
@@ -741,6 +742,11 @@ mod tests {
             relaunch_problem: None,
             sign_in_problem: false,
             applied_limits: Default::default(),
+            checking_process: false,
+            cpu_mode: Default::default(),
+            cpu_warmup_remaining_s: 0,
+            performance: None,
+            performance_pending: false,
         }
     }
 

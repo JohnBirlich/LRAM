@@ -427,10 +427,23 @@ impl Db {
         Ok(())
     }
 
+    pub fn client_performance(&self, account_id: i64) -> Result<Option<crate::model::ClientPerformance>> {
+        let key = format!("client-performance:{account_id}");
+        let value: Option<String> = self.conn().query_row("SELECT value FROM settings WHERE key = ?1", [&key], |r| r.get(0)).optional()?;
+        value.map(|v| serde_json::from_str(&v).map_err(|_| AppError::Invalid("Stored client performance settings are invalid.".into()))).transpose()
+    }
+
+    pub fn save_client_performance(&self, account_id: i64, p: &crate::model::ClientPerformance) -> Result<()> {
+        let key = format!("client-performance:{account_id}");
+        let value = serde_json::to_string(p).expect("plain performance data serializes");
+        self.conn().execute("INSERT INTO settings (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value", rusqlite::params![key, value])?;
+        Ok(())
+    }
+
     pub fn settings(&self) -> Result<Settings> {
         let sql = "SELECT value FROM settings WHERE key = 'settings'";
         let json: Option<String> = self.conn().query_row(sql, [], |r| r.get(0)).optional()?;
-        Ok(json
+        let mut settings: Settings = json
             .and_then(|j| {
                 serde_json::from_str(&j)
                     .inspect_err(|e| {
@@ -439,7 +452,9 @@ impl Db {
                     .ok()
                     .or_else(|| readable_settings(&j))
             })
-            .unwrap_or_default())
+            .unwrap_or_default();
+        if !(1..=2).contains(&settings.ultra_cpu.cap) { settings.ultra_cpu.cap = 1; }
+        Ok(settings)
     }
 
     pub fn save_settings(&self, s: &Settings) -> Result<()> {
@@ -1169,7 +1184,7 @@ mod tests {
     fn settings_default_and_round_trip() {
         let db = Db::open_in_memory().unwrap();
         assert_eq!(db.settings().unwrap(), Settings::default());
-        let s = Settings { auto_lock_minutes: 3, clipboard_clear_seconds: 9, ..Settings::default() };
+        let s = Settings { privacy_mode: true, auto_lock_minutes: 3, clipboard_clear_seconds: 9, ..Settings::default() };
         db.save_settings(&s).unwrap();
         db.save_settings(&s).unwrap();
         assert_eq!(db.settings().unwrap(), s);
@@ -1366,4 +1381,15 @@ mod tests {
         assert!(matches!(db.set_meta(404, &meta), Err(AppError::NotFound)));
         assert!(matches!(db.set_account_groups(404, &[g]), Err(AppError::NotFound)));
     }
+    #[test]
+    fn client_performance_is_account_scoped_and_does_not_mutate_global_settings() {
+        let db = Db::open_in_memory().unwrap();
+        let global = db.settings().unwrap();
+        let p = crate::model::ClientPerformance { fps_cap: 5, low_graphics: true, lighter_rendering: true, render_flags: global.render_flags, limits: crate::model::Limits { cpu_cap: Some(1), ..Default::default() }, strict_cpu: true };
+        db.save_client_performance(7, &p).unwrap();
+        assert_eq!(db.client_performance(7).unwrap(), Some(p));
+        assert_eq!(db.client_performance(8).unwrap(), None);
+        assert_eq!(db.settings().unwrap(), global);
+    }
+
 }

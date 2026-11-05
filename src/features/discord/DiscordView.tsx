@@ -1,3 +1,4 @@
+import { privateText, usePrivacy } from "../../privacy";
 import { useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type DiscordEvents, type Settings } from "../../api";
@@ -20,6 +21,7 @@ const EVENTS: [key: Exclude<keyof DiscordEvents, "statusEveryMin">, title: Key, 
 
 // -- Main func
 export function DiscordView({ settings }: { settings: Settings }) {
+  const privacy = usePrivacy();
   const qc = useQueryClient();
   const set = useSetSettings();
   const status = useQuery({ queryKey: qk.discord, queryFn: api.discordGet }).data;
@@ -60,13 +62,14 @@ export function DiscordView({ settings }: { settings: Settings }) {
   };
 
   return (
-    <main className="scroll flex-1 min-w-0 px-8 pt-5 pb-12">
-      <div className="enter max-w-[860px] flex flex-col">
+    <main className="page-shell scroll flex-1 min-w-0 pt-5 pb-12">
+      <div className="enter discord-layout">
         <h1 className="page-title mb-2">{t("app.nav.discord")}</h1>
         <p className="text-dim">
           {t("discord.intro")}
         </p>
 
+        <section className="min-w-0">
         <Heading id="discord-webhook">{t("discord.webhook")}</Heading>
         <div className="panel px-5 py-1 mt-3 [&>*:last-child]:border-b-0">
         <Row
@@ -75,7 +78,7 @@ export function DiscordView({ settings }: { settings: Settings }) {
             status?.configured && !status.webhook
               ? t("discord.setLocked")
               : status?.configured
-              ? t("discord.setId", { id: status.webhook ?? t("discord.unknown") })
+              ? t("discord.setId", { id: privateText(status.webhook ?? t("discord.unknown")) })
               : t("discord.notSet")
           }
         >
@@ -92,7 +95,8 @@ export function DiscordView({ settings }: { settings: Settings }) {
             className="field mono flex-[1_1_320px] min-w-0"
             aria-label={t("discord.urlLabel")}
             placeholder="https://discord.com/api/webhooks/…"
-            value={url}
+            value={privacy ? "Hidden" : url}
+            disabled={privacy}
             autoComplete="off"
             spellCheck={false}
             onChange={(e) => setUrl(e.target.value)}
@@ -104,6 +108,8 @@ export function DiscordView({ settings }: { settings: Settings }) {
 
         </div>
 
+        </section>
+        <section className="min-w-0">
         <Heading id="discord-events">{t("discord.events")}</Heading>
         <div className="panel px-5 py-1 mt-3 [&>*:last-child]:border-b-0">
         {EVENTS.map(([key, title, hint]) => (
@@ -122,6 +128,7 @@ export function DiscordView({ settings }: { settings: Settings }) {
           />
         </Row>
         </div>
+        </section>
       </div>
     </main>
   );

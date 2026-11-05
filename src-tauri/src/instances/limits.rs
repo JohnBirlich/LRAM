@@ -317,10 +317,27 @@ pub fn plan_now(s: &crate::App, v: &Settings, clients: &[(String, u32, u64, Limi
         log::debug!("could not read the Full quality accounts: {e}");
         Vec::new()
     });
-    let free = s.tracker.free(&full_quality, crate::commands::now_ms());
+    let now = crate::commands::now_ms();
+    let mut free = s.tracker.free(&full_quality, now);
     let front = super::process::foreground_pid();
+    let (ultra_free, _) = s.tracker.cpu_policy(v, front, &full_quality, now);
+    free.extend(ultra_free.iter().cloned());
     s.limiter.note_free(&free, front);
-    plan(clients, v, front, crate::commands::cores(), throttled, &free, &s.limiter.uncapped())
+    let mut result = plan(clients, v, front, crate::commands::cores(), throttled, &free, &s.limiter.uncapped());
+    for (id, _, _, limits) in &mut result {
+        if let Some(own) = s.tracker.get(id).and_then(|i| i.performance) {
+            *limits = own.limits;
+            if own.strict_cpu { limits.cpu_cap = Some(limits.cpu_cap.unwrap_or(1).clamp(1, 2)); }
+        }
+        release_startup_cpu(limits, ultra_free.contains(id));
+    }
+    result
+}
+
+// Last policy layer: no profile, manual cap, fair cap or memory throttle may
+// reintroduce a CPU rate limit/Eco while loading or during the universal grace.
+fn release_startup_cpu(limits: &mut Limits, released: bool) {
+    if released { limits.cpu_cap = None; limits.eco = false; }
 }
 
 // -- Main func
@@ -333,6 +350,13 @@ pub fn plan(
     free: &[String],
     uncapped: &[String],
 ) -> Vec<(String, u32, u64, Limits)> {
+    let mut policy = v.clone();
+    if v.ultra_cpu.enabled {
+        policy.fair_cap = false;
+        policy.adaptive.enabled = true;
+        policy.adaptive.background.cpu_cap = Some(v.ultra_cpu.cap);
+    }
+    let v = &policy;
     let n = clients.len() as u32;
     let fair = v.fair_cap.then(|| fair_cap(n, cores));
     clients
@@ -348,6 +372,10 @@ pub fn plan(
             let mut l = effective(*manual, foreground == Some(*pid) || free.contains(id), v, share, fair);
             if v.mem_throttle.mb > 0 && throttled.contains(id) {
                 l.cpu_cap = Some(throttle_cap(l.cpu_cap, v.mem_throttle.cpu_cap));
+            }
+            if v.ultra_cpu.enabled {
+                l.cpu_cap = Some(l.cpu_cap.unwrap_or(v.ultra_cpu.cap).min(v.ultra_cpu.cap.clamp(1, 2)));
+                l.eco = true;
             }
             (id.clone(), *pid, *t0, l)
         })
@@ -519,6 +547,18 @@ mod tests {
             .unwrap();
         let (pid, t0) = (child.id(), start_time(child.id()).unwrap());
         (child, pid, t0)
+    }
+
+    #[test]
+    fn universal_grace_wins_over_manual_profile_fair_and_memory_caps() {
+        for cap in [1, 2, 25, 100] {
+            let mut limits = Limits { cpu_cap: Some(cap), eco: true, affinity: Some(3), trim_every_min: Some(5) };
+            release_startup_cpu(&mut limits, true);
+            assert_eq!((limits.cpu_cap, limits.eco), (None, false));
+            assert_eq!((limits.affinity, limits.trim_every_min), (Some(3), Some(5)));
+            release_startup_cpu(&mut limits, false);
+            assert_eq!(limits.cpu_cap, None);
+        }
     }
 
     #[test]
@@ -849,4 +889,19 @@ mod tests {
     fn throttle_cap_only_tightens() {
         assert_eq!((throttle_cap(None, 10), throttle_cap(Some(50), 10), throttle_cap(Some(5), 10)), (10, 10, 5));
     }
+    #[test]
+    fn ultra_selected_ceiling_is_not_divided_by_client_count_and_manual_limits_survive() {
+        use crate::model::UltraCpu;
+        for cap in 1..=2 {
+            let v = Settings { fair_cap: true, ultra_cpu: UltraCpu { enabled: true, cap, warmup_s: 90 }, ..Settings::default() };
+            let clients: Vec<_> = (1..=20).map(|pid| (pid.to_string(), pid, 1, Limits::default())).collect();
+            let limits = plan(&clients, &v, None, 12, &[], &[], &[]);
+            assert!(limits.iter().all(|p| p.3.cpu_cap == Some(cap)));
+            assert_eq!(plan(&clients, &v, Some(1), 12, &[], &[], &[])[0].3.cpu_cap, Some(cap));
+            assert_eq!(plan(&clients, &v, None, 12, &[], &["1".into()], &[])[0].3.cpu_cap, Some(cap));
+            let manual = [("1".into(), 1, 1, Limits { cpu_cap: Some(8), ..Limits::default() })];
+            assert_eq!(plan(&manual, &v, Some(1), 12, &[], &["1".into()], &[])[0].3.cpu_cap, Some(cap));
+        }
+    }
+
 }

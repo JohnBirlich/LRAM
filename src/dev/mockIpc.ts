@@ -56,6 +56,8 @@ let settings: Settings = {
   multiInstance: true, protectSharedLogin: true, launchDelayMs: 6000, autoRejoin: false, autoRestartOnCrash: false,
   breakerMax: 3, breakerWindowMin: 10, closeGraceS: 5, launchArgs: "", closeToTray: false,
   memRestartMb: 0, memThrottle: { mb: 0, cpuCap: 10 }, trimEveryMin: 0, autoSpread: false, fairCap: false,
+  privacyMode: false,
+  ultraCpu: { enabled: false, cap: 1, warmupS: 90 },
   adaptive: { enabled: false, background: { cpuCap: 25, eco: true, trimEveryMin: null, affinity: null } }, bandwidthKbps: 0,
   antiAfk: { enabled: false, intervalMin: 15, mode: "focus", press: "space" }, muteClients: false,
   discord: { crash: true, hang: true, memRestart: true, disconnect: true, restart: true, breaker: true, batchDone: true, launch: false, statusEveryMin: 0 },
@@ -178,7 +180,7 @@ function endInstance(id: string, note: string) {
 }
 
 let lastProfile: string | null = null;
-const PERF_KEYS = ["fpsCap", "lowGraphics", "lighterRendering", "renderFlags", "minimizeOnLaunch", "liveHiddenPreviews", "microWidth", "microHeight", "tinyOnLaunch", "autoTile", "memRestartMb", "memThrottle", "trimEveryMin", "autoSpread", "fairCap", "adaptive"] as const;
+const PERF_KEYS = ["fpsCap", "lowGraphics", "lighterRendering", "renderFlags", "minimizeOnLaunch", "liveHiddenPreviews", "microWidth", "microHeight", "tinyOnLaunch", "autoTile", "memRestartMb", "memThrottle", "trimEveryMin", "autoSpread", "fairCap", "adaptive", "ultraCpu"] as const;
 
 function perfProfile(previewFps: number) {
   const s: Record<string, unknown> = {};
@@ -201,10 +203,23 @@ function perfParse(text: string): Record<string, unknown> | string {
   if (fps && (fps < 5 || fps > 360)) return "The FPS cap must be 0 (off) or 5 to 360.";
   const mem = p.memRestartMb as number | undefined;
   if (mem && mem < 512) return "The memory limit must be 0 (off) or 512 to 65 536 MB.";
+  const ultra = p.ultraCpu as Settings["ultraCpu"] | undefined;
+  if (ultra && (![1, 2, 3].includes(ultra.cap) || ultra.warmupS < 60 || ultra.warmupS > 90)) return "ULTRA CPU must be 1 to 3%, with a 60 to 90 second warm-up.";
   const out: Record<string, unknown> = {};
   for (const k of PERF_KEYS) if (p[k] !== undefined && p[k] !== null) out[k] = p[k];
   if ([5, 15, 30, 60].includes(p.previewFps as number)) out.previewFps = p.previewFps;
   return out;
+}
+
+function syncMockCpu(i: Instance) {
+  const requested = i.performance?.limits ?? {
+    ...i.limits,
+    cpuCap: settings.ultraCpu.enabled ? settings.ultraCpu.cap : i.limits.cpuCap ?? (settings.adaptive.enabled ? settings.adaptive.background.cpuCap : null),
+    eco: settings.ultraCpu.enabled || i.limits.eco || (settings.adaptive.enabled && settings.adaptive.background.eco),
+  };
+  i.cpuWarmupRemainingS = 0;
+  i.cpuMode = "background";
+  i.appliedLimits = { ...requested };
 }
 
 function track(accountId: number, pid: number, target: LaunchTarget, placeId: number | null, viaBootstrapper: boolean, rejoins = 0, fpsCap: number | null = null) {
@@ -212,12 +227,14 @@ function track(accountId: number, pid: number, target: LaunchTarget, placeId: nu
   const i: Instance = {
     id: crypto.randomUUID(), accountId, pid, state: "starting", target, placeId, jobId: null,
     startedAt: Date.now(), endedAt: null, viaBootstrapper, note: null, rejoins, limits: { cpuCap: null, eco: false, trimEveryMin: null, affinity: null },
+    checkingProcess: false, cpuMode: "standard", cpuWarmupRemainingS: 0, performance: null, performancePending: false,
     antiAfk: true, muted: false, afkAt: null, throttled: false, micro: false, fpsCap, relaunching: false, relaunchProblem: null, signInProblem: false, appliedLimits: { cpuCap: 25, eco: true, affinity: null, trimEveryMin: 15 },
   };
+  syncMockCpu(i);
   instances.push(i);
   if (!lockHeld) eventHolder = i.id;
   instancesChanged();
-  const step = (ms: number, f: () => void) => setTimeout(() => { if (i.state !== "exited") { f(); instancesChanged(); } }, ms);
+  const step = (ms: number, f: () => void) => setTimeout(() => { if (i.state !== "exited") { f(); syncMockCpu(i); instancesChanged(); } }, ms);
   step(1500, () => { i.state = "joining"; });
   step(4000, () => { i.state = "inGame"; i.jobId = target.kind === "server" ? target.jobId : crypto.randomUUID(); i.placeId ??= 1818; });
   if (accountId === 3 && rejoins === 0) setTimeout(() => kick(i), 24_000);
@@ -227,6 +244,7 @@ function track(accountId: number, pid: number, target: LaunchTarget, placeId: nu
 function kick(i: Instance) {
   if (i.state === "exited") return;
   i.state = "disconnected";
+  syncMockCpu(i);
   crashes.unshift({
     id: crashes.length + 1, instanceId: i.id, accountId: i.accountId, kind: "disconnect", at: Date.now(), uptimeMs: Date.now() - i.startedAt,
     reason: "Sending disconnect with reason: 267", placeId: i.placeId, hasLog: true,
@@ -874,6 +892,7 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       return { added: 2, updated: args.onConflict === "replace" ? 7 : 0, skipped: args.onConflict === "skip" ? 7 : 0, failed: 0 };
 
     case "instances_list":
+      instances.filter(i => i.state !== "exited").forEach(syncMockCpu);
       return structuredClone(instances);
     case "instance_close":
       await sleep(600);
@@ -888,8 +907,24 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       if (!i) return fail("notFound", "Not found.");
       if (args.limits.affinity === 0) return fail("invalid", "Pick at least one CPU core.");
       i.limits = args.limits;
+      syncMockCpu(i);
       instancesChanged();
       return null;
+    }
+    case "instance_performance":
+      for (const i of instances.filter(i => i.state !== "exited" && (args.allRunning || i.id === args.id))) {
+        i.performance = structuredClone(args.performance); i.performancePending = true;
+        i.limits = structuredClone(args.performance.limits); syncMockCpu(i);
+      }
+      instancesChanged(); return null;
+    case "instance_restart_performance": {
+      const i = instances.find(i => i.id === args.id);
+      if (i) {
+        i.fpsCap = i.performance?.fpsCap ?? i.fpsCap; i.performancePending = false;
+        i.state = "joining"; syncMockCpu(i);
+        setTimeout(() => { if (i.state === "joining") { i.state = "inGame"; syncMockCpu(i); instancesChanged(); } }, 4000);
+      }
+      instancesChanged(); return null;
     }
     case "instance_set_anti_afk": {
       const i = instances.find((x) => x.id === args.id && x.state !== "exited");
@@ -942,6 +977,10 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       instancesChanged();
       return shown.length;
     }
+    case "hardware_info":
+      return { board: "Demo motherboard (browser preview)", cpu: "Demo CPU — not your hardware", logicalProcessors: 8, memoryRates: [3200], gpus: [{ name: "Demo GPU", dedicatedMb: 8192 }], virtualAdapters: ["Demo virtual adapter"], otherAdapters: [], displays: [{ name: "Demo display", width: 1920, height: 1080, refreshHz: 60 }] };
+    case "public_location":
+      throw new Error("Public IP lookup is disabled in the browser demo.");
     case "instances_metrics":
       return fakeMetrics();
     case "system_usage": {
@@ -999,6 +1038,13 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       settings.multiInstance = args.enabled;
       if (args.enabled) retakeLock();
       else lockHeld = false;
+      return multiStatus();
+    case "multi_instance_take_over":
+      await sleep(600);
+      if (!settings.multiInstance) return fail("invalid", "Turn on multi-instance first.");
+      strangerRunning = false;
+      eventHolder = null;
+      lockHeld = true;
       return multiStatus();
     case "roblox_close_all":
       await sleep(1200);

@@ -168,6 +168,7 @@ fn escape(s: &str) -> String {
 
 pub fn change_of(t: &Transition) -> Option<CrashKind> {
     let (b, a) = (&t.before, &t.after);
+    if a.checking_process { return None; }
     if a.state == InstanceState::Exited {
         let by_itself = b.state != InstanceState::Exited && a.note.as_deref() == Some(&*unexpected());
         return (by_itself && b.state != InstanceState::Disconnected).then_some(CrashKind::Crash);
@@ -576,6 +577,11 @@ mod tests {
             relaunch_problem: None,
             sign_in_problem: false,
             applied_limits: crate::model::Limits::default(),
+            checking_process: false,
+            cpu_mode: Default::default(),
+            cpu_warmup_remaining_s: 0,
+            performance: None,
+            performance_pending: false,
         }
     }
 

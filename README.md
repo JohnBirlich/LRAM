@@ -1,732 +1,292 @@
 <div align="center">
 
-# LRAM
+# LRAM — Local Roblox Account Manager
 
-### Every Roblox account you own, signed in, checked and one click from any game.
+**Аккаунты Roblox, запуск клиентов и управление окнами — в одном приложении для Windows.**
 
-A fast, local-only account manager and multi-client launcher for Windows.<br>
-Your cookies stay encrypted on your PC. Nothing is sent anywhere except Roblox.
+[Релизы](https://github.com/JohnBirlich/LRAM/releases) · [Сообщить о проблеме](https://github.com/JohnBirlich/LRAM/issues) · [CI](https://github.com/JohnBirlich/LRAM/actions/workflows/ci.yml)
 
-<sub>**LRAM** — Local Roblox Account Manager, a fork of **[RoALT](https://github.com/inspectsoftware/RoALT)**
-by **[inspectsoftware](https://github.com/inspectsoftware)**. A personal build: the built-in updater is off
-(no release key ships with it), donations and the community Discord server of the original project are
-not part of it, and releases are installed by hand.</sub>
-
-[![Latest release](https://img.shields.io/github/v/release/JohnBirlich/LRAM?style=for-the-badge&color=b4f000&labelColor=1a1a1a&label=release)](https://github.com/JohnBirlich/LRAM/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/JohnBirlich/LRAM/total?style=for-the-badge&color=2b2b2b&labelColor=1a1a1a)](https://github.com/JohnBirlich/LRAM/releases)
-[![Windows 10 | 11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078d4?style=for-the-badge&logo=windows&labelColor=1a1a1a)](#-install)
-
-[![CI](https://img.shields.io/github/actions/workflow/status/JohnBirlich/LRAM/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/JohnBirlich/LRAM/actions/workflows/ci.yml)
-![Tauri 2](https://img.shields.io/badge/Tauri-2-24c8db?style=flat-square&logo=tauri&logoColor=white)
-![Rust](https://img.shields.io/badge/Rust-2024-dea584?style=flat-square&logo=rust&logoColor=white)
-![React 19](https://img.shields.io/badge/React-19-61dafb?style=flat-square&logo=react&logoColor=white)
-![No telemetry](https://img.shields.io/badge/telemetry-none-b4f000?style=flat-square)
-
-<br>
-
-[**⬇ Download**](https://github.com/JohnBirlich/LRAM/releases/latest) &nbsp;·&nbsp;
-[**🐛 Issues**](https://github.com/JohnBirlich/LRAM/issues) &nbsp;·&nbsp;
-[Quick start](#-quick-start) &nbsp;·&nbsp;
-[Privacy](#-safety-and-privacy) &nbsp;·&nbsp;
-[For developers](#-for-developers)
-
-<br>
-
-<img src="docs/images/banner.png" alt="LRAM — Local Roblox Account Manager" width="900">
+![LRAM — Local Roblox Account Manager](docs/images/banner.png)
 
 </div>
 
-<br>
+## О проекте
 
-## 📑 Contents
+**LRAM (Local Roblox Account Manager)** — настольный менеджер собственных аккаунтов Roblox. Он объединяет локальное хранилище сессий, запуск игр, управление несколькими клиентами и настройки их производительности.
 
-| For everyone | For developers |
+Приложение не требует отдельного аккаунта LRAM или собственного сервера. Данные хранятся на компьютере пользователя; для входа, информации об аккаунтах и запуска игр требуется подключение к сервисам Roblox.
+
+LRAM развивается как отдельный проект **JohnBirlich** на основе [RoALT](https://github.com/inspectsoftware/RoALT) от [inspectsoftware](https://github.com/inspectsoftware). Авторство исходной архитектуры и унаследованных компонентов принадлежит их первоначальным авторам.
+
+## Состояние этой ветки
+
+**0.14.3** — отключён прогрев всех профилей; добавлено восстановление PID по точному launch identity, когда Restart Manager не возвращает владельца журнала. Проверка на реальном ПК остаётся необходимой.
+
+**0.14.2** — для всех профилей возвращён прогрев 90 секунд после подтверждённого входа, улучшена обработка потери соединения и очереди автоперезахода. Сохраняет исправления 0.14.1: физические PnP-адаптеры отдельно от виртуальных/программных; модели мониторов сопоставляются с активными Windows display paths. Сохраняет Privacy mode, строгий ULTRA и настройки производительности отдельного клиента на Home из 0.14.0. Сохраняет проверку и восстановление процессов из 0.13.0. Обнаружения Defender этим не считаются устранёнными.
+
+> **Предупреждение о безопасности.** Для установщика 0.12.4 получены сообщения Microsoft Defender `Trojan:Win32/Sabsik.FL.A!ml` и `Behavior:Win32/DefenseEvasion.A!ml`. Причина не установлена; подтверждённого заключения о ложном срабатывании нет. Отсутствие предупреждения у другого файла не является гарантией безопасности. Не отключайте антивирус и не добавляйте исключения ради запуска LRAM.
+
+## Возможности
+
+- **Аккаунты:** вход через страницу Roblox, добавление сессии по cookie, группы, заметки, избранное и поиск.
+- **Информация:** аватары, присутствие, баланс и сведения об аккаунтах, доступные через Roblox API.
+- **Запуск:** ссылки на игры, place ID, приватные серверы, запуск отдельных аккаунтов и последовательных групп.
+- **Несколько клиентов:** управление запущенными экземплярами Roblox и размещение их окон.
+- **Мониторинг:** показатели использования ресурсов, состояние клиентов и журнал событий.
+- **Восстановление:** настройки повторного подключения и перезапуска клиентов.
+- **Производительность:** FPS, графические параметры, профили, ограничения CPU и управление памятью.
+- **Окна:** предпросмотр, изменение размера и расположения, переключение между клиентами.
+- **Хранилище:** шифрование, дополнительный мастер-пароль, блокировка и экспорт резервной копии.
+- **Настройки:** оформление интерфейса и необязательные интеграции Discord.
+
+Доступность отдельных функций зависит от версии Roblox, состояния аккаунта и ограничений его API. LRAM не гарантирует обход ограничений Roblox или совместимость после обновлений клиента.
+
+## ULTRA и сетка окон
+
+В **0.14.3 прогрев отключён для всех профилей** по запросу пользователя. CPU rate ceiling и Eco применяются сразу, в том числе при запуске, загрузке, телепорте и перезаходе. Старое поле `ultraCpu.warmupS` сохранено для совместимости, но больше не задаёт задержку. Низкие лимиты могут замедлять загрузку и влиять на стабильность.
+
+ULTRA сразу применяет **1% по умолчанию / выбор 1% или 2%**; предел не делится между аккаунтами. В отличие от загрузки, фокус сам по себе не снимает ULTRA-потолок. **FPS 5 и графика задаются при запуске**, не переключаются спустя 90 секунд; для изменения работающего клиента нужно подтверждение перезапуска. Размер/разрешение окна профиль не меняет. Affinity/trim — отдельные настройки, они не зависят от прогрева.
+
+Это запрошенный Windows CPU rate ceiling, не обещание, что любой мгновенный замер никогда не превысит 2%. Ограничение может не примениться из-за прав доступа или чужого Job Object; смотрите фактически применённые ограничения, а не только выбранный профиль. Очень низкие CPU-потолки замедляют загрузку и могут вызывать отключения. Фиксированный расход RAM/CPU или число клиентов не гарантируются. Периодический trim и глобальные memory restart/throttle в профиле ULTRA выключены; агрессивная очистка рабочего набора не выдаётся за реальное освобождение commit.
+
+### Home: Profile
+
+В меню клиента пункт **Profile** открывает четыре профиля, FPS, графику и лимиты. В 0.14.1 дублирующий пункт **Limits** удалён. **Apply** сохраняет выбранные CPU/Eco-параметры; они применяются без перезапуска только после завершения прогрева. Trim/affinity остаются отдельными живыми параметрами. Apply сохраняет launch-time FPS/графику для выбранного аккаунта. **Apply to all running accounts** обрабатывает снимок сейчас запущенных клиентов, а не все сохранённые аккаунты. Вызовы не меняют глобальный профиль и размер/разрешение окон. Явный профиль клиента имеет приоритет над глобальной CPU-политикой и Full quality для его launch-time графики.
+
+**Requires restart** означает, что FPS/графика текущего Roblox ещё старые. **Restart to apply** требует подтверждения и перезапускает только выбранного клиента. Игровая сессия прерывается; сохранение прогресса и возврат на тот же сервер не гарантируются. Если старый процесс не закрылся или сработал Stop all, новый не должен запускаться. Ограничения Windows не требуют перезапуска. Bootstrapper может самостоятельно управлять графическими флагами; LRAM не обещает принудительно обойти его или ограничения Roblox.
+
+### Privacy mode
+
+Переключатель в Settings сохраняется после перезапуска. На интерфейсе скрываются имена, username, ID в отображаемых заголовках, статусы, группы/заметки, названия игр, аватары/предпросмотры, оборудование/мониторы и IP/страна. Вместо них используются **Hidden**, **@hidden**, пустая заглушка аватара. Подробное редактирование аккаунта/группы, просмотр друзей и журналы в UI закрываются в этом режиме, чтобы не раскрыть данные и не записать «Hidden» поверх настоящих значений. Команды продолжают использовать реальные ID; база не анонимизируется.
+
+Это **маскировка интерфейса**, не VPN, не сетевой режим анонимности и не защита от человека с доступом к базе, DevTools или ОС. Файлы экспорта и журналы на диске автоматически не обезличиваются. Не передавайте их без отдельной проверки.
+
+### GPU и мониторы
+
+В **0.14.1** источником списка адаптеров служат **present PnP display-class devices**, а не число DXGI rendering adapters. **Graphics adapters** показывает PCI-устройства; **Virtual / software display adapters** — устройства перечислителей ROOT/SWD; другие шины (например USB) остаются в **Other display adapters**, без догадки об их физической/виртуальной природе. Идентичные модели на разных PnP instance IDs не объединяются. Виртуальные драйверы могут представлять один rendering GPU через несколько DXGI LUID: это не дополнительные физические карты.
+
+VRAM берётся из DXGI только при точном совпадении Windows adapter device path с PnP instance ID, либо **AdapterLuid** из driver registry key PnP-устройства. При отсутствии такого соответствия — **Unknown**, а не копирование памяти другой карты по названию или позиции. Число устройств не задаётся константами, названия MuMu/StarDesk/NVIDIA не используются как правила классификации.
+
+**Peripherals → Displays** читает активные пути через QueryDisplayConfig. Имя берётся из DisplayConfig target friendly name, с резервным поиском PnP-имени монитора по его device interface path. Разрешение сопоставляется по source ID и adapter LUID; частота — из rational refresh rate конкретного target, включая 59.94 Hz. Имена не связываются с разрешениями по порядку строк. При недоступных данных — Unknown, без выдуманных моделей или характеристик.
+
+Windows device identities используются только локально для сопоставления и не включаются в ответ интерфейсу или журналы. Все новые блоки скрываются в Privacy mode. Реальный случай с 4070 SUPER, MuMuPlayer, StarDesk и тремя MSI-мониторами требует повторной проверки на затронутом ПК: CI не воспроизводит его драйверы. [Проверка 0.14.1](docs/0.14.1-validation.md).
+
+На Home кнопка **Monitor grid** открывает схему размещения с выбором 1–20 столбцов; число строк рассчитывается по количеству клиентов. Сетка применяется к рабочей области монитора, на котором находится LRAM, и использует существующее свободное изменение размера ниже стандартного минимума Roblox. Скрытые и неотвечающие окна пропускаются. Пользовательская сетка применяется однократно; существующая настройка **Arrange windows on launch** остаётся отдельной автоматической раскладкой.
+
+Карточки клиентов в обоих режимах показывают измеренную загрузку CPU, резидентную RAM и private commit, а отдельно — применённые CPU/Eco-ограничения и сохранённый FPS cap запуска. Это не измеренный FPS и не название глобального профиля: ручные настройки могут переопределять профиль. Private commit не равен физической памяти.
+
+## Дисконнекты и автоперезаход (0.14.2)
+
+**Auto-rejoin** должен быть включён; аккаунт с Allow disconnects намеренно исключён. **Auto-restart after a crash** остаётся отдельной настройкой. Новые нативные сетевые маркеры (ID_CONNECTION_LOST, ID_CONNECTION_ATTEMPT_FAILED, структурированные network reason/error 277/279) распознаются без доверия к игровым Output/Warning/Error-строкам. Очистка клиента после уже подтверждённой сетевой потери не превращает её в ручной выход. Здоровый ручной выход, duplicate login, человеческая проверка, неверный аккаунт, Stop/Close all остаются отдельными запретами.
+
+Подтверждённый Disconnected имеет приоритет над Hang, поэтому зависшее окно с сетевой ошибкой не требует включать Auto-restart, чтобы Auto-rejoin сработал. Смена причины Hang → Disconnect повторно допускается в очередь; одна причина не порождает повторные задания. При ошибке закрытия выполняется ограниченный повтор с показом причины, а не бесшумное прекращение. Если старый клиент ещё не завершился, новый не запускается. Проверка PID/start time, аккаунта и лог-владельца не ослабляется; Stop all сохраняет своё поколение отмены до самого запуска.
+
+Это исправления конкретных воспроизводимых путей, не доказательство точной причины сбоя пользователя: код ошибки и его Roblox-лог ещё не получены. Неизвестные варианты логов, выключенный rejoin, недоступная сеть, недействительная cookie, vault lock, update hold и breaker могут задержать или запретить перезаход. Проверяйте статус и причину ожидания. [План проверки 0.14.2](docs/0.14.2-validation.md).
+
+## Потеря процесса и восстановление (0.13.0)
+
+При исчезновении процесса трекер сначала показывает **Checking process** («Проверяем процесс») и повторяет проверку до 15 секунд. В этот период аккаунт считается занятым: дублирующий запуск и автоперезапуск подавляются. Загрузка установщика и прежние периоды ожидания запуска остаются отдельными условиями; 15 секунд — не обещание максимального времени ожидания установщика. После подтверждённого завершения обычное восстановление снова доступно.
+
+Недавно ошибочно завершённый клиент может быть возвращён без перезапуска в течение 3 минут, пока не начался новый запуск этого аккаунта. Сначала проверяются исходные PID и время создания процесса Roblox. Если нужен другой PID, требуется **единственный процесс Roblox, владеющий логом с tracker ID именно этого запуска**, совпадение времени создания процесса и отсутствие конфликтующей учётной записи. Ближайшее по времени окно не считается доказательством. Неоднозначность оставляет клиент непривязанным, а не назначает ему случайный аккаунт.
+
+Для владельцев лога используются только read-only запросы Windows Restart Manager: запуск сессии, регистрация пути, список владельцев, закрытие сессии. Вызовов остановки/перезапуска Restart Manager, приостановки процессов, чтения игровой памяти или определения открытия яиц нет. Проверки владельцев ограничены частотой; диагностические записи новых переходов содержат ID экземпляра, PID и причину, без cookie, токенов и приватных ссылок.
+
+Карточка и Monitor показывают причину CPU-режима: загрузка без фонового лимита, прогрев с отсчётом, фон с применённым потолком, фокус, Full quality, ручной лимит или проверка процесса. «Pending/unavailable» не выдаёт запрошенный лимит за успешно применённый Windows.
+
+Автотесты не воспроизводят конкретную игру и десять реальных окон. Проверка сценария с десятым аккаунтом на ПК пользователя остаётся обязательной; точная причина исходного случая пока не установлена. [План ручной проверки](docs/0.13.0-validation.md).
+
+## Адаптивный интерфейс
+
+В 0.12.7 страницы Play, Settings, Performance, Monitor и Discord Alerts используют доступную ширину окна без прежних фиксированных ограничений. На Play при ширине рабочей области от 1100 px выбор аккаунтов располагается слева, а цель и запуск — справа. В узких окнах блоки идут последовательно. Настройки сохраняют адаптивные колонки, а отступы подстраиваются под ширину окна.
+
+## Monitor: оборудование и оценка вместимости
+
+Характеристики читаются локально через Windows Registry, DXGI и SMBIOS: плата, процессор, логические процессоры, видеокарты и их выделенная память, доступный Windows объём RAM и настроенная скорость модулей памяти. Последняя показывается в **MT/s**, не как тактовая частота MHz. Если прошивка или драйвер не предоставляют сведения, приложение показывает «Unavailable», а не подставляет вымышленные данные. Серийные номера не собираются; PowerShell и права администратора для инвентаризации не нужны.
+
+Кнопка **Measure for 60 seconds** собирает не менее 30 замеров текущих клиентов и системы. До измерения запустите аккаунты в нужной игре и режиме производительности и дождитесь входа в игру. В течение замера оставляйте Monitor видимым и не меняйте состав клиентов или настройки. Изменения делают замер недействительным.
+
+Оценка показывает **общее** число аккаунтов по CPU/RAM, а не количество дополнительных запусков. Используется самый тяжёлый из измеренных клиентов, сохраняется 20% CPU и минимум 2 GiB / 10% RAM, добавляется 25–50% запаса к затратам на новый клиент. Отдельно выводятся измеренные диапазоны CPU, RAM, commit, GPU и GPU memory на аккаунт. Это лишь экстраполяция: лимиты GPU/VRAM, системного commit, сеть, всплески игры и ограничения Roblox не учитываются как пределы вместимости. При GPU-нагрузке число может быть завышено. Наращивайте число клиентов постепенно и повторяйте замер; фиксированный расход на аккаунт не обещается.
+
+Публичный IP и примерная страна загружаются **только по кнопке** через HTTPS-запрос к `ipwho.is`. Сервис видит публичный IP; данные оборудования, cookie и аккаунтов не отправляются. Страна может соответствовать VPN, а не физическому местоположению. Результат показывается только в интерфейсе, не записывается на диск и не участвует в расчёте вместимости. Остальные функции Monitor не зависят от этого сервиса.
+
+## Требования
+
+| Компонент | Требование |
 |---|---|
-| [What is LRAM?](#-what-is-lLRAM) | [Architecture](#-architecture) |
-| [Features](#-features) | [Tech stack](#-tech-stack) |
-| [Install](#-install) | [Build from source](#-build-from-source) |
-| [Quick start](#-quick-start) | [Project layout](#-project-layout) |
-| [Safety and privacy](#-safety-and-privacy) | [Testing](#-testing) |
-| [FAQ](#-faq) | [Contributing](#-contributing) |
-| [Community](#-community) | [Cut a release](#-cut-a-release) |
-| [A fork of RoALT](#-a-fork-of-roalt) | |
+| ОС | Windows 10 версии 1809 или новее / Windows 11 |
+| Архитектура установщика | x64 |
+| Интерфейс приложения | Microsoft Edge WebView2 Runtime |
+| Сеть | Для авторизации, Roblox API, запуска и загрузки обновлений |
 
-<br>
+Нативное приложение рассчитано на Windows. Запуск веб-интерфейса отдельно не заменяет Rust-бэкенд и не даёт возможности управлять клиентами Roblox.
 
-## 💡 What is LRAM?
+## Установка
 
-If you play Roblox on more than one account, you know the routine: sign out, sign in, find the game again,
-and only ever one client open at a time. LRAM removes all of that.
+1. Откройте [список релизов LRAM](https://github.com/JohnBirlich/LRAM/releases).
+2. Прочитайте описание выбранной версии и предупреждения выше. Не выбирайте версию только по отметке Latest.
+3. Скачайте `LRAM-Setup-<версия>.exe` и соответствующий `SHA256SUMS.txt`.
+4. Сверьте SHA-256 установщика в PowerShell:
 
-- **Add each account once**, through Roblox's own sign-in page. LRAM keeps it signed in.
-- **See every account at a glance**: online status, Robux, friends, whether the sign-in still works.
-- **Paste any game link** and launch one account, or ten, into it. Even into the same server.
-- **Run several Roblox windows side by side**, and let LRAM bring back any that crash or get kicked.
+   ```powershell
+   Get-FileHash "$HOME\Downloads\LRAM-Setup-0.12.7.exe" -Algorithm SHA256
+   ```
 
-It runs entirely on your PC. There is no LRAM account, no LRAM server and no tracking.
+5. Только если файл не заблокирован защитой и вы решили доверять сборке, запустите установщик. При отсутствии WebView2 он предложит открыть страницу Microsoft.
 
-LRAM is a fork of **[RoALT](https://github.com/inspectsoftware/RoALT)**, the local-only Roblox account
-manager by **[inspectsoftware](https://github.com/inspectsoftware)** — see [A fork of RoALT](#-a-fork-of-roalt).
+Совпадение SHA-256 подтверждает соответствие файлу из релиза, но **не доказывает отсутствие вредоносного кода**. SmartScreen и обнаружение угрозы Defender — разные механизмы; предупреждение об угрозе не следует игнорировать.
 
-| | |
-|---|---|
-| **Accounts** | every account with its status, groups and a details panel |
-| **Play** | who plays, where, then the big button |
-| **Performance** | FPS cap, graphics flags, presets and profiles |
-| **Settings** | dark or light, any accent, your own background |
-| **Logs** | the live log waits collapsed at the bottom of every page |
+### Обновление
 
-<br>
+В текущем коде публичный ключ встроенного обновления не настроен. Не рассчитывайте на автоматическую установку новых версий LRAM: используйте ручную установку проверенного релиза. Обновление самого Roblox — отдельная функция.
 
-## ✨ Features
+Перед переустановкой или сменой версии создайте резервную копию через приложение. Не переносите рабочую базу в старую версию без копии: совместимость схемы при понижении версии не гарантируется.
 
-<table>
-<tr>
-<td width="50%" valign="top">
+## Первый запуск
 
-### 🔐 Encrypted vault
-Cookies are encrypted with **Windows DPAPI**, or with your own **master password** (Argon2id + AES-256-GCM)
-with auto-lock and an optional **recovery code**. Reveal and copy sit behind **Windows Hello** or the master password.
+1. Добавьте принадлежащий вам аккаунт через окно входа Roblox.
+2. При необходимости задайте мастер-пароль и настройте блокировку хранилища.
+3. Выберите аккаунт и укажите игру на странице запуска.
+4. Сначала проверьте запуск одного клиента; затем настраивайте групповой запуск и лимиты ресурсов.
+5. Используйте мониторинг и журнал для диагностики, а резервные копии — перед изменением настроек хранилища.
 
-</td>
-<td width="50%" valign="top">
+Cookie `.ROBLOSECURITY` даёт доступ к сессии аккаунта. Не отправляйте его другим людям, не публикуйте в Issues и не включайте в скриншоты или логи.
 
-### 👥 Accounts at a glance
-Avatars, live presence, Robux, Plus, friends, followers and 2-step status. Groups, aliases, notes,
-favourites, search and filters. Check sign-ins, one or all, in a click.
+## Данные и приватность
 
-</td>
-</tr>
-<tr>
-<td valign="top">
+- По умолчанию данные приложения размещаются в `%LOCALAPPDATA%\LRAM`; код также предусматривает перенос старых данных RoALT и изменение расположения данных.
+- База `lram.db` использует SQLCipher. Файл ключа базы защищается Windows DPAPI.
+- Секреты дополнительно защищены механизмом хранилища: DPAPI либо мастер-паролем с Argon2id и AES-GCM.
+- Файлы базы и ключа не следует считать переносимой резервной копией: DPAPI привязан к среде Windows. Используйте предусмотренный приложением экспорт.
+- Сетевые обращения нужны для Roblox и обновлений; необязательные интеграции Discord и ручная загрузка IP/страны через ipwho.is создают дополнительные обращения при их использовании.
+- Локальное шифрование не защищает от всех угроз на уже скомпрометированном компьютере.
 
-### 🚀 Launch anything
-Paste a game link, place ID, job ID, private server or share link, a profile or `@username`:
-LRAM works out what it is. Join a friend, or save a target as a favourite.
+## Разработка
 
-</td>
-<td valign="top">
+### Стек
 
-### 🪟 Multi-instance
-Run several clients side by side. Launch a batch one after another, all into **the same server**
-if you like, with live progress per account.
+**Tauri 2 / Rust 2024**, **React 19 / TypeScript / Vite / Tailwind CSS**, **TanStack Query**, **SQLite с SQLCipher**, **Inno Setup**.
 
-</td>
-</tr>
-<tr>
-<td valign="top">
+### Подготовка Windows
 
-### 🔁 Auto-rejoin and restart
-A disconnected client rejoins the same game on its own. Opt-in: crashed, frozen or memory-hungry
-clients restart too. A crash breaker gives up on an account after too many tries.
+Для нативной сборки нужны:
 
-</td>
-<td valign="top">
-
-### 🗺️ Server browser
-Browse public servers by players or ping, see your private servers, and send any accounts into
-the one you pick.
-
-</td>
-</tr>
-<tr>
-<td valign="top">
-
-### 📈 Monitor
-CPU, memory, disk/network and uptime per client, with sparklines and totals, refreshed every 2 seconds.
-
-</td>
-<td valign="top">
-
-### 🎚️ Performance tab
-FPS cap, lowest graphics and graphics flags (MSAA, textures, no grass, gray sky), with presets and
-shareable profiles. **Max alts** runs clients tiny, at 10 FPS, with a CPU share that scales with how many
-you run and memory trims. The one you're playing stays free of it. CPU and memory settings have their own
-panel, most useful first. Cap one client's CPU, pin cores or trim memory.
-
-</td>
-</tr>
-<tr>
-<td valign="top">
-
-### 🔔 Discord alerts
-Crashes, disconnects, restarts and finished batches posted to **your own** webhook, kept encrypted
-in the vault. Opt-in.
-
-</td>
-<td valign="top">
-
-### ⬆️ Roblox updates
-Shows when Roblox is out of date and installs the update with Roblox's own installer, after checking
-it is signed by Roblox Corporation. Optional auto-update when no client runs.
-
-</td>
-</tr>
-<tr>
-<td valign="top">
-
-### 🖥️ Home
-Browser-style **account tabs**, each with its own game and options. Every running client as a live preview,
-even hidden ones, in cards you can drag and resize, with dials for what your clients use. Right-click one to
-focus, minimize, shrink it, limit it or close it. Tile all clients in one click, or let **Arrange windows on launch** place each new client next to the ones already up. Anti-AFK has its own switch here.
-Prefer vertical tabs? Put your accounts on the side and LRAM's sections along the top, and drag either into your own order.
-
-</td>
-<td valign="top">
-
-### 🛡️ Public networks
-Windows calls some networks **Public** (café, hotel, school Wi-Fi). Turn off **Allow public networks** in Settings,
-Security, and LRAM won't launch on them and a master-password vault locks there. It is on by default.
-
-</td>
-</tr>
-<tr>
-<td valign="top">
-
-### ↔️ Free resizing
-Drag a client's edges to any size, past the 800×600 minimum Roblox holds it to, and move small windows
-without them snapping back. Or start every client tiny.
-
-</td>
-<td valign="top">
-
-### 🎨 Soft Deck design
-A soft, very dark interface with a floating page, or a light theme. Pick any accent colour and your own
-background image, and skip the splash screen if you'd rather not wait.
-
-</td>
-</tr>
-<tr>
-<td valign="top">
-
-### 🧱 One language, by choice
-English only: the whole interface and every message are written once in English, without a
-translation layer to keep in step.
-
-</td>
-<td valign="top">
-
-### ❤️ Support LRAM
-LRAM is free. The **Donate** button in the sidebar opens a [Roblox gamepass](https://www.roblox.com/games/102259086923102/Donation-Experience#!/store)
-for the amount you pick, and you confirm the purchase on Roblox.
-
-</td>
-</tr>
-</table>
-
-<details>
-<summary><b>All features, in detail</b></summary>
-<br>
-
-| Area | What you get |
-|---|---|
-| 🔐 **Vault** | DPAPI by default (opens silently). Optional master password with auto-lock after idle, and an optional one-use recovery code for it. Encrypted `.lLRAM` backups you can export and import. Copied cookies are kept out of clipboard history and cleared after 30 s. |
-| 👥 **Accounts** | Add through Roblox's sign-in page (passkeys and security keys work), by pasting a cookie, by pasting many cookies at once, or by importing from Roblox Account Manager (an unlocked `AccountData.json`). Groups, alias, notes, colour, favourite, drag to reorder. Presence, Robux, Plus / Premium (legacy), friend and follower counts, join date, email and 2-step status. "Open on roblox.com" signed in as that account. |
-| 🚀 **Play** | Game links, place IDs, `roblox://` links, job IDs, private server links, `roblox.com/share` links (both formats), universes, profiles, `@username`. Join a friend or one of your other accounts. Favourites on the Play page and in the tray. `Ctrl+Enter` to launch. |
-| 🪟 **Batches** | Accounts launch strictly one after another with a stagger (default 6 s). **Same server**: *Pick a server* finds one with room for everyone first; *Follow the first* sends the rest to wherever the first account landed. Cancel at any time; one click re-picks the accounts that didn't launch. |
-| 🔁 **Recovery** | Auto-rejoin after kicks, shutdowns and lost connections (not after you leave on purpose). Opt-in auto-restart for crashes, frozen windows (30 s) and a memory limit. Crash breaker: default 3 relaunches in 10 minutes, with growing backoff. Per-account "Allow disconnect". Crash history with the log's reason. |
-| ↔️ **Free resizing** | Drag a client's edge to any size, past the minimum Roblox holds its window to, and move a small window by its title bar without it growing back. LRAM sizes the window itself (a mouse hook in LRAM's own process); nothing goes into the client. **Start clients tiny** opens every new client at a size you choose. |
-| 🖥️ **Home** | Live preview for every client at 5, 15, 30 or 60 FPS, even hidden ones, with state, game, uptime, CPU and LRAM. Drag cards to sort them and resize them from the corner; **Detailed view** off shows only the preview and username. Dials show what all Roblox clients use together. Browser-style **account tabs** give each account its own game and options, and launch one or all of them. **Tab layout** (Settings or the title bar) moves accounts to a list on the side and LRAM's sections to tabs along the top. Drag accounts and sections to sort them, or use `Alt` and the arrow keys; the order is saved, and a launch of all tabs follows it. The **⋯** key, right-click, the menu key or `Shift+F10` for focus, minimize, restore, tiny window (any size, 320×240 by default) and back, CPU limit, efficiency mode, anti-AFK, close. **Tile** fits all clients in a grid on the screen; **Tile micro** lays out micro windows; with **Arrange windows on launch** that happens by itself whenever a client reaches a game. Minimize all, Restore all. |
-| 🛑 **Stop all** | Hold one button in the sidebar, use the tray, or press a global **panic hotkey** you choose (off by default) to end every Roblox process and stop pending launches and rejoins. |
-| 🧱 **Language** | English only, in the interface and in every log line and error message. |
-| ⏲️ **Automation** | Minimize each new client on launch. Auto-shutdown timer: close the clients and shut the PC down at a set time (survives a LRAM restart, can be cancelled). Hourly Roblox log cleaner (logs older than a day or over 50 MB). Open logs button; LRAM's own logs rotate at 5 MB. |
-| ⚙️ **Launch control** | Custom launch arguments (default and per account, checked before use and never logged), a cooldown between launches, a configurable close grace (1–60 s). |
-| 🎚️ **Limits** | Per client: CPU cap, efficiency mode, core affinity, working-set trim (every N minutes and sooner if a background client grows, or "Page memory out now"). A trim lowers the Memory column for a while; commit size doesn't change. Adaptive manager for background clients; a limit you set on a client wins for that limit. **Memory throttle**: a client whose commit size is over a limit gets a CPU cap, which lowers its fLRAMe rate, until it drops under 90 % of the limit. It doesn't free memory; only **Restart on high memory** does, and that disconnects the client. |
-| 🎞️ **FPS cap & graphics** | A default fLRAMe-rate cap (5–360), a per-account override and a per-launch one under Play's More options (a rejoin keeps it), plus the lowest graphics for every client (on by default). Set through Roblox's own Maximum FLRAMe Rate and Graphics Quality just before each client starts; your own Roblox settings are put back once it has read them, and again when such a client closes (or when LRAM next starts, if it wasn't running then). Everything performance-related lives in its own **Performance** tab. |
-| 🪶 **Lighter rendering** | Clients LRAM starts get low geometry detail and the graphics flags below (on by default): less GPU time and memory per client. Written just before each client starts and put back once it has read them; skipped under a bootstrapper. |
-| 🎚️ **Graphics flags** | Pick MSAA, texture quality, rendering mode, gray sky, no grass and lowest render quality, from the FastFlags Roblox still allows. Roblox may ignore Vulkan and OpenGL. |
-| 👑 **Main account** | Mark an account **Full quality** and its clients keep your own Roblox graphics, without lowest graphics or lighter rendering. |
-| 🕘 **Recent servers** | Each account remembers the servers it reached (stored on this PC); rejoin a public one in a click. |
-| 🩺 **Diagnostics** | Copy or save a report for bug reports, from Debug: tickets, cookies, your Windows user name and IP addresses are removed. A client that ends badly leaves an autopsy in the log: how long it lived, any crash dump, Windows' record of the fault and the end of its logs. Each trim logs its memory before and after. |
-| 📤 **Performance profiles** | Export your performance settings to a file or a share code, or import someone else's: you see what changes, then apply it. Only performance settings travel, never accounts, passwords, launch arguments or hotkeys. |
-| 📶 **Bandwidth** | One upload cap for all Roblox clients through a Windows QoS policy. Applied only when you click Apply (admin prompt); cleared when Windows restarts. |
-| 💤 **Anti-AFK** | Off by default, with a switch on Home. While you are away from the PC, every few minutes each client is briefly brought to the front and gets one Space press, so Roblox doesn't kick it after 20 idle minutes. Hidden and minimized clients get it too, invisibly. Stops the moment you touch the mouse. Or **in the background**: a Tab press is posted to the window without bringing it to the front, even when minimized (Roblox may not count it in every game; auto-rejoin stays the fallback). Per-client opt-out. |
-| 🔔 **Discord** | Crash, disconnect, restart and batch alerts, plus an opt-in alert when a client gets into a game. Mute alerts per account. |
-| 🔄 **LRAM updates** | Looks for a new LRAM on GitHub Releases at start and every 6 hours (can be turned off; *Check now* in Settings). A banner offers it; *Update now* downloads it, checks its release signature, installs it silently and restarts LRAM. Never installs on its own. |
-| 🧰 **Comfort** | Tray menu with favourites, close to tray, relaunch an ended client in one click, movable data folder, keyboard shortcuts. Dark, light or system theme, any accent colour, and your own background image, with a choice of how much the theme covers it. Optional skip of the splash screen. Your LRAM and Roblox versions at the top of Settings. |
-
-</details>
-
-<br>
-
-## 📥 Install
-
-1. Download **`LRAM-Setup-<version>.exe`** from the [latest release](https://github.com/JohnBirlich/LRAM/releases/latest).
-2. Run it. No admin rights needed; it installs to `%LOCALAPPDATA%\ProgLRAMs\LRAM`.
-3. Start LRAM from the Start menu or the desktop icon.
-
-| Requirement | |
-|---|---|
-| Windows | 10 (1809 or later) or 11, x64 |
-| WebView2 Runtime | Built into Windows 11. Setup offers to download it when missing. |
-| Roblox | Installed normally (LRAM can install or update it for you) |
-
-> [!NOTE]
-> The installer isn't code-signed yet, so Windows SmartScreen warns on first run. To be sure the file is genuine,
-> compare its SHA-256 with `SHA256SUMS.txt` on the release page, then choose **More info → Run anyway**.
->
-> ```powershell
-> Get-FileHash .\LRAM-Setup-0.9.0.exe -Algorithm SHA256
-> ```
-
-Your accounts and settings live in `%LOCALAPPDATA%\LRAM`. Uninstalling keeps them unless you tick
-**"also delete my data"**.
-
-<br>
-
-## 🏁 Quick start
-
-<details open>
-<summary><b>1. Add your first account</b></summary>
-<br>
-
-Press **Add account** (or `Ctrl+N`). A clean Roblox sign-in window opens: sign in as usual, including 2-step or
-passkeys. LRAM keeps the sign-in, closes the window and throws its browser profile away. You can also paste a
-`.ROBLOSECURITY` cookie; it is checked before it is saved.
-
-</details>
-
-<details>
-<summary><b>2. (Optional) Set a master password</b></summary>
-<br>
-
-By default the vault is locked to your Windows account, so it opens silently. For extra protection, set a master
-password in **Settings**. LRAM then asks for it on start and locks itself after you've been idle.
-
-</details>
-
-<details>
-<summary><b>3. Launch a game</b></summary>
-<br>
-
-Go to **Play** (`Ctrl+3`), pick an account, paste a game link and press the big **Play** key (`Ctrl+Enter`).
-Pick several accounts to launch a batch. Under **More options**, turn on **Same server** to put them all in one server.
-
-</details>
-
-<details>
-<summary><b>4. Run several clients at once</b></summary>
-<br>
-
-**Multi-instance** is on by default (the switch is in **Settings → Launching**); start LRAM before Roblox. If Roblox is already open, LRAM says so and offers
-**Close Roblox** or **Take over**. Every client LRAM starts shows up on **Home**
-(`Ctrl+1`), with its state, server and uptime.
-
-</details>
-
-<details>
-<summary><b>5. Let it look after your clients</b></summary>
-<br>
-
-In **Settings → Launching**, turn on **Auto-rejoin** (and, if you like, **Auto-restart**). Open **Monitor**
-(`Ctrl+6`) to see what each client uses, and **Discord** (`Ctrl+7`) to get alerts on your phone.
-
-</details>
-
-<details>
-<summary><b>⌨️ Keyboard shortcuts</b></summary>
-<br>
-
-| Keys | Action |
-|---|---|
-| `Ctrl+1` … `Ctrl+9` | Home, Accounts, Play, Servers, Settings, Monitor, Discord, Debug, Performance |
-| `Ctrl+N` | Add account |
-| `Ctrl+F` | Search accounts |
-| `Ctrl+Enter` | Play |
-| `F5` | Refresh |
-
-</details>
-
-<br>
-
-## 🔒 Safety and privacy
-
-<table>
-<tr>
-<td width="50%" valign="top">
-
-#### ✅ What LRAM does
-
-- Talks **only** to `*.roblox.com` and `*.rbxcdn.com`, plus GitHub to look for LRAM updates (can be turned off), and your Discord webhook.
-- Encrypts every cookie with **AES-256-GCM** under a key protected by **Windows DPAPI**, plus your master password if you set one.
-- Encrypts the **whole database** too (SQLCipher, AES-256), with its own DPAPI-protected key: a copied `roalt.db` can't be read on another PC or Windows account.
-- Signs you in through **Roblox's own page**, in a throw-away browser profile.
-- Installs Roblox updates **only** when the installer is signed by Roblox Corporation.
-- Updates itself **only** when you click Update now, and only with an installer that carries LRAM's release signature.
-- Redacts launch tickets from anything it reads in Roblox's logs.
-
-</td>
-<td width="50%" valign="top">
-
-#### 🚫 What LRAM never does
-
-- **Never** reads or writes the Roblox client's memory or files, with two exceptions for the clients it starts: Roblox's own settings file (`GlobalBasicSettings_13.xml`, only the fLRAMe-rate cap and graphics quality) and the allowlisted rendering flags in the version folder's `ClientSettings\ClientAppSettings.json`. Both are put back as they were once the client has read them.
-- **Never** sends telemetry. There is no LRAM server and no LRAM account.
-- **Never** writes cookies, tickets or launch arguments to its logs.
-- **Never** changes Windows settings, except the opt-in bandwidth limit.
-- **Never** contacts Discord's servers unless you paste a webhook.
-
-</td>
-</tr>
-</table>
-
-<details>
-<summary><b>The details</b></summary>
-<br>
-
-- **Discord alerts (opt-in).** If you paste a webhook in the Discord tab, alerts go to that webhook on `discord.com`. The URL is
-  kept encrypted in the vault, and messages name accounts by display name and username only, with mentions disabled.
-  Nothing is sent while the vault is locked.
-- **Roblox updates** come from Roblox only: the version from `clientsettingscdn.roblox.com`, the installer from
-  `setup.rbxcdn.com`, run only when its signature checks out as Roblox Corporation's.
-- **LRAM updates** are looked up on GitHub (`api.github.com`, this repository's latest published release) as soon
-  as LRAM starts and every 6 hours, unless you turn *Check for LRAM updates* off in Settings. The request carries only
-  `LRAM/<version>` as its user agent. When you click Update now, the installer and its `.sig` are downloaded from
-  `github.com` (GitHub's own download hosts only), and the installer runs only if its ECDSA P-256 signature checks out
-  against the public key built into LRAM. The signature covers the version too, so the release must be newer than
-  the LRAM you run and the installer must be the one signed for that version. It installs silently, and LRAM starts again.
-  Roblox clients keep running through it, and the restarted LRAM follows them again (also after you close and reopen
-  LRAM). Their limits are lifted while LRAM is closed and set again when it starts.
-- **Multi-instance** works by creating one named Windows object before Roblox starts. LRAM also holds Roblox's shared
-  sign-in files while its clients run, so clients can't sign each other out.
-- **Limits** go through Windows itself (job objects, priority, affinity). LRAM only ever opens a client with the
-  narrow rights a change needs, never to read its memory.
-- **Take over (on request)** closes the one "Roblox is already running" lock inside an open Roblox, so LRAM's clients
-  can run next to it. It needs to copy that one handle (`PROCESS_DUP_HANDLE`) and never reads or writes the client's memory.
-- **Anti-AFK (opt-in)** briefly brings a client to the front and presses Space the way a keyboard does, or, in background
-  mode, posts a Tab press to its window.
-- **Window tools** (previews, hide, micro, tile) use ordinary Windows calls: Windows.Graphics.Capture for previews, and
-  `ShowWindow`, `SetWindowPos`, `SetWindowLongPtr` and `SetLayeredWindowAttributes` for the rest. A hidden client gets the
-  layered and click-through window styles at alpha 1. Clean exit and panics clear them; if LRAM is killed outright, the
-  client stays invisible until LRAM starts again.
-- **Free resizing and hidden clients** use a low-level mouse hook and window-event hooks (foreground, Alt-Tab, minimize,
-  drags) in LRAM's own process. They see where the mouse is and which window changes across the PC, and store and send
-  nothing. A press only acts on the edge or title bar of a client LRAM started; a press on the taskbar or its thumbnails
-  is only noted, for a moment, as you asking for a hidden client back.
-- **Bandwidth limit (opt-in)** adds a Windows QoS policy named `LRAM-Roblox` through an admin prompt, only when you click
-  Apply. Windows drops it on restart. It is the only change LRAM makes to Windows.
-
-</details>
-
-> [!IMPORTANT]
-> Your `.ROBLOSECURITY` cookie is the key to your account. LRAM keeps it encrypted, but never share a cookie,
-> a `.lLRAM` backup or its password with anyone, including people who say they are helping you.
-
-<br>
-
-## ❓ FAQ
-
-<details>
-<summary><b>Is LRAM safe to use with my account?</b></summary>
-<br>
-
-LRAM signs in the same way the Roblox website does and never touches the Roblox client. Roblox has said that
-multi-instance methods which don't modify the client are not affected by its modified-client enforcement, but it
-doesn't officially support running several clients at once. Use LRAM only with accounts you own.
-
-</details>
-
-<details>
-<summary><b>Why does Windows warn me when I run the installer?</b></summary>
-<br>
-
-The installer isn't code-signed yet, so SmartScreen doesn't recognise it. Check the SHA-256 against
-`SHA256SUMS.txt` on the release, then choose **More info → Run anyway**.
-
-</details>
-
-<details>
-<summary><b>Why does my antivirus or VirusTotal flag the installer?</b></summary>
-<br>
-
-A few engines (Arctic Wolf, DeepInstinct, SecureAge, Skyhigh) score unsigned installers on
-reputation and entropy rather than on anything the file does, and a compressed Inno Setup installer
-looks like a packer to them. Windows Defender can go further and convict a build from its behaviour
-alone (`Behavior:Win32/DefenseEvasion.A!ml`) — a cloud guess, pinned to that file's hash, and only
-Microsoft can clear it. Code signing is the fix and is not done yet; [docs/ANTIVIRUS.md](docs/ANTIVIRUS.md)
-has what each flag means, what LRAM does that looks suspicious and what was removed, how to report
-it, and how to check the file yourself.
-
-</details>
-
-<details>
-<summary><b>Multi-instance says Roblox is already running.</b></summary>
-<br>
-
-Roblox's tray app or an open client already holds the lock LRAM needs. Click **Close Roblox** when LRAM offers it, then
-launch from LRAM. To keep that client open, click **Take over** instead.
-
-</details>
-
-<details>
-<summary><b>An account shows "Cookie expired" or needs verification.</b></summary>
-<br>
-
-Roblox ended that sign-in, or wants a human check. Open the account on roblox.com from its menu and complete the
-check, or remove it and add it again.
-
-</details>
-
-<details>
-<summary><b>I forgot my master password.</b></summary>
-<br>
-
-If you made a **recovery code**, press **Forgot password?** on the unlock screen, enter the code and choose a new
-password. The code works once and you get a new one. It's optional: make one when you set the password, or later in
-**Settings**.
-
-- A code file on the same PC opens the vault for anyone who finds it, so keep it on a USB stick, a phone or paper.
-- It works only for the same Windows user on the same PC. After a Windows reinstall or on a new PC it won't help; a
-  `.lLRAM` backup does.
-
-Without a code the password can't be recovered: that is what makes it safe. Remove the data folder
-(`%LOCALAPPDATA%\LRAM`) and add your accounts again, or import a `.lLRAM` backup whose password you know.
-
-</details>
-
-<details>
-<summary><b>Does it work with Bloxstrap?</b></summary>
-<br>
-
-Yes. LRAM launches through the registered bootstrapper and follows its clients. It won't install Roblox updates over a
-bootstrapper, since the bootstrapper keeps Roblox up to date itself. LRAM's graphics flags are skipped there, because a
-bootstrapper writes its own.
-
-</details>
-
-<details>
-<summary><b>Where is my data? Can I move it?</b></summary>
-<br>
-
-In `%LOCALAPPDATA%\LRAM`. **Settings → Data** opens it or moves it to another folder or drive.
-
-</details>
-
-<br>
-
-## 💬 Community
-
-Questions, ideas or bug reports? Open an **[issue](https://github.com/JohnBirlich/LRAM/issues)** or
-[open an issue](https://github.com/JohnBirlich/LRAM/issues).
-
-<br>
-
----
-
-<div align="center">
-
-# 🔧 For developers
-
-</div>
-
-## 🧭 Architecture
-
-LRAM is a [Tauri 2](https://tauri.app) app: a Rust backend that owns every secret, process and network call, and a
-React UI that talks to it over typed IPC. The UI never sees a cookie unless you reveal one.
-
-```mermaid
-flowchart LR
-    UI["React UI<br/>src/features/*"] -- "invoke / events<br/>(src/api.ts, ts-rs types)" --> CMD["commands.rs"]
-    CMD --> VAULT["vault<br/>DPAPI · Argon2id · AES-GCM"]
-    CMD --> API["roblox_api<br/>CSRF · rate limits · cookie rotation"]
-    CMD --> LAUNCH["launcher<br/>target · uri · bulk · update"]
-    CMD --> INST["instances<br/>tracker · limits · rejoin · metrics"]
-    CMD --> DISC["discord<br/>webhook alerts"]
-    VAULT --> DB[("SQLite<br/>roalt.db")]
-    LAUNCH --> API
-    LAUNCH --> RBX["RobloxPlayerBeta.exe"]
-    INST -- "PID + log file" --> RBX
-    INST --> DISC
-    API --> NET(("*.roblox.com"))
-```
-
-| Module | Role |
-|---|---|
-| [`vault/`](src-tauri/src/vault) | Envelope encryption: one random data key encrypts every secret (AES-256-GCM, row-bound AAD). The key is wrapped with DPAPI, or with an Argon2id key from the master password and then DPAPI. Windows Hello re-auth, `.lLRAM` backups. |
-| [`roblox_api/`](src-tauri/src/roblox_api) | The one typed Roblox client. Every URL in `endpoints.rs`. CSRF from the real request's 403, per-route queues driven by `x-ratelimit-*`, rotated `.ROBLOSECURITY` saved atomically, three error-body shapes parsed. |
-| [`launcher/`](src-tauri/src/launcher) | `target.rs` parses any pasted link locally; `uri.rs` builds the `roblox-player:` URI exactly like the website; `bulk.rs` runs batches and same-server; `client_settings.rs` the FPS cap and lowest graphics; `flags.rs` the rendering flags; `update.rs` + `authenticode.rs` install Roblox updates after `WinVerifyTrust`. |
-| [`instances/`](src-tauri/src/instances) | `tracker.rs` ties each client to its account by PID, start time and log file; `logwatch.rs` reads job IDs and disconnects; `rejoin.rs` and the crash breaker; `limits.rs` CPU caps, affinity, efficiency mode, trims; `metrics.rs`; `multi.rs` the singleton lock; `capture.rs` live previews; `window.rs` hidden clients, micro and tile; `resize.rs` free resizing; `qos.rs`; `afk.rs`. |
-| [`discord.rs`](src-tauri/src/discord.rs) | Webhook alerts: host-checked URL, events coalesced every 2 s, `retry_after` honoured. |
-| [`webview.rs`](src-tauri/src/webview.rs) | Sign-in and session windows on temporary WebView2 profiles, deleted after use. |
-| [`storage/`](src-tauri/src/storage) | SQLite through `rusqlite` with numbered migrations. Running clients live in memory only. |
-
-<details>
-<summary><b>How a launch works</b></summary>
-<br>
-
-1. Validate the account, then resolve a share link or universe with **that account's** cookie.
-2. `GET auth.roblox.com/v1/client-assertion/`, then POST `authentication-ticket` with it, as the website does.
-3. Build the `roblox-player:` URI with a fresh `browsertrackerid`, then start the client from the path in
-   `HKCU\Software\ROBLOX Corporation\Environments\roblox-player`.
-4. Record the PID and creation time and close the process handle at once.
-5. Bind the client's `_Player_` log by that tracker ID, then read its job ID, user ID and disconnects. If Roblox
-   relaunches itself during an update, the tracker re-binds through the log's `userid:`.
-
-</details>
-
-<details>
-<summary><b>Process-handle rules</b></summary>
-<br>
-
-Every sample or change opens a short-lived handle checked against the client's start time, with only the right it
-needs: `PROCESS_QUERY_LIMITED_INFORMATION` for metrics, `PROCESS_SET_QUOTA` for trims, `PROCESS_SET_INFORMATION` for
-affinity and efficiency mode. Never `PROCESS_VM_READ` and never `PROCESS_DUP_HANDLE`: nothing in LRAM reaches into a client's
-handles or memory. Only the CPU-cap job handle is kept.
-
-</details>
-
-The full design, with every Roblox behaviour verified and its source, is in [docs/DESIGN.md](docs/DESIGN.md).
-What each milestone added and how to test it is in [docs/MILESTONES.md](docs/MILESTONES.md).
-
-<br>
-
-## 🧱 Tech stack
-
-| Layer | Tools |
-|---|---|
-| Shell | Tauri 2.12, WebView2 |
-| Backend | Rust (edition 2024), tokio, reqwest (rustls), rusqlite + rusqlite_migration, `windows` 0.62 |
-| Crypto | aes-gcm, argon2, zeroize, Windows DPAPI and Windows Hello |
-| Frontend | React 19, TypeScript, Vite, Tailwind CSS 4, TanStack Query 5 |
-| IPC types | [ts-rs](https://github.com/Aleph-Alpha/ts-rs): Rust types exported to `src/bindings/` |
-| Installer | Inno Setup 6.6, GitHub Actions (CI and tagged draft releases) |
-
-<br>
-
-## 🔨 Build from source
-
-**Needs:** Node.js 24, Rust (stable, with the Visual Studio Build Tools' C++ workload) and, for the installer,
-[Inno Setup 6.6 or newer](https://jrsoftware.org/isdl.php).
+- Git и Node.js 24 с npm — как в CI;
+- Rust через rustup, toolchain с поддержкой `rust-version = 1.95` или новее;
+- Microsoft C++ Build Tools с Windows SDK;
+- WebView2 Runtime;
+- Strawberry Perl для сборки vendored OpenSSL, используемого SQLCipher;
+- Inno Setup **6.6 или новее**, если нужен установщик.
 
 ```powershell
 git clone https://github.com/JohnBirlich/LRAM.git
 cd LRAM
 npm ci
-npm run tauri dev        # run the app with hot reload
+npm run tauri dev
 ```
 
-| Command | What it does |
-|---|---|
-| `npm run tauri dev` | Runs the full app. |
-| `npm run dev` | Runs the UI alone in a browser, against a built-in mock of the backend (`src/dev/mockIpc.ts`). |
-| `npm run build` | Type-checks and builds the UI into `dist/`. |
-| `npm run bindings` | Regenerates the TypeScript types in `src/bindings/` from the Rust types. Run it after changing a `#[ts(export)]` type. |
-| `powershell -ExecutionPolicy Bypass -File scripts\build-installer.ps1` | Release build plus installer: `dist-installer\LRAM-Setup-<version>.exe` and its SHA-256. |
-| `…\build-installer.ps1 -Dev` | Also keeps `installers\LRAM-Setup-<version>-dev-<stamp>.exe`, one per change. |
+Команды выполняются из корня репозитория. `npm run dev` запускает только Vite, без нативных возможностей Tauri.
 
-> [!TIP]
-> Set `LRAM_DATA_DIR` to a scratch folder to run a build without touching your real accounts.
-
-<br>
-
-## 📁 Project layout
-
-```text
-├─ src/                    React UI
-│  ├─ App.tsx              window shell, navigation, shortcuts
-│  ├─ api.ts               one typed wrapper per backend command
-│  ├─ bindings/            ts-rs generated types (committed)
-│  ├─ dev/mockIpc.ts       mock backend for `npm run dev`
-│  ├─ ui/                  shared components
-│  └─ features/            dashboard · accounts · launch · servers · performance · monitor · discord · debug · settings · splash · vault
-├─ src-tauri/              Rust backend
-│  ├─ src/
-│  │  ├─ main.rs           builder, plugins, managed state
-│  │  ├─ commands.rs       IPC layer
-│  │  ├─ model.rs          shared types (exported to TS)
-│  │  ├─ vault/  roblox_api/  launcher/  instances/  storage/
-│  │  ├─ discord.rs  webview.rs  tray.rs  error.rs
-│  ├─ tests/fixtures/      recorded Roblox responses (no real cookies)
-│  └─ tauri.conf.json
-├─ installer/LRAM.iss     Inno Setup script
-├─ scripts/                build-installer.ps1
-├─ docs/                   DESIGN.md · MILESTONES.md · research/
-└─ .github/workflows/      ci.yml · release.yml
-```
-
-<br>
-
-## 🧪 Testing
+### Проверки
 
 ```powershell
-npm run typecheck                              # TypeScript
+# TypeScript, полнота строк и production-сборка интерфейса
+npm run build
+
+# Отдельная проверка строк
+npm run i18n:check
+
+# Тесты расчёта вместимости
+npm run test:capacity
+npm run test:privacy
+
+# Тесты и Clippy нативной части — на Windows
 cd src-tauri
-cargo test --locked                            # Rust unit tests
+cargo test --locked
 cargo clippy --all-targets --locked -- -D warnings
+cd ..
 ```
 
-The Rust tests cover link parsing, URI building (byte-for-byte against the website's output), vault and backup
-round-trips, and response parsing from recorded fixtures. They never use real cookies. CI runs all of the above on
-`windows-latest` for every push and pull request.
+CI запускает сборку интерфейса, Rust-тесты и Clippy на `windows-latest`. Исторические аудиты в `docs/` не заменяют проверку текущей ревизии.
 
-<br>
+### Сборка установщика
 
-## 🤝 Contributing
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\build-installer.ps1
+```
 
-Bug reports, ideas and pull requests are welcome.
+Скрипт проверяет совпадение версий, собирает приложение с Cargo lockfile, запускает Inno Setup и печатает SHA-256. Результат:
 
-1. Open an [issue](https://github.com/JohnBirlich/LRAM/issues) first for anything big.
-2. Keep changes small and focused, and match the surrounding code.
-3. Run the [tests](#-testing) and `npm run bindings` if you changed a shared type.
-4. Never commit a real cookie, ticket or webhook, including in fixtures or screenshots.
+```text
+dist-installer/LRAM-Setup-0.12.7.exe
+```
 
-<br>
+`-ExecutionPolicy Bypass` относится к этому запуску сборочного PowerShell-скрипта; это не инструкция отключать Defender.
 
-## 📦 Cut a release
+Повторная сборка тех же исходников может отличаться от опубликованного EXE из-за окружения и инструментов. Зависимости и упаковку не следует менять только ради обхода антивирусного обнаружения.
 
-<details>
-<summary><b>Steps</b></summary>
-<br>
+### Структура репозитория
 
-1. Set the same version in `src-tauri/tauri.conf.json`, `package.json` and `src-tauri/Cargo.toml`,
-   then run `cargo update -p roalt --offline` in `src-tauri` so `Cargo.lock` matches (CI builds `--locked`).
-2. Commit all four files, then tag and push the tag: `git tag vX.Y.Z && git push origin vX.Y.Z`.
-3. The Release workflow builds the installer and puts it with `SHA256SUMS.txt` on a draft release.
-   Check it, then publish the draft.
+```text
+src/                  React-интерфейс, IPC API, строки и типы
+src/features/         Аккаунты, запуск, мониторинг, настройки и другие экраны
+src-tauri/src/        Rust-бэкенд и интеграция с Windows
+src-tauri/src/vault/  Защита секретов и резервные копии
+src-tauri/src/storage/ База данных и миграции
+src-tauri/src/launcher/ Запуск Roblox и обновление клиента
+src-tauri/src/instances/ Процессы, окна и ресурсы клиентов
+installer/            Inno Setup
+scripts/              Сборка, проверка строк и вспомогательные инструменты
+docs/                 Проектные заметки, история решений и исследования
+.github/workflows/    CI и выпуск релизов
+```
 
-</details>
+### Выпуск новой версии
 
-<br>
+1. Проверьте изменения и результаты Windows CI.
+2. Согласуйте версии в `package.json`, корневой записи `package-lock.json`, `src-tauri/Cargo.toml`, записи пакета `lram` в `src-tauri/Cargo.lock` и `src-tauri/tauri.conf.json`.
+3. Для новой сборки используйте новый номер версии; не подменяйте файлы уже опубликованного релиза.
+4. Workflow `Release` запускается по тегу `v*` или вручную и создаёт **черновик** с установщиком и SHA-256.
+5. Проверьте артефакты, подписи и результаты антивирусного анализа перед публикацией.
 
-## 🧬 A fork of RoALT
+Authenticode и подпись встроенного обновления — разные механизмы. В workflow они зависят от отдельных настроек; не называйте сборку подписанной без проверки её фактических артефактов.
 
-LRAM is a fork of **[RoALT](https://github.com/inspectsoftware/RoALT)**, the local-only Roblox account
-manager written by **[inspectsoftware](https://github.com/inspectsoftware)**. The architecture, the
-encrypted vault, the launcher, the instance tracker and the whole original feature set are that
-project's work, and the credit for them belongs to its author.
+## Обратная связь
 
-What this fork changes:
+Сообщайте об ошибках в [Issues проекта LRAM](https://github.com/JohnBirlich/LRAM/issues). Укажите версию приложения и Windows, шаги воспроизведения и ожидаемый результат. Для антивирусного обнаружения добавьте имя угрозы, версию определений и SHA-256 файла.
 
-- **Name and identity**: LRAM instead of RoALT, its own icon, window title and installer.
-- **No updater, no donations, no community Discord**: releases are downloaded and installed by hand,
-  and nothing in the app asks for money.
-- **English only**: one language, no translations to keep in sync.
-- **Its own releases**: fixes and features after the fork point (0.10.x and 0.11.x) come from the
-  reports and suggestions in `docs/REQUESTS.md` — false "Disconnected" and "Closed unexpectedly"
-  states, the first-launch "failed" report, the 403 hint, window tiling, friend requests and the
-  anti-AFK press modes.
+Перед публикацией диагностики удаляйте cookie, токены, webhook URL, приватные ссылки и персональные данные. Не прикладывайте рабочую базу аккаунтов или её ключ.
 
-The rest of the credit is Roblox's own API and client, which do the actual work.
+## A fork of RoALT
 
-<br>
+LRAM основан на [RoALT](https://github.com/inspectsoftware/RoALT) от [inspectsoftware](https://github.com/inspectsoftware). Это не просто другое имя установщика: после отделения проект получил собственное оформление и доработки управления клиентами.
 
-## 👥 Contributors
+### Что изменено и добавлено в LRAM
 
-| | Who | What |
-|---|---|---|
-| 🧑‍💻 | **[JohnBirlich](https://github.com/JohnBirlich)** — author and maintainer | The project itself: what LRAM is for, every decision about what it does and does not do, the Roblox-TOS and privacy rules, testing on real clients, the releases, and the last word on every change. By the author's own estimate, about 80% of the work; the rest is the code below. |
-| 🤖 | **Arena Agent** — AI pair-progLRAMmer | Docs, tests and release notes, written to those decisions in this repository's style, checked through CI before anything is merged. |
+Сравнение ниже относится к исходной базе RoALT, от которой отделился LRAM, а не к каждой будущей версии upstream.
 
-<br>
+| Область | Доработки LRAM |
+|---|---|
+| **Интерфейс** | Собственное оформление LRAM: плотные таблицы, прямоугольные панели, сине-серые акценты, логотип и иконки проекта. |
+| **Работа со звуком** | Заглушение новых и уже запущенных клиентов через Windows Core Audio; отдельное управление звуком клиента. |
+| **Управление окнами** | Доработки восстановления размеров после полноэкранного режима и сворачивания, размещения клиентов и группировки на экране. |
+| **Anti-AFK** | Дополнительные режимы нажатий для разных сценариев, включая варианты без движения персонажа. |
+| **Друзья** | Отправка и принятие запросов в друзья из приложения. |
+| **Состояния клиентов** | Исправления определения отключения и завершения клиента, отчёта о первом запуске и сообщений об ошибках доступа. |
+| **Отдельная установка** | Свой идентификатор приложения, установщик `LRAM-Setup-<версия>.exe` и каталог данных `%LOCALAPPDATA%\LRAM`. |
+| **Совместимость данных** | Подхват старых имён файлов базы RoALT, импорт старых форматов резервных копий и профилей; новые экспорты используют обозначения LRAM. |
 
-## 📜 Disclaimer
+### Что устроено иначе
 
-LRAM is a fork of RoALT by [inspectsoftware](https://github.com/inspectsoftware) and is an independent
-project: not affiliated with or endorsed by Roblox Corporation, and not the original author's build.
-Use it only with accounts you own. Roblox doesn't officially support running several clients at once and may
-change how its client behaves at any time.
+- **Отдельный выпуск:** собственный репозиторий, Issues и релизы под управлением JohnBirlich.
+- **Ручное обновление LRAM:** встроенный обновлятор в этой конфигурации отключён; ключ выпуска не настроен.
+- **Без пожертвований исходному проекту в интерфейсе:** кнопка поддержки и компонент пожертвований RoALT удалены.
+- **Без Discord Rich Presence:** в 0.12.3 удалены клиент Rich Presence и соответствующая настройка. Необязательные уведомления через пользовательский Discord webhook сохранены — это другая функция.
+- **Англоязычный интерфейс:** текущая сборка использует английский каталог строк.
 
-<div align="center">
-<br>
-<sub>Made for people with too many alts. &nbsp;·&nbsp; <a href="https://github.com/JohnBirlich/LRAM/issues">Issues</a> &nbsp;·&nbsp; <a href="https://github.com/JohnBirlich/LRAM/releases/latest">Releases</a></sub>
-</div>
+Шифрованное хранилище, базовая архитектура, запуск Roblox и значительная часть мониторинга унаследованы от RoALT. Мы не выдаём их за уникальные разработки LRAM. История изменений описана в [заметках о переименовании](docs/REBRAND.md), [дизайне LRAM](docs/DESIGN-LRAM.md) и [разборе пользовательских запросов](docs/REQUESTS.md); отдельные исторические записи могут описывать более раннее состояние кода.
+
+## Авторство и ограничения
+
+LRAM — независимый проект JohnBirlich, основанный на RoALT от inspectsoftware. Ссылки на RoALT и старые имена в миграциях и исторических документах сохраняют происхождение проекта и совместимость данных.
+
+Проект не связан с Roblox Corporation и не одобрен ею. Используйте только собственные аккаунты, соблюдайте правила Roblox и конкретных игр. Возможности менеджера не предоставляют разрешения нарушать эти правила.

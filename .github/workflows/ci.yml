@@ -21,14 +21,42 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      - run: npm run test:capacity
+      - run: npm run test:privacy
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-      - run: cargo test --locked
+          cache-on-failure: true
+      - name: Rust tests
+        run: |
+          $output = & cargo test --locked --color never --quiet 2>&1
+          $code = $LASTEXITCODE
+          $output | Write-Output
+          if ($code -ne 0) {
+            $tail = ($output | Where-Object { $_ -notmatch "warning LNK4099" } | Select-Object -Last 100) -join "`n"
+            if ($tail.Length -gt 24000) { $tail = $tail.Substring($tail.Length - 24000) }
+            for ($i = 0; $i -lt $tail.Length; $i += 3000) {
+              $part = $tail.Substring($i, [Math]::Min(3000, $tail.Length - $i)).Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+              Write-Output "::error title=Rust tests failed ($i)::$part"
+            }
+            exit $code
+          }
         working-directory: src-tauri
       - if: ${{ !cancelled() }}
-        run: cargo clippy --all-targets --locked -- -D warnings
+        run: |
+          $output = & cargo clippy --all-targets --locked --color never -- -D warnings 2>&1
+          $code = $LASTEXITCODE
+          $output | Write-Output
+          if ($code -ne 0) {
+            $tail = ($output | Where-Object { $_ -notmatch "warning LNK4099" } | Select-Object -Last 100) -join "`n"
+            if ($tail.Length -gt 24000) { $tail = $tail.Substring($tail.Length - 24000) }
+            for ($i = 0; $i -lt $tail.Length; $i += 3000) {
+              $part = $tail.Substring($i, [Math]::Min(3000, $tail.Length - $i)).Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+              Write-Output "::error title=Clippy failed ($i)::$part"
+            }
+            exit $code
+          }
         working-directory: src-tauri

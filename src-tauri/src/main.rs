@@ -6,6 +6,7 @@ mod commands;
 mod diagnostics;
 mod discord;
 mod error;
+mod hardware;
 mod instances;
 mod launcher;
 mod model;
@@ -570,11 +571,15 @@ fn main() {
             commands::instances_close_all,
             commands::instances_clear_ended,
             commands::instance_set_limits,
+            commands::instance_performance,
+            commands::instance_restart_performance,
             commands::instance_trim,
             commands::instance_set_anti_afk,
             commands::instance_set_muted,
             commands::instances_metrics,
             commands::system_usage,
+            commands::hardware_info,
+            commands::public_location,
             commands::instance_stop_relaunch,
             commands::instances_retry_relaunch,
             commands::instance_thumbnail,
@@ -586,6 +591,7 @@ fn main() {
             commands::bandwidth_apply,
             commands::multi_instance_status,
             commands::multi_instance_set,
+            commands::multi_instance_take_over,
             commands::roblox_close_all,
             commands::panic_kill,
             commands::crashes_list,

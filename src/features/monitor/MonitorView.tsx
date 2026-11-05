@@ -1,8 +1,10 @@
+import { privateText, usePrivacy } from "../../privacy";
+import { SystemPanel } from "./SystemPanel";
 import { useEffect, useState, type ReactNode } from "react";
 import type { AccountSummary, ClientMetrics } from "../../api";
 import { useInstances, useMetrics } from "../../data";
 import { accountName, Avatar } from "../accounts/shared";
-import { isRunning, STATES, uptime, useNow } from "../launch/Running";
+import { isRunning, instanceState, cpuStatus, uptime, useNow } from "../launch/Running";
 import { fmtNum, t } from "../../i18n";
 
 const KEEP = 60;
@@ -65,6 +67,7 @@ function Tile({ label, value, children }: { label: string; value: string; childr
 
 // -- Main func
 export function MonitorView({ accounts }: { accounts: AccountSummary[] }) {
+  usePrivacy();
   const running = (useInstances().data ?? []).filter(isRunning);
   const metrics = useMetrics();
   const now = useNow(30_000);
@@ -96,10 +99,12 @@ export function MonitorView({ accounts }: { accounts: AccountSummary[] }) {
   const gpuMemNow = list.some((m) => m.gpuMemMb !== null) ? list.reduce((n, m) => n + (m.gpuMemMb ?? 0), 0) : null;
 
   return (
-    <main className="scroll flex-1 min-w-0 px-8 pt-5 pb-12">
-      <div className="enter max-w-[1100px] flex flex-col">
+    <main className="page-shell scroll flex-1 min-w-0 pt-5 pb-12">
+      <div className="enter w-full min-w-0 flex flex-col">
         <h1 className="page-title">{t("monitor.title")}</h1>
         <p className="page-sub">{t("monitor.intro")}</p>
+
+        <SystemPanel running={running} />
 
         <div className="grid gap-6 mt-6" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(165px, 1fr))" }}>
           <Tile label={t("monitor.clients")} value={String(running.length)} />
@@ -141,20 +146,21 @@ export function MonitorView({ accounts }: { accounts: AccountSummary[] }) {
                 const a = byId.get(i.accountId);
                 const m = byInst.get(i.id);
                 const h = hist.per.get(i.id);
-                const [label, color] = STATES[i.state];
+                const [baseLabel, color] = instanceState(i);
+                const label = [baseLabel, cpuStatus(i)].filter(Boolean).join(" · ");
                 return (
-                  <tr key={i.id} className="h-12 border-b border-line last:border-b-0" title={`PID ${i.pid}`} style={{ fontVariantNumeric: "tabular-nums" }}>
+                  <tr key={i.id} className="h-12 border-b border-line last:border-b-0" title={String(privateText(`PID ${i.pid}`))} style={{ fontVariantNumeric: "tabular-nums" }}>
                     <td className="pe-3 max-w-[180px]">
                       <span className="flex items-center gap-2 min-w-0 font-sans">
                         {a && <Avatar account={a} size={20} />}
-                        <span className="truncate min-w-[80px]">{a ? accountName(a) : t("monitor.accountId", { id: i.accountId })}</span>
+                        <span className="truncate min-w-[80px]">{a ? accountName(a) : String(privateText(t("monitor.accountId", { id: i.accountId })))}</span>
                       </span>
                     </td>
                     <td className="pe-3 whitespace-nowrap">
                       <span className="flex items-baseline gap-1.5">
                         <span aria-hidden="true" className="w-2 h-2 flex-none rounded-full" style={{ background: color }} />
                         {label}
-                        {i.note && <span className="text-orange truncate"> · {i.note}</span>}
+                        {i.note && <span className="text-orange truncate"> · {privateText(i.note)}</span>}
                       </span>
                     </td>
                     <td className="pe-3 text-end whitespace-nowrap">{m ? pct(m.cpuPct) : "—"}</td>

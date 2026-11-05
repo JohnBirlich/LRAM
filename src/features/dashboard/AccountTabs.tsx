@@ -1,3 +1,4 @@
+import { privateText, usePrivacy } from "../../privacy";
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { api, asError, type AccountSummary, type BulkProgress, type Instance } from "../../api";
@@ -10,7 +11,7 @@ import { toast, toastError } from "../../ui/Toast";
 import { accountName, Avatar } from "../accounts/shared";
 import { FavouritesRow } from "../launch/Favourites";
 import { launchBlocked, launched, launchFailed, MARK } from "../launch/LaunchView";
-import { isLive, isRunning, MultiNotice, STATES } from "../launch/Running";
+import { isLive, isRunning, MultiNotice, instanceState } from "../launch/Running";
 import { draftFor, readDraft, resolveTarget, type Draft } from "../launch/target";
 import { homeSorted, storedText, type HomeTab, type HomeTabs } from "./homeLayout";
 import { Sortable } from "./Sortable";
@@ -40,6 +41,7 @@ function TabBody({ tab, account: a, accounts, instances, block, onDraft, onLaunc
   onDraft: (f: Draft | ((d: Draft) => Draft)) => void;
   onLaunch: () => void;
 }) {
+  const privacy = usePrivacy();
   const update = useUpdateAccount();
   const settings = useSettings().data;
   const { draft } = tab;
@@ -50,7 +52,7 @@ function TabBody({ tab, account: a, accounts, instances, block, onDraft, onLaunc
   const busy = inFlight(tab);
   const name = accountName(a);
   const valid = a.status === "valid";
-  const [state, color] = inst ? STATES[inst.state] : [null, undefined];
+  const [state, color] = inst ? instanceState(inst) : [null, undefined];
   const unsaved = usable && !pending && !storedText(draft);
   return (
     <>
@@ -88,8 +90,8 @@ function TabBody({ tab, account: a, accounts, instances, block, onDraft, onLaunc
             placeholder={t("launch.targetPlaceholder")}
             spellCheck={false}
             autoComplete="off"
-            disabled={busy}
-            value={draft.text}
+            disabled={busy || privacy}
+            value={privacy ? "Hidden" : draft.text}
             onChange={(e) => {
               const v = e.target.value;
               onDraft((d) => ({ ...d, text: v, favId: null, note: null }));
@@ -102,15 +104,15 @@ function TabBody({ tab, account: a, accounts, instances, block, onDraft, onLaunc
                 {look ? (
                   <>
                     <span className="font-semibold flex-none">{look.kind}</span>
-                    <span className={`mono text-[13px] truncate ${look.tone === "bad" ? "text-orange" : "text-dim"}`} title={look.detail}>
-                      {look.detail}
+                    <span className={`mono text-[13px] truncate ${look.tone === "bad" ? "text-orange" : "text-dim"}`} title={privateText(look.detail)}>
+                      {privateText(look.detail)}
                     </span>
                   </>
                 ) : (
                   <span className="text-dim">{t("launch.reading")}</span>
                 )}
               </span>
-              {draft.note && <span className="tag flex-none max-w-[30%] truncate">{draft.note}</span>}
+              {draft.note && <span className="tag flex-none max-w-[30%] truncate">{privateText(draft.note)}</span>}
             </div>
           )}
           {unsaved && <p className="text-[13px] text-dim">{t("dashboard.tabs.notSaved")}</p>}
@@ -122,8 +124,8 @@ function TabBody({ tab, account: a, accounts, instances, block, onDraft, onLaunc
                 inputMode="numeric"
                 spellCheck={false}
                 placeholder={t("launch.placeIdPlaceholder")}
-                value={draft.place}
-                disabled={busy}
+                value={privacy ? "Hidden" : draft.place}
+                disabled={busy || privacy}
                 aria-invalid={draft.place.trim() !== "" && place === null}
                 onChange={(e) => {
                   const v = e.target.value;
@@ -277,7 +279,7 @@ export function AccountTabs({ accounts, home, onAdd, children }: { accounts: Acc
             const tab = tabs.find((x) => x.accountId === id)!;
             const a = byId.get(id)!;
             const inst = instances.find((i) => i.accountId === a.id && isLive(i));
-            const mark = inFlight(tab) ? "var(--dim)" : inst ? STATES[inst.state][1] : tab.status === "failed" ? "var(--orange)" : null;
+            const mark = inFlight(tab) ? "var(--dim)" : inst ? instanceState(inst)[1] : tab.status === "failed" ? "var(--orange)" : null;
             const selected = active === a.id;
             const name = accountName(a);
             return (

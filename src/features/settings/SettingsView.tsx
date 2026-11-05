@@ -1,3 +1,4 @@
+import { usePrivacy, privateText } from "../../privacy";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { open as openFile, save as saveFile } from "@tauri-apps/plugin-dialog";
@@ -68,7 +69,7 @@ const SHORTCUTS: [Key, string][] = [
 
 const backupFilter = () => [{ name: t("settings.backupFilter"), extensions: ["lram"] }];
 const openBackupFilter = () => [{ name: t("settings.backupFilter"), extensions: ["lram", "roalt"] }];
-const RELEASES = "https://github.com/JohnBirlich/RAM/releases";
+const RELEASES = "https://github.com/JohnBirlich/LRAM/releases";
 const cancelled = () => ({ kind: "cancelled", message: "" });
 
 type VaultDialog = "set" | "change" | "remove" | "export";
@@ -132,8 +133,8 @@ export function SettingsView({ vault, settings, onPerformance, onRecoveryCode }:
   }
 
   return (
-    <main className="scroll flex-1 min-w-0 px-8 pt-5 pb-12">
-      <div className="enter max-w-[1400px] flex flex-col">
+    <main className="page-shell scroll flex-1 min-w-0 pt-5 pb-12">
+      <div className="enter w-full min-w-0 flex flex-col">
         <header className="flex flex-wrap items-start justify-between gap-3 mb-2">
           <h1 className="page-title">{t("settings.title")}</h1>
           <dl aria-label={t("settings.section.about")} className="panel grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 px-3.5 py-2 text-[13px] max-w-[280px]">
@@ -147,6 +148,9 @@ export function SettingsView({ vault, settings, onPerformance, onRecoveryCode }:
         <div className="grid items-start gap-8 mt-5" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(440px, 100%), 1fr))" }}>
         <div className="flex flex-col gap-8 min-w-0">
         <Section id="general" title={t("settings.section.general")}>
+        <Row title="Privacy mode" hint="Hide account identities, statuses, groups, notes, game details, previews, hardware and IP/location. Saved across restarts. This masks the interface, not network traffic or exported files.">
+          <Switch label="Privacy mode" checked={settings.privacyMode} onChange={(privacyMode) => set.mutate({ privacyMode })} />
+        </Row>
         <Row title={t("settings.theme")} hint={t("settings.themeHint")}>
           <Segmented
             label={t("settings.theme")}
@@ -537,7 +541,7 @@ export function SettingsView({ vault, settings, onPerformance, onRecoveryCode }:
         onConfirm={() => void moveData()}
         busy={moving}
         title={t("settings.moveTitle")}
-        text={tx("settings.moveText", { path: <span className="mono text-text break-all">{movePath}</span> })}
+        text={tx("settings.moveText", { path: <span className="mono text-text break-all">{privateText(movePath)}</span> })}
         confirmLabel={moving ? t("settings.moving") : t("settings.moveRestart")}
         safe
       />
@@ -854,6 +858,8 @@ function Section({ id, title, children }: { id: string; title: string; children:
 }
 
 function PathHint({ path }: { path: string }) {
+  const privacy = usePrivacy();
+  if (privacy) return <span>Hidden</span>;
   return <span className="mono block truncate selectable" title={path}>{path}</span>;
 }
 

@@ -1,14 +1,15 @@
+import { isPrivate, privateText, usePrivacy } from "../../privacy";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type AccountSummary, type ClientMetrics, type GameInfo, type Group, type Instance, type Limits, type WindowShow } from "../../api";
 import { groupColor, qk, queryClient, useInstances, useMetrics, useSetSettings, useSettings, useSystemUsage } from "../../data";
-import { Segmented, Switch } from "../../ui/controls";
-import { ConfirmDialog } from "../../ui/Dialog";
+import { NumberField, Segmented, Switch } from "../../ui/controls";
+import { ConfirmDialog, Dialog } from "../../ui/Dialog";
 import { Icon, type IconName } from "../../ui/Icon";
 import { toast, toastError } from "../../ui/Toast";
 import { fmtList, isRtl, t } from "../../i18n";
 import { accountName, Avatar } from "../accounts/shared";
-import { EndedPanel, isRunning, LimitsDialog, STATES, uptime, useNow } from "../launch/Running";
+import { EndedPanel, isRunning, LimitsDialog, instanceState, cpuStatus, uptime, useNow } from "../launch/Running";
 import { launched, launchFailed } from "../launch/LaunchView";
 import { mb, pct } from "../monitor/MonitorView";
 import { menuKeys } from "../../ui/menu";
@@ -32,11 +33,13 @@ const STATUSES = ["live", "minimized", "noWindow", "pending", "unsupported"] as 
 let cardsInView = 0;
 
 function useThumbnail(id: string, canvas: React.RefObject<HTMLCanvasElement | null>, fps: PreviewFps) {
+  const privacy = usePrivacy();
   const [status, setStatus] = useState<(typeof STATUSES)[number] | null>(null);
   const [painted, setPainted] = useState(false);
   const [ghost, setGhost] = useState(false);
   const [ageS, setAgeS] = useState<number | null>(null);
   useEffect(() => {
+    if (privacy) return;
     let stop = false;
     let timer: number | undefined;
     let known = 0;
@@ -89,7 +92,7 @@ function useThumbnail(id: string, canvas: React.RefObject<HTMLCanvasElement | nu
       seen.disconnect();
       if (inView) cardsInView--;
     };
-  }, [id, canvas, fps]);
+  }, [id, canvas, fps, privacy]);
   return { status, painted, ghost, ageS };
 }
 
@@ -101,7 +104,7 @@ const playAgain = (a: AccountSummary, i: Instance) => api.launch(a.id, i.target,
 
 function GameName({ placeId }: { placeId: number | null }) {
   const g = useQuery({ queryKey: qk.game(placeId), queryFn: () => api.gameInfo(placeId!), enabled: placeId !== null }).data;
-  return <span className="truncate">{placeId === null ? t("dashboard.noGameYet") : g?.name ?? t("dashboard.place", { id: placeId })}</span>;
+  return <span className="truncate">{isPrivate() ? "Hidden" : placeId === null ? t("dashboard.noGameYet") : g?.name ?? t("dashboard.place", { id: placeId })}</span>;
 }
 
 const cardFlex = (width: number | undefined, detailed: boolean) => {
@@ -186,9 +189,9 @@ function ClientCard({ inst: i, account: a, groups, metrics: m, now, afkOn, defau
   const { status, painted, ghost, ageS } = useThumbnail(i.id, canvas, fps);
   const noWindow = status === "noWindow" || (status === null && i.state === "starting");
   const hidden = status === "minimized" || ghost;
-  const name = a ? accountName(a) : t("dashboard.account", { id: i.accountId });
+  const name = a ? accountName(a) : String(privateText(t("dashboard.account", { id: i.accountId })));
   const rejoining = i.relaunching && i.state === "disconnected";
-  const [label, color] = closing ? [t("launch.running.closing"), "var(--dim)"] : rejoining ? [t("launch.state.rejoining"), "var(--orange)"] : STATES[i.state];
+  const [label, color] = isPrivate() ? ["Hidden", "var(--dim)"] : closing ? [t("launch.running.closing"), "var(--dim)"] : rejoining ? [t("launch.state.rejoining"), "var(--orange)"] : instanceState(i);
   const moving = i.state === "starting" || i.state === "joining" || rejoining || closing;
   const focus = () => api.instanceShow(i.id, "focus").catch(toastError);
   const throttled = t("dashboard.throttled");
@@ -221,7 +224,7 @@ function ClientCard({ inst: i, account: a, groups, metrics: m, now, afkOn, defau
       data-group={i.accountId}
       className={`tile panel relative flex flex-col outline-offset-2 ${detailed ? "gap-3 p-3.5" : "gap-2 p-2.5"}`}
       style={cardFlex(width, detailed)}
-      title={`PID ${i.pid}`}
+      title={String(privateText(`PID ${i.pid}`))}
       onDoubleClick={(e) => {
         if (!(e.target as Element).closest("button")) void focus();
       }}
@@ -241,12 +244,12 @@ function ClientCard({ inst: i, account: a, groups, metrics: m, now, afkOn, defau
     >
       <div className="bezel">
         <div className="relative aspect-video overflow-hidden rounded-[9px]">
-          <canvas ref={canvas} aria-hidden="true" className={`w-full h-full object-contain ${painted ? "" : "invisible"} ${pictureNote || ageS !== null ? "opacity-50" : ""}`} />
-          {!painted && <span className="absolute inset-0 grid place-items-center text-xs text-dim">{pictureNote}</span>}
+          <canvas hidden={isPrivate()} ref={canvas} aria-hidden="true" className={`w-full h-full object-contain ${painted ? "" : "invisible"} ${pictureNote || ageS !== null ? "opacity-50" : ""}`} />
+          {isPrivate() ? <span className="absolute inset-0 grid place-items-center">Hidden</span> : !painted && <span className="absolute inset-0 grid place-items-center text-xs text-dim">{pictureNote}</span>}
         </div>
-        {painted && pictureNote ? <span className="badge" title={status === "minimized" ? t("dashboard.lastPictureHint") : undefined}>{pictureNote}</span>
-          : ageS !== null ? <span className="badge" title={t("dashboard.pictureAgeHint")}>{t("dashboard.pictureAge", { s: ageS })}</span>
-          : ghost && <span className="badge" title={t("dashboard.hiddenHint")}>{t("dashboard.hidden")}</span>}
+        {!isPrivate() && painted && pictureNote ? <span className="badge" title={status === "minimized" ? t("dashboard.lastPictureHint") : undefined}>{pictureNote}</span>
+          : !isPrivate() && ageS !== null ? <span className="badge" title={t("dashboard.pictureAgeHint")}>{t("dashboard.pictureAge", { s: ageS })}</span>
+          : !isPrivate() && ghost && <span className="badge" title={t("dashboard.hiddenHint")}>{t("dashboard.hidden")}</span>}
         <button type="button" className="grip" aria-label={t("accounts.reorder", { name })} {...grip(name)}>
           <Icon name="grip" size={14} />
         </button>
@@ -272,12 +275,12 @@ function ClientCard({ inst: i, account: a, groups, metrics: m, now, afkOn, defau
               {groups.map((g) => (
                 <span key={g.id} className="tag">
                   <span aria-hidden="true" className="w-1.5 h-1.5 rounded-full" style={{ background: groupColor(g) }} />
-                  {g.name}
+                  {privateText(g.name)}
                 </span>
               ))}
             </div>
           )}
-          {i.note && !rejoining && <span className="text-[13px] text-orange">{i.note}</span>}
+          {i.note && !rejoining && <span className="text-[13px] text-orange">{privateText(i.note)}</span>}
           <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-dim min-w-0">
             <span className="flex flex-wrap gap-1 min-w-0">
               {badges.map(([b, tip]) => (
@@ -292,7 +295,7 @@ function ClientCard({ inst: i, account: a, groups, metrics: m, now, afkOn, defau
             <button className="btn flex-1 min-w-0 px-2 py-1 whitespace-normal leading-tight" disabled={noWindow} onClick={focus}>
               {t("home.show")}
             </button>
-            {i.state === "disconnected" && !i.relaunching && a ? (
+            {i.state === "disconnected" && !i.checkingProcess && !i.relaunching && a ? (
               <button className="btn btn-primary flex-1 min-w-0 px-2 py-1 whitespace-normal leading-tight" onClick={() => playAgain(a, i)}>
                 {t("home.playAgain")}
               </button>
@@ -322,16 +325,21 @@ function ClientCard({ inst: i, account: a, groups, metrics: m, now, afkOn, defau
             {(closing || i.state !== "inGame") && <span aria-hidden="true" title={label} className={`led ${moving ? "pulse" : ""}`} style={{ color }} />}
             <span className="font-medium truncate">{a?.username ?? name}</span>
             {groups.length > 0 && (
-              <span className="flex flex-none gap-1" title={groups.map((g) => g.name).join(", ")}>
+              <span className="flex flex-none gap-1" title={String(privateText(groups.map((g) => g.name).join(", ")))}>
                 {groups.slice(0, 3).map((g) => (
                   <span key={g.id} aria-hidden="true" className="w-1.5 h-1.5 rounded-full" style={{ background: groupColor(g) }} />
                 ))}
               </span>
             )}
           </div>
-          {i.note && !rejoining && <span className="px-1 text-[13px] text-orange">{i.note}</span>}
+          {i.note && !rejoining && <span className="px-1 text-[13px] text-orange">{privateText(i.note)}</span>}
         </>
       )}
+      <div className="mono text-xs text-dim flex flex-col gap-1" title={t("dashboard.usageHint")}>
+        <span>{t("dashboard.clientUsage", { cpu: m ? pct(m.cpuPct) : "—", ram: m ? mb(m.memoryMb) : "—", commit: m ? mb(m.privateMb) : "—" })}</span>
+        <span>{t("dashboard.clientPerformance", { cap: on.cpuCap === null ? t("common.off") : `${on.cpuCap}%`, eco: on.eco ? t("common.on") : t("common.off"), fps: i.fpsCap ?? "—" })}</span>
+      </div>
+      {cpuStatus(i) && <p className="text-xs text-dim" role="status">{cpuStatus(i)}</p>}
       <SizeHandle name={name} detailed={detailed} onSize={onSize} />
     </div>
   );
@@ -395,7 +403,7 @@ function ClientMenu({ at, account, onClose, afkOn, closing, onLimits, onCloseCli
 
   const items: Item[] = i
     ? [
-        ...(i.state === "disconnected" && !i.relaunching && account ? [{ icon: "play", label: t("home.playAgain"), run: () => playAgain(account, i) } as Item] : []),
+        ...(i.state === "disconnected" && !i.checkingProcess && !i.relaunching && account ? [{ icon: "play", label: t("home.playAgain"), run: () => playAgain(account, i) } as Item] : []),
         { icon: "external", label: t("dashboard.focus"), run: () => show("focus") },
         at.hidden ? { label: t("dashboard.restore"), run: () => show("restore") } : { label: t("dashboard.minimize"), run: () => show("minimize") },
         { icon: "grid", label: i.micro ? t("dashboard.normalSize") : t("dashboard.microWindow", tiny), run: micro },
@@ -405,7 +413,7 @@ function ClientMenu({ at, account, onClose, afkOn, closing, onLimits, onCloseCli
         { label: t("dashboard.efficiencyMode"), checked: i.limits.eco, run: () => limits({ eco: !i.limits.eco }) },
         { label: afkOn ? t("dashboard.antiAfk") : t("dashboard.antiAfkOff"), checked: i.antiAfk, run: () => api.instanceSetAntiAfk(i.id, !i.antiAfk).catch(toastError) },
         { label: i.muted ? t("dashboard.unmute") : t("dashboard.mute"), checked: i.muted, run: () => api.instanceSetMuted(i.id, !i.muted).catch(toastError) },
-        { icon: "sliders", label: t("home.limits"), run: () => onLimits(i.id) },
+        { icon: "sliders", label: "Profile", run: () => onLimits(i.id) },
         null,
         { icon: "x", label: t("common.close"), run: () => onCloseClient(i, false), disabled: closing.has(closeKey(i)) },
         { icon: "x", label: t("dashboard.forceClose"), run: () => onCloseClient(i, true), danger: true },
@@ -512,7 +520,7 @@ function PcPanel({ metrics }: { metrics: ClientMetrics[] }) {
         )}
       </div>
       <Dial value={total((m) => m.cpuPct)} label={t("home.cpu")} hint={t("home.allClients")} />
-      <Dial value={memUsed !== null && memTotal ? (memUsed / memTotal) * 100 : null} label={t("home.memory")} hint={memUsed !== null && sys ? `${t("home.memOf", { used: mb(memUsed), total: mb(sys.memTotalMb) })} · ${t("home.commitAll", { commit: mb(commit ?? 0) })}` : t("home.allClients")} />
+      <Dial value={memUsed !== null && memTotal ? (memUsed / memTotal) * 100 : null} label={t("home.memory")} hint={memUsed !== null && sys ? `${t("home.memOf", { used: mb(memUsed), total: privateText(mb(sys.memTotalMb)) })} · ${t("home.commitAll", { commit: mb(commit ?? 0) })}` : t("home.allClients")} />
       <Dial value={gpu} label={t("home.gpu")} hint={t("home.allClients")} />
     </section>
   );
@@ -545,7 +553,7 @@ function AfkPanel() {
 }
 
 function Trouble({ inst: i, account: a }: { inst: Instance; account: AccountSummary | undefined }) {
-  const name = a ? accountName(a) : t("dashboard.account", { id: i.accountId });
+  const name = a ? accountName(a) : privateText(t("dashboard.account", { id: i.accountId }));
   return (
     <section role="status" className="enter panel flex flex-wrap items-center gap-x-5 gap-y-3 px-5 py-4">
       <span aria-hidden="true" className="led pulse" style={{ color: "var(--orange)" }} />
@@ -618,6 +626,7 @@ export function DashboardView({ accounts, groups, home, onLaunch, onAdd, onImpor
   const settings = useSettings().data;
   const afkOn = settings?.antiAfk.enabled ?? false;
   const now = useNow(30_000);
+  usePrivacy();
   const [menu, setMenu] = useState<MenuAt | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
   const openMenu = (at: MenuAt) => setMenu((m) => (at.beside !== undefined && m?.from === at.from ? null : at));
@@ -643,6 +652,8 @@ export function DashboardView({ accounts, groups, home, onLaunch, onAdd, onImpor
     setBusy(true);
     f().catch(toastError).finally(() => setBusy(false));
   };
+  const [gridOpen, setGridOpen] = useState(false);
+  const [gridColumns, setGridColumns] = useState(4);
   const tile = (micro: boolean) =>
     act(() =>
       api.instancesTile(micro).then((n) => {
@@ -685,7 +696,7 @@ export function DashboardView({ accounts, groups, home, onLaunch, onAdd, onImpor
                 <div className="min-w-0">
                   <h1 className="page-title">{inGame ? t("home.playing", { count: inGame }) : coming ? t("home.gettingIn") : t("home.noneInGame")}</h1>
                   <p className="page-sub">
-                    {games.length > 0 && <>{t("home.in", { games: fmtList(games) })} </>}
+                    {games.length > 0 && <>{t("home.in", { games: String(privateText(fmtList(games))) })} </>}
                     {settings?.autoRejoin ? t("home.autoRejoinOn") : t("home.autoRejoinOff")}
                     {settings && !settings.autoRejoin && (
                       <button className="btn btn-ghost btn-sm ms-1" onClick={() => setSettings.mutate({ autoRejoin: true })}>{t("launch.multi.turnOn")}</button>
@@ -697,6 +708,7 @@ export function DashboardView({ accounts, groups, home, onLaunch, onAdd, onImpor
                     {t("dashboard.detailedView")}
                     <Switch label={t("dashboard.detailedView")} checked={detailed} onChange={setDetailed} />
                   </label>
+                  <button className="btn" disabled={busy} onClick={() => setGridOpen(true)}>{t("dashboard.gridTitle")}</button>
                   <button className="btn" disabled={busy} onClick={tile(false)} title={t("dashboard.tileHint")}>{t("dashboard.tile")}</button>
                   <button className="btn" disabled={busy} onClick={act(() => api.instancesShowAll("minimize"))}>{t("dashboard.minimizeAll")}</button>
                   <button className="btn btn-icon" popoverTarget="home-more" style={{ anchorName: "--home-more" }} aria-label={t("home.more")} title={t("home.more")}>
@@ -745,7 +757,20 @@ export function DashboardView({ accounts, groups, home, onLaunch, onAdd, onImpor
         </AccountTabs>
       </div>
       <ClientMenu at={menu} account={menu ? byId.get(menu.inst.accountId) : undefined} onClose={closeMenu} afkOn={afkOn} closing={closingOne} onLimits={setLimitsFor} onCloseClient={closeOne} />
-      <LimitsDialog instanceId={limitsFor} name={limitedName} onClose={() => setLimitsFor(null)} />
+      <LimitsDialog instanceId={limitsFor} name={String(privateText(limitedName))} onClose={() => setLimitsFor(null)} />
+      <Dialog open={gridOpen} onClose={() => !busy && setGridOpen(false)} title={t("dashboard.gridTitle")} width={480}>
+        <div className="flex flex-col gap-4 px-5 pb-5">
+          <p className="text-dim">{t("dashboard.gridHint")}</p>
+          <NumberField unit={t("dashboard.gridColumns")} short={t("dashboard.gridColumns")} min={1} max={20} value={gridColumns} onCommit={setGridColumns} />
+          <div aria-hidden="true" className="grid gap-1" style={{ gridTemplateColumns: `repeat(${Math.min(gridColumns, Math.max(1, running.length))}, 1fr)` }}>
+            {Array.from({ length: running.length }, (_, n) => <span key={n} className="well p-2 text-center mono text-xs">{n + 1}</span>)}
+          </div>
+          <button className="btn btn-primary" disabled={busy || running.length === 0} onClick={act(() => api.instancesTile(false, gridColumns).then((count) => {
+            toast(t("dashboard.laidOut", { count }));
+            setGridOpen(false);
+          }))}>{t("dashboard.gridApply")}</button>
+        </div>
+      </Dialog>
       <ConfirmDialog
         open={confirmClose}
         onClose={() => !closing && setConfirmClose(false)}

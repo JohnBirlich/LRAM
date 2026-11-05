@@ -1,3 +1,4 @@
+import { usePrivacy } from "../../privacy";
 import { useId, useEffect, useRef, useState, type FormEvent } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, asError, type AccountSummary, type Favourite, type LaunchTarget } from "../../api";
@@ -10,7 +11,7 @@ import { friendly, toast } from "../../ui/Toast";
 import { accountName, Avatar, Status } from "../accounts/shared";
 
 // -- Main func
-export function FavouritesRow({ accounts, active, onPick }: {
+function FavouritesRowContent({ accounts, active, onPick }: {
   accounts: AccountSummary[];
   active: number | null;
   onPick: (f: Favourite) => void;
@@ -216,3 +217,5 @@ export function FavouriteDialog({ open, onClose, accounts, initial, resolve, onS
     </Dialog>
   );
 }
+
+export function FavouritesRow(props: Parameters<typeof FavouritesRowContent>[0]) { const privacy = usePrivacy(); return privacy ? <p className="text-dim">Hidden</p> : <FavouritesRowContent {...props} />; }

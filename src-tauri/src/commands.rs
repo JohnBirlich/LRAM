@@ -741,8 +741,18 @@ pub(crate) async fn launch_tracked(
     fps_cap: Option<u32>,
     hold: bool,
 ) -> Result<(LaunchInfo, Instance)> {
+    launch_tracked_guarded(app, s, account_id, target, favourite_id, delay_ms, fps_cap, hold, None).await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn launch_tracked_guarded(
+    app: &AppHandle, s: &App, account_id: i64, target: LaunchTarget,
+    favourite_id: Option<i64>, delay_ms: Option<u32>, fps_cap: Option<u32>, hold: bool,
+    expected_kills: Option<u64>,
+) -> Result<(LaunchInfo, Instance)> {
     let kills = s.bulk.kills();
     let killed = || AppError::Invalid(tr!("Launch cancelled by Stop all."));
+    if expected_kills.is_some_and(|expected| expected != kills) { return Err(killed()); }
     let Some(_claim) = s.tracker.claim(account_id) else {
         let name = s.db.account(account_id).map(|a| crate::launcher::bulk::name_of(&a)).ok().filter(|n| !n.is_empty());
         let name = name.unwrap_or_else(|| tr!("This account"));
@@ -783,7 +793,11 @@ pub(crate) async fn launch_tracked(
             return Err(e);
         }
     };
-    let instance = s.tracker.register(&info, target);
+    let mut instance = s.tracker.register(&info, target);
+    if let Some(p) = s.db.client_performance(account_id)? {
+        s.tracker.set_performance(&instance.id, p, false);
+        instance = s.tracker.get(&instance.id).ok_or(AppError::NotFound)?;
+    }
     if v.mute_clients {
         s.tracker.set_muted(&instance.id, true);
         crate::instances::audio::wake();
@@ -1205,7 +1219,13 @@ pub fn instances_list(s: State<'_, App>) -> Vec<Instance> {
 
 #[tauri::command]
 pub async fn instance_close(s: State<'_, App>, id: String, force: bool) -> Result<()> {
-    s.tracker.get(&id).ok_or(AppError::NotFound)?;
+    let instance = s.tracker.get(&id).ok_or(AppError::NotFound)?;
+    if instance.state != InstanceState::Exited && crate::instances::process::start_time(instance.pid).is_none()
+        && !crate::instances::process::unreadable_client(instance.pid)
+    {
+        log::warn!("instance {id}: close requested but tracked PID {} is gone; waiting for identity-safe recovery", instance.pid);
+        return Err(AppError::Internal("The tracked Roblox process has changed or exited. LRAM is checking the replacement process; no unrelated client was closed.".into()));
+    }
     s.tracker.end_relaunch(&id);
     let Some(target) = s.tracker.mark_closing(&id) else { return Ok(()) };
     let r = close_all(vec![target], force, grace(&s)).await?.pop().unwrap_or(Ok(()));
@@ -1321,6 +1341,71 @@ pub async fn instance_set_limits(app: AppHandle, s: State<'_, App>, id: String, 
 }
 
 #[tauri::command]
+pub async fn instance_performance(app: AppHandle, s: State<'_, App>, id: String, performance: crate::model::ClientPerformance, all_running: bool) -> Result<()> {
+    unlocked(&s)?;
+    launch_fps(Some(performance.fps_cap))?;
+    check_limits(&performance.limits)?;
+    if performance.strict_cpu && !performance.limits.cpu_cap.is_some_and(|c| (1..=2).contains(&c)) {
+        return Err(AppError::Invalid("Strict ULTRA requires a 1% or 2% CPU ceiling.".into()));
+    }
+    let selected = s.tracker.get(&id).ok_or(AppError::NotFound)?;
+    let snapshot: std::collections::HashMap<_, _> = s.tracker.clients().into_iter().map(|(id, pid, t0, _)| (id, (pid, t0))).collect();
+    if selected.state == InstanceState::Exited || selected.checking_process || !snapshot.contains_key(&id) {
+        return Err(AppError::Wait("Wait for a verified running process before applying a profile.".into()));
+    }
+    let targets = if all_running { s.tracker.list().into_iter().filter(|i| !i.checking_process && snapshot.contains_key(&i.id)).collect() } else { vec![selected] };
+    let ids: std::collections::HashSet<_> = targets.iter().map(|i| i.id.clone()).collect();
+    let apply = || -> Result<()> {
+    for i in targets {
+        // Resolve snapshot IDs again: never apply to a replacement/newly launched instance.
+        if !s.tracker.clients().iter().any(|(id, pid, t0, _)| *id == i.id && snapshot.get(id) == Some(&(*pid, *t0))) { continue; }
+        s.db.save_client_performance(i.account_id, &performance)?;
+        s.tracker.set_performance(&i.id, performance.clone(), true);
+    }
+    let v = s.db.settings()?;
+    let held = s.tracker.throttle(v.mem_throttle.mb).0;
+    for (id, pid, t0, limits) in crate::instances::limits::plan_now(&s, &v, &s.tracker.clients(), &held) {
+        if ids.contains(&id) && snapshot.get(&id) == Some(&(pid, t0)) { s.limiter.apply(&id, pid, t0, limits)?; }
+    }
+    Ok(())
+    };
+    let result = apply();
+    // Always expose truthful applied/pending state, including partial OS/DB failures.
+    s.tracker.set_in_force(&s.limiter.in_force());
+    instances_changed(&app);
+    result.map_err(|e| AppError::Invalid(format!("Some profile changes may already be saved/applied. Check each client's applied limits before retrying. {e}")))
+}
+
+#[tauri::command]
+pub async fn instance_restart_performance(app: AppHandle, s: State<'_, App>, id: String) -> Result<()> {
+    unlocked(&s)?;
+    let i = s.tracker.get(&id).ok_or(AppError::NotFound)?;
+    if i.checking_process || i.state == InstanceState::Exited {
+        return Err(AppError::Wait("This client cannot be restarted while its process is being checked or has ended.".into()));
+    }
+    let kills = s.bulk.kills();
+    let Some(target) = s.tracker.mark_closing(&id) else { return Err(AppError::NotFound) };
+    s.tracker.end_relaunch(&id);
+    let closed = match close_all(vec![target], false, grace(&s)).await {
+        Ok(mut results) => results.pop().unwrap_or_else(|| Err(AppError::Internal("Close returned no result.".into()))),
+        Err(error) => Err(error),
+    };
+    if let Err(error) = closed {
+        s.tracker.clear_closing(&id);
+        return Err(error);
+    }
+    for _ in 0..40 {
+        if s.bulk.kills() != kills { return Err(AppError::Wait("Restart cancelled by Stop all.".into())); }
+        if s.tracker.get(&id).is_none_or(|i| i.state == InstanceState::Exited) {
+            launch_tracked_guarded(&app, &s, i.account_id, i.target, None, None, None, true, Some(kills)).await?;
+            return Ok(());
+        }
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+    Err(AppError::Wait("The old client has not finished closing; no duplicate was launched.".into()))
+}
+
+#[tauri::command]
 pub fn instance_set_anti_afk(app: AppHandle, s: State<'_, App>, id: String, enabled: bool) -> Result<()> {
     if !s.tracker.set_anti_afk(&id, enabled) {
         return Err(AppError::NotFound);
@@ -1409,13 +1494,16 @@ fn check_window_size((w, h): (u32, u32)) -> Result<()> {
 }
 
 #[tauri::command]
-pub async fn instances_tile(app: AppHandle, s: State<'_, App>, micro: bool) -> Result<usize> {
+pub async fn instances_tile(app: AppHandle, s: State<'_, App>, micro: bool, columns: Option<u32>) -> Result<usize> {
+    if columns.is_some_and(|c| !(1..=20).contains(&c)) {
+        return Err(AppError::Invalid(tr!("Grid columns must be between 1 and 20.")));
+    }
     let clients: Vec<(String, u32)> = s.tracker.clients().into_iter().map(|c| (c.0, c.1)).collect();
     let near = app.get_webview_window("main").and_then(|w| w.hwnd().ok()).map_or(0, |h| h.0 as isize);
     let v = s.db.settings()?;
     let size = micro.then_some((v.micro_width, v.micro_height));
     let tiled = blocking(move || {
-        crate::instances::window::tile(&clients, windows::Win32::Foundation::HWND(near as *mut _), size)
+        crate::instances::window::tile_columns(&clients, windows::Win32::Foundation::HWND(near as *mut _), size, columns)
     })
     .await?;
     for id in &tiled {
@@ -1521,6 +1609,22 @@ pub fn multi_instance_set(s: State<'_, App>, enabled: bool) -> Result<MultiInsta
         s.multi.disable();
     }
     Ok(s.multi.status(v.multi_instance, v.protect_shared_login))
+}
+
+#[tauri::command]
+pub async fn multi_instance_take_over(app: AppHandle) -> Result<MultiInstanceStatus> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let s = app.state::<App>();
+        let v = s.db.settings()?;
+        if !v.multi_instance {
+            return Err(AppError::Invalid(tr!("Turn on multi-instance first.")));
+        }
+        s.multi.take_over()?;
+        protect_running(&s, &v);
+        Ok(s.multi.status(v.multi_instance, v.protect_shared_login))
+    })
+    .await
+    .map_err(|e| AppError::Internal(e.to_string()))?
 }
 
 #[tauri::command]
@@ -2139,6 +2243,12 @@ pub(crate) fn apply_performance(v: &mut Settings, patch: &SettingsPatch) -> Resu
     }
     if let Some(a) = patch.auto_spread { v.auto_spread = a }
     if let Some(f) = patch.fair_cap { v.fair_cap = f }
+    if let Some(u) = patch.ultra_cpu {
+        if !(1..=2).contains(&u.cap) {
+            return Err(AppError::Invalid(tr!("ULTRA CPU must be 1% or 2%.")));
+        }
+        v.ultra_cpu = u;
+    }
     if let Some(a) = patch.adaptive {
         check_limits(&a.background)?;
         v.adaptive = a;
@@ -2153,6 +2263,7 @@ pub fn settings_set(app: AppHandle, s: State<'_, App>, patch: SettingsPatch) -> 
         unlocked(&s)?;
     }
     let mut v = s.db.settings()?;
+    if let Some(private) = patch.privacy_mode { v.privacy_mode = private; }
     apply_performance(&mut v, &patch)?;
     if let Some(t) = patch.theme { v.theme = t }
     if let Some(a) = patch.accent {
@@ -2420,4 +2531,16 @@ nothing here
         assert!(normalize_cookie("has space").is_err());
         assert!(normalize_cookie(".ROBLOSECURITY=").is_err());
     }
+}
+
+
+#[tauri::command]
+pub async fn hardware_info() -> Result<crate::hardware::HardwareInfo> {
+    tauri::async_runtime::spawn_blocking(crate::hardware::read)
+        .await.map_err(|e| AppError::Internal(e.to_string()))
+}
+
+#[tauri::command]
+pub async fn public_location() -> Result<crate::hardware::PublicLocation> {
+    crate::hardware::public_location().await
 }

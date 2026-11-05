@@ -142,12 +142,12 @@ export function PerformanceView({ settings }: { settings: Settings }) {
   const [previewFps, setFps] = usePreviewFps();
   const [incoming, setIncoming] = useState<Profile | null>(null);
   const closedAt = useRef(0);
-  const active = ownCaps(useAccounts().data ?? []) ? undefined : PRESETS.find((p) => isApplied(p.profile, settings));
+  const active = ownCaps(useAccounts().data ?? []) ? undefined : PRESETS.find((p) => isApplied(p.profile, settings) && (p.profile.previewFps === undefined || p.profile.previewFps === previewFps));
   const using = <span className="text-[13px] text-dim">{active ? t("performance.using", { name: t(active.label) }) : t("performance.custom")}</span>;
 
   return (
-    <main className="scroll flex-1 min-w-0 px-8 pt-5 pb-12">
-      <div className="enter max-w-[1000px] flex flex-col gap-6">
+    <main className="page-shell scroll flex-1 min-w-0 pt-5 pb-12">
+      <div className="enter performance-layout">
         <header>
           <h1 className="page-title">{t("performance.title")}</h1>
           <p className="page-sub">{t("performance.intro")}</p>
@@ -177,6 +177,16 @@ export function PerformanceView({ settings }: { settings: Settings }) {
             <h2 id="perf-cpu" className="section-title">{t("performance.section.cpuMemory")}</h2>
             {using}
           </div>
+          <p className="text-xs text-dim mb-3">CPU and Eco limits apply immediately for every profile, including loading, teleports and rejoins. No warm-up. Low limits may slow loading. FPS and graphics are set at launch.</p>
+          <TuneRow title={t("performance.ultraCpu")} hint={t("performance.ultraCpuHint")}>
+            <Switch label={t("performance.ultraCpu")} checked={settings.ultraCpu.enabled} onChange={(enabled) => set.mutate({ ultraCpu: { ...settings.ultraCpu, enabled } })} />
+          </TuneRow>
+          {settings.ultraCpu.enabled && <>
+            <TuneRow title={t("performance.ultraCap")} hint={t("performance.ultraCapHint")}>
+              <Segmented label={t("performance.ultraCap")} value={settings.ultraCpu.cap} options={[1, 2].map((c) => ({ value: c, label: `${c}%` }))} onChange={(cap) => set.mutate({ ultraCpu: { ...settings.ultraCpu, cap } })} />
+            </TuneRow>
+          </>}
+          {!settings.ultraCpu.enabled && <>
           <TuneRow title={t("settings.adaptive")} hint={t("settings.adaptiveHint")}>
             <Switch label={t("settings.adaptive")} checked={settings.adaptive.enabled} onChange={(enabled) => set.mutate({ adaptive: { ...settings.adaptive, enabled } })} />
           </TuneRow>
@@ -212,6 +222,7 @@ export function PerformanceView({ settings }: { settings: Settings }) {
           <TuneRow title={t("settings.fairCap")} hint={t("settings.fairCapHint")}>
             <Switch label={t("settings.fairCap")} checked={settings.fairCap} onChange={(fairCap) => set.mutate({ fairCap })} />
           </TuneRow>
+          </>}
           <TuneRow title={t("settings.trim")} hint={`${t("settings.trimHint")} ${t("settings.commitStays")}`}>
             <NumberField unit={t("settings.unit.minutesOff")} short={t("settings.unit.min")} min={0} max={1440} value={settings.trimEveryMin} onCommit={(trimEveryMin) => set.mutate({ trimEveryMin })} />
           </TuneRow>
@@ -287,7 +298,22 @@ const lightest: RenderFlags = { msaa: "x1", texture: "lowest", mode: "default", 
 
 const normalWindows = { tinyOnLaunch: false, microWidth: 320, microHeight: 240, fairCap: false, liveHiddenPreviews: true };
 
-const PRESETS: readonly { label: Key; tag: Key; facts: () => string[]; profile: Profile }[] = [
+export const PRESETS: readonly { label: Key; tag: Key; facts: () => string[]; profile: Profile }[] = [
+  {
+    label: "performance.preset.ultra",
+    tag: "performance.tagUltra",
+    facts: () => [t("dashboard.fps", { fps: 5 }), t("settings.lowGraphics"), t("performance.factBg", { n: 1 }), t("performance.ultraWarning"), t("performance.factNextLaunch")],
+    profile: {
+      fpsCap: 5, lowGraphics: true, lighterRendering: true,
+      renderFlags: { ...lightest, graySky: true, pauseVoxelizer: true },
+      minimizeOnLaunch: true, tinyOnLaunch: false,
+      liveHiddenPreviews: false, trimEveryMin: 0, autoSpread: false, fairCap: false,
+      memRestartMb: 0, memThrottle: noThrottle,
+      ultraCpu: { enabled: true, cap: 1, warmupS: 90 },
+      adaptive: { enabled: true, background: { cpuCap: 1, eco: true, trimEveryMin: 0, affinity: null } },
+      previewFps: 5,
+    },
+  },
   {
     label: "performance.preset.maxAlts",
     tag: "performance.tagMaxAlts",
@@ -296,6 +322,7 @@ const PRESETS: readonly { label: Key; tag: Key; facts: () => string[]; profile: 
       t("performance.factMainAccount"), t("performance.factBootstrapper"), t("performance.factAfk"), t("performance.factNextLaunch"),
     ],
     profile: {
+      ultraCpu: { enabled: false, cap: 1, warmupS: 90 },
       fpsCap: 10, lowGraphics: true, lighterRendering: true, renderFlags: { ...lightest, graySky: true, pauseVoxelizer: true }, minimizeOnLaunch: true, tinyOnLaunch: true, microWidth: 240, microHeight: 180, liveHiddenPreviews: false, trimEveryMin: 15, autoSpread: true, fairCap: true,
       adaptive: { enabled: true, background: { cpuCap: 25, eco: true, trimEveryMin: null, affinity: null } }, previewFps: 5,
     },
@@ -305,6 +332,7 @@ const PRESETS: readonly { label: Key; tag: Key; facts: () => string[]; profile: 
     tag: "performance.tagBalanced",
     facts: () => [t("dashboard.fps", { fps: 30 }), t("settings.lowGraphics"), t("performance.factOnScreen"), t("performance.factBg", { n: 50 })],
     profile: {
+      ultraCpu: { enabled: false, cap: 1, warmupS: 90 },
       fpsCap: 30, lowGraphics: true, lighterRendering: true, renderFlags: lightest, minimizeOnLaunch: false, ...normalWindows, trimEveryMin: 30, autoSpread: true,
       adaptive: { enabled: true, background: { cpuCap: 50, eco: true, trimEveryMin: null, affinity: null } }, previewFps: 15,
     },
@@ -314,6 +342,7 @@ const PRESETS: readonly { label: Key; tag: Key; facts: () => string[]; profile: 
     tag: "performance.tagDefaults",
     facts: () => [t("performance.factNoFps"), t("performance.factOwnGraphics"), t("performance.factOnScreen"), t("performance.factNoCpu")],
     profile: {
+      ultraCpu: { enabled: false, cap: 1, warmupS: 90 },
       fpsCap: 0, lowGraphics: false, lighterRendering: false, minimizeOnLaunch: false, ...normalWindows, memRestartMb: 0, memThrottle: noThrottle, trimEveryMin: 0, autoSpread: false,
       adaptive: { enabled: false, background: { cpuCap: 25, eco: true, trimEveryMin: null, affinity: null } }, previewFps: 15,
     },
@@ -321,7 +350,9 @@ const PRESETS: readonly { label: Key; tag: Key; facts: () => string[]; profile: 
 ];
 
 function isApplied(profile: Profile, settings: Settings) {
-  return (Object.keys(LABELS) as Field[]).every((k) => profile[k] === undefined || profile[k] === null || JSON.stringify(profile[k]) === JSON.stringify(settings[k]));
+  return (Object.keys(LABELS) as Field[]).every((k) => k === "ultraCpu"
+    ? profile.ultraCpu === undefined || profile.ultraCpu.enabled === settings.ultraCpu.enabled
+    : profile[k] === undefined || profile[k] === null || JSON.stringify(profile[k]) === JSON.stringify(settings[k]));
 }
 
 function ShareRow({ onProfile }: { onProfile: (p: Profile) => void }) {
@@ -442,6 +473,7 @@ const LABELS: Record<Field, Key> = {
   autoSpread: "settings.spread",
   fairCap: "settings.fairCap",
   adaptive: "settings.adaptive",
+  ultraCpu: "performance.ultraCpu",
 };
 
 const capitalize = (s: string) => s[0].toUpperCase() + s.slice(1);
@@ -456,6 +488,7 @@ function shown(k: Field, v: Profile[Field] | Settings[Field]): string {
     return [v.msaa === "default" ? null : `MSAA ${v.msaa}`, v.texture === "default" ? null : `${t("performance.texture")}: ${t(`performance.tex${capitalize(v.texture)}` as Key)}`, v.mode === "default" ? null : MODE_NAMES[v.mode], ...on.map(([b, k]) => (b ? t(k) : null))].filter(Boolean).join(" · ") || t("performance.robloxDefault");
   }
   if ("mb" in v) return `${v.mb ? `${fmtNum(v.mb)} MB` : t("common.off")} · ${pct(v.cpuCap)}`;
+  if ("warmupS" in v) return `${v.enabled ? t("common.on") : t("common.off")} · ${v.cap}% · immediate`;
   const b = v.background;
   const trim = b.trimEveryMin === null ? t("common.default") : b.trimEveryMin ? t("settings.minutesShort", { n: b.trimEveryMin }) : t("common.off");
   return `${v.enabled ? t("common.on") : t("common.off")} · ${pct(b.cpuCap)} · ${t("settings.efficiency")} ${b.eco ? t("common.on") : t("common.off")} · ${trim}`;
@@ -483,7 +516,9 @@ function ReviewDialog({ profile, settings, onClose }: { profile: Profile | null;
   if (clearing.length) changes.push({ label: t("performance.accountCaps"), from: ownCaps(clearing), to: t("performance.capsCleared") });
   const running = (useInstances().data ?? []).filter(isLive);
   const reshape = running.filter((i) => i.state === "inGame" && !accounts.find((a) => a.id === i.accountId)?.fullQuality);
-  const makeTiny = !!profile?.tinyOnLaunch && !settings.tinyOnLaunch;
+  const makeTiny = !!profile?.tinyOnLaunch && (!settings.tinyOnLaunch
+    || (profile.microWidth !== undefined && profile.microWidth !== settings.microWidth)
+    || (profile.microHeight !== undefined && profile.microHeight !== settings.microHeight));
   const hide = !!profile?.minimizeOnLaunch && !settings.minimizeOnLaunch;
   if (reshape.length && (makeTiny || hide)) changes.push({ label: t("performance.runningClients"), from: "", to: t("performance.runningNow") });
   const presetFacts = PRESETS.find((p) => p.profile === profile)?.facts().slice(FACTS_SHOWN) ?? [];
@@ -499,7 +534,7 @@ function ReviewDialog({ profile, settings, onClose }: { profile: Profile | null;
       for (const a of clearing) await update.mutateAsync({ id: a.id, patch: { fpsCap: 0 } });
       if (previewFps) setPreviewFps(previewFps as PreviewFps);
       await Promise.allSettled(reshape.flatMap((i) => [
-        ...(makeTiny && !i.micro ? [api.instanceMicro(i.id, true)] : []),
+        ...(makeTiny ? [api.instanceMicro(i.id, true, [profile.microWidth ?? settings.microWidth, profile.microHeight ?? settings.microHeight])] : []),
         ...(hide ? [api.instanceShow(i.id, "minimize")] : []),
       ]));
       toast(t(running.length && nextLaunch ? "performance.appliedRelaunch" : "performance.applied"));
@@ -536,6 +571,7 @@ function ReviewDialog({ profile, settings, onClose }: { profile: Profile | null;
             {presetFacts.map((f) => <li key={f}>{f}</li>)}
           </ul>
         )}
+        {profile === PRESETS[0].profile && <p role="note" className="alert">{t("performance.ultraWarning")}</p>}
         {error && <div role="alert" className="alert">{error}</div>}
         <div className="flex justify-end gap-2 pt-1">
           <button className="btn" onClick={onClose}>{changes.length ? t("common.cancel") : t("common.close")}</button>

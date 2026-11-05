@@ -1,3 +1,7 @@
+import type { ClientPerformance } from "./bindings/ClientPerformance";
+export type { ClientPerformance } from "./bindings/ClientPerformance";
+import type { HardwareInfo } from "./bindings/HardwareInfo";
+import type { PublicLocation } from "./bindings/PublicLocation";
 import { invoke as rawInvoke, type InvokeArgs } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { AccountInfo } from "./bindings/AccountInfo";
@@ -166,6 +170,9 @@ export const api = {
 
   instanceTrim: (id: string) => invoke<[number, number]>("instance_trim", { id }),
 
+  instancePerformance: (id: string, performance: ClientPerformance, allRunning: boolean) => invoke<void>("instance_performance", { id, performance, allRunning }),
+  instanceRestartPerformance: (id: string) => invoke<void>("instance_restart_performance", { id }),
+
   instanceSetAntiAfk: (id: string, enabled: boolean) => invoke<void>("instance_set_anti_afk", { id, enabled }),
 
   instanceSetMuted: (id: string, muted: boolean) => invoke<void>("instance_set_muted", { id, muted }),
@@ -178,10 +185,12 @@ export const api = {
 
   instanceMicro: (id: string, on: boolean, size?: [number, number]) => invoke<[number, number]>("instance_micro", { id, on, size }),
 
-  instancesTile: (micro: boolean) => invoke<number>("instances_tile", { micro }),
+  instancesTile: (micro: boolean, columns?: number) => invoke<number>("instances_tile", { micro, columns }),
 
   instancesMetrics:() => invoke<ClientMetrics[]>("instances_metrics"),
 
+  hardwareInfo: () => invoke<HardwareInfo>("hardware_info"),
+  publicLocation: () => invoke<PublicLocation>("public_location"),
   systemUsage: () => invoke<SystemUsage | null>("system_usage"),
 
   instanceStopRelaunch: (id: string) => invoke<void>("instance_stop_relaunch", { id }),
@@ -193,6 +202,8 @@ export const api = {
   bandwidthApply: (kbps: number) => invoke<BandwidthStatus>("bandwidth_apply", { kbps }),
   multiInstanceStatus: () => invoke<MultiInstanceStatus>("multi_instance_status"),
   multiInstanceSet: (enabled: boolean) => invoke<MultiInstanceStatus>("multi_instance_set", { enabled }),
+
+  multiInstanceTakeOver: () => invoke<MultiInstanceStatus>("multi_instance_take_over"),
 
   robloxCloseAll: (force: boolean) => invoke<MultiInstanceStatus>("roblox_close_all", { force }),
 

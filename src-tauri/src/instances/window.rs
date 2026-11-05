@@ -732,12 +732,19 @@ pub fn micro(id: &str, pid: u32, on: bool, size: (u32, u32)) -> Result<(u32, u32
 }
 
 pub fn tile(clients: &[(String, u32)], near: HWND, micro: Option<(u32, u32)>) -> Vec<String> {
+    tile_columns(clients, near, micro, None)
+}
+
+pub fn tile_columns(clients: &[(String, u32)], near: HWND, micro: Option<(u32, u32)>, columns: Option<u32>) -> Vec<String> {
     let mut mi = MONITORINFO { cbSize: size_of::<MONITORINFO>() as u32, ..Default::default() };
     // -- SAFETY: reads the monitor nearest to a window into a local with cbSize set; with MONITOR_DEFAULTTONEAREST there …
     if !unsafe { GetMonitorInfoW(MonitorFromWindow(near, MONITOR_DEFAULTTONEAREST), &mut mi) }.as_bool() {
         log::warn!("tile: monitor info unreadable, nothing laid out: {}", std::io::Error::last_os_error());
         return Vec::new();
     }
+    let available: Vec<(String, u32)> = clients.iter()
+        .filter(|(_, pid)| resizable(*pid).is_some()).cloned().collect();
+    let clients = available.as_slice();
     let w = mi.rcWork;
     let mut laid = Vec::new();
     let size = micro.and_then(|(mw, mh)| {
@@ -745,7 +752,11 @@ pub fn tile(clients: &[(String, u32)], near: HWND, micro: Option<(u32, u32)>) ->
             .iter()
             .find_map(|(_, pid)| resizable(*pid).and_then(frame).map(|(fw, fh)| (mw as i32 + fw, mh as i32 + fh)))
     });
-    let cells = grid(clients.len(), (w.left, w.top, w.right - w.left, w.bottom - w.top), size);
+    let area = (w.left, w.top, w.right - w.left, w.bottom - w.top);
+    let cells = match columns {
+        Some(cols) => column_grid(clients.len(), area, cols),
+        None => grid(clients.len(), area, size),
+    };
     for ((id, pid), &slot) in clients.iter().zip(&cells) {
         let Some(hwnd) = resizable(*pid) else { continue };
         set_tiny(*pid, micro);
@@ -816,6 +827,22 @@ fn left_cell(hwnd: HWND, (x, y, w, h): Cell) -> bool {
         return false;
     }
     (r.left - x).abs() > 2 || (r.top - y).abs() > 2 || ((r.right - r.left) - w).abs() > 2 || ((r.bottom - r.top) - h).abs() > 2
+}
+
+pub fn column_grid(n: usize, (ax, ay, aw, ah): Cell, columns: u32) -> Vec<Cell> {
+    if n == 0 || aw <= 0 || ah <= 0 {
+        return Vec::new();
+    }
+    let cols = (columns as usize).clamp(1, n);
+    let rows = n.div_ceil(cols);
+    (0..n).map(|i| {
+        // Use boundaries rather than rounded cell sizes to cover the work area exactly.
+        let x = (i % cols) as i64 * aw as i64 / cols as i64;
+        let y = (i / cols) as i64 * ah as i64 / rows as i64;
+        let right = ((i % cols) + 1) as i64 * aw as i64 / cols as i64;
+        let bottom = ((i / cols) + 1) as i64 * ah as i64 / rows as i64;
+        (ax + x as i32, ay + y as i32, (right - x) as i32, (bottom - y) as i32)
+    }).collect()
 }
 
 pub fn grid(n: usize, area: Cell, cell: Option<(i32, i32)>) -> Vec<Cell> {
@@ -1131,6 +1158,26 @@ mod tests {
         sweep(&[(4_000_001, None)]);
         assert_eq!(of(4_000_001), None, "back to normal");
         assert_eq!(of(4_000_002), None, "gone");
+    }
+
+    #[test]
+    fn monitor_columns_cover_odd_work_areas_without_overlap() {
+        assert!(column_grid(0, (0, 0, 1920, 1080), 4).is_empty());
+        assert!(column_grid(4, (0, 0, 0, 1080), 4).is_empty());
+        assert_eq!(column_grid(1, (-1920, 40, 1920, 1040), 20), [(-1920, 40, 1920, 1040)]);
+        for n in [1, 3, 7, 25, 100] {
+            for cols in 1..=20 {
+                let cells = column_grid(n, (-1919, 31, 1919, 1001), cols);
+                assert_eq!(cells.len(), n);
+                for (i, &(x, y, w, h)) in cells.iter().enumerate() {
+                    assert!(w > 0 && h > 0);
+                    assert!(x >= -1919 && y >= 31 && x + w <= 0 && y + h <= 1032);
+                    for &(xx, yy, ww, hh) in &cells[..i] {
+                        assert!(x + w <= xx || xx + ww <= x || y + h <= yy || yy + hh <= y);
+                    }
+                }
+            }
+        }
     }
 
     #[test]

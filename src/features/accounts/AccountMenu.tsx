@@ -1,3 +1,4 @@
+import { usePrivacy } from "../../privacy";
 import { menuKeys } from "../../ui/menu";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
@@ -23,6 +24,7 @@ export function AccountMenu({ at, onClose, selection, canLaunch, onLaunch, onVal
   onRemove: (ids: number[]) => void;
   onFriends: (account: AccountSummary) => void;
 }) {
+  const privacy = usePrivacy();
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ left: 0, top: 0 });
   const update = useUpdateAccount();
@@ -59,10 +61,10 @@ export function AccountMenu({ at, onClose, selection, canLaunch, onLaunch, onVal
         ["play", many ? t("launch.launchMany", { count: ids.length }) : t("common.launch"), () => onLaunch(ids), !anyValid],
         ["signin", t("accounts.menu.openSession"), () => session.mutateAsync(a.id).catch(toastError)],
         ["external", t("accounts.menu.openProfile"), () => openUrl(`https://www.roblox.com/users/${a.userId}/profile`).catch(toastError)],
-        ["friends", t("accounts.menu.friends"), () => onFriends(a)],
+        ["friends", t("accounts.menu.friends"), () => onFriends(a), privacy],
         null,
-        ["copy", t("accounts.menu.copyUsername"), () => clip(a.username, t("accounts.menu.usernameCopied"))],
-        ["copy", t("accounts.menu.copyUserId"), () => clip(String(a.userId), t("accounts.menu.userIdCopied"))],
+        ["copy", t("accounts.menu.copyUsername"), () => clip(a.username, t("accounts.menu.usernameCopied")), privacy],
+        ["copy", t("accounts.menu.copyUserId"), () => clip(String(a.userId), t("accounts.menu.userIdCopied")), privacy],
         null,
         ["star", a.favourite ? t("accounts.menu.unfavourite") : t("accounts.menu.favourite"), () => update.mutate({ id: a.id, patch: { favourite: !a.favourite } })],
         [

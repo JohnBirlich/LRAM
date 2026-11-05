@@ -1,3 +1,4 @@
+import { maskAccount, maskGroup } from "./features/accounts/privacyData";
 import { MutationCache, QueryClient, queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type AccountPatch, type AccountPresence, type AccountSummary, type Group, type Settings, type SettingsPatch } from "./api";
 import { toastError } from "./ui/Toast";
@@ -47,7 +48,10 @@ const bySortOrder = <T extends { sortOrder: number }>(list: T[]) => [...list].so
 
 export const useVault = () => useQuery({ queryKey: qk.vault, queryFn: api.vaultStatus });
 export const useSettings = () => useQuery({ queryKey: qk.settings, queryFn: api.settingsGet });
-export const useAccounts = () => useQuery({ queryKey: qk.accounts, queryFn: api.accountsList, select: bySortOrder });
+export const useAccounts = () => {
+  const privacy = useSettings().data?.privacyMode ?? true;
+  return useQuery({ queryKey: qk.accounts, queryFn: api.accountsList, select: (rows) => bySortOrder(rows).map(a => privacy ? maskAccount(a) : a) });
+};
 
 const groupNumber = (name: string) => {
   const digits = name.match(/^\d+/)?.[0];
@@ -62,7 +66,10 @@ export function byGroupOrder(a: Group, b: Group): number {
   return a.sortOrder - b.sortOrder || a.id - b.id;
 }
 
-export const useGroups = () => useQuery({ queryKey: qk.groups, queryFn: api.groupsList, select: (list: Group[]) => [...list].sort(byGroupOrder) });
+export const useGroups = () => {
+  const privacy = useSettings().data?.privacyMode ?? true;
+  return useQuery({ queryKey: qk.groups, queryFn: api.groupsList, select: (list: Group[]) => [...list].sort(byGroupOrder).map(g => privacy ? maskGroup(g) : g) });
+};
 export const useFavourites = () => useQuery({ queryKey: qk.favourites, queryFn: api.favouritesList, select: bySortOrder });
 
 export const useInstances = () => useQuery({ queryKey: qk.instances, queryFn: api.instancesList, refetchInterval: 5_000 });

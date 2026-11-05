@@ -1,3 +1,5 @@
+import { ClientPerformancePanel } from "./ClientPerformancePanel";
+import { isPrivate } from "../../privacy";
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { api, type AccountSummary, type Crash, type CrashKind, type Instance, type InstanceState, type Limits, type MultiInstanceStatus } from "../../api";
@@ -19,9 +21,26 @@ export const STATES: Record<InstanceState, [label: string, color: string]> = {
   get exited(): [string, string] { return [t("launch.state.ended"), "var(--dim)"]; },
 };
 
+export const instanceState = (i: Instance): [string, string] => isPrivate() ? ["Hidden", "var(--dim)"] : i.checkingProcess
+  ? [t("launch.state.checking"), "var(--orange)"] : STATES[i.state];
+
+export function cpuStatus(i: Instance): string | null {
+  if (isPrivate()) return null;
+  switch (i.cpuMode) {
+    case "checking": return t("launch.state.checking");
+    case "loading": return t("cpu.loading");
+    case "warmup": return t("cpu.warmup", { seconds: i.cpuWarmupRemainingS });
+    case "foreground": return t("cpu.foreground");
+    case "background": return i.appliedLimits.cpuCap !== null ? t("cpu.background", { cap: i.appliedLimits.cpuCap }) : i.appliedLimits.eco ? "Eco applied" : i.performance && i.performance.limits.cpuCap === null && !i.performance.limits.eco ? "CPU / Eco defaults — no limits requested" : t("cpu.pending");
+    case "manual": return t("cpu.manual", { cap: i.limits.cpuCap ?? 0 });
+    case "fullQuality": return t("cpu.fullQuality");
+    default: return null;
+  }
+}
+
 export const isRunning = (i: Instance) => i.state !== "exited";
 
-export const isLive = (i: Instance) => i.state === "starting" || i.state === "joining" || i.state === "inGame";
+export const isLive = (i: Instance) => i.checkingProcess || i.state === "starting" || i.state === "joining" || i.state === "inGame";
 
 export function uptime(from: number, to: number) {
   const m = Math.max(0, Math.floor((to - from) / 60_000));
@@ -82,6 +101,7 @@ function LimitsBody({ inst }: { inst: Instance }) {
   };
   return (
     <div className="flex flex-col gap-4 px-5 pb-5">
+      {s && <ClientPerformancePanel key={inst.id} inst={inst} settings={s} />}
       {inst.throttled && <p role="status" className="alert">{t("launch.running.throttled")}</p>}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span>{t("launch.limits.cpu")}</span>
@@ -218,7 +238,7 @@ export function EndedPanel({ accounts }: { accounts: AccountSummary[] }) {
       <ul className="flex flex-col">
         {ended.map((i) => {
           const a = byId.get(i.accountId);
-          const name = a ? accountName(a) : t("launch.accountN", { id: i.accountId });
+          const name = isPrivate() ? "Hidden" : a ? accountName(a) : t("launch.accountN", { id: i.accountId });
           const crash = crashes.get(i.id);
           return (
             <li key={i.id} className="flex flex-col gap-2 py-2.5 border-t border-line first:border-t-0">
@@ -353,13 +373,13 @@ export function useMultiToggle(onStatus?: (s: MultiInstanceStatus) => void) {
 export function MultiNotice({ wanted, replaces, className = "" }: { wanted: boolean; replaces?: boolean; className?: string }) {
   const qc = useQueryClient();
   const status = useMultiStatus().data;
-  const [confirm, setConfirm] = useState<"close" | null>(null);
+  const [confirm, setConfirm] = useState<"close" | "takeOver" | null>(null);
   const [busy, setBusy] = useState(false);
   const apply = (s: MultiInstanceStatus) => qc.setQueryData(qk.multi, s);
   const { toggle, dialog } = useMultiToggle();
   const run = () => {
     setBusy(true);
-    api.robloxCloseAll(false)
+    (confirm === "takeOver" ? api.multiInstanceTakeOver() : api.robloxCloseAll(false))
       .then(apply, toastError)
       .finally(() => {
         setBusy(false);
@@ -390,6 +410,9 @@ export function MultiNotice({ wanted, replaces, className = "" }: { wanted: bool
                   <button className="btn btn-sm" onClick={() => setConfirm("close")}>
                     {t("launch.multi.closeRobloxEllipsis")}
                   </button>
+                  <button className="btn btn-sm" onClick={() => setConfirm("takeOver")}>
+                    {t("launch.multi.takeOverEllipsis")}
+                  </button>
                 </div>
               ) : (
                 <button className="btn btn-sm" onClick={() => api.multiInstanceSet(true).then(apply, toastError)}>{t("common.tryAgain")}</button>
@@ -406,6 +429,15 @@ export function MultiNotice({ wanted, replaces, className = "" }: { wanted: bool
         title={t("launch.multi.closeTitle")}
         text={t("launch.multi.closeText", { count: status.blockedBy.length })}
         confirmLabel={t("launch.multi.closeRoblox")}
+      />
+      <ConfirmDialog
+        open={confirm === "takeOver"}
+        onClose={() => !busy && setConfirm(null)}
+        onConfirm={run}
+        busy={busy}
+        title={t("launch.multi.takeOverTitle")}
+        text={t("launch.multi.takeOverText", { count: status.blockedBy.length })}
+        confirmLabel={t("launch.multi.takeOver")}
       />
       {dialog}
     </>

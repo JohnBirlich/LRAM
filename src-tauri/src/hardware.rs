@@ -281,8 +281,8 @@ mod tests {
         let (physical, virtuals, other) = adapter_inventory(vec![
             device(r"PCI\VEN_10DE\CARD_A", "NVIDIA", Some((0, 1))),
             device(r"PCI\VEN_10DE\CARD_A", "NVIDIA duplicate", Some((0, 1))),
-            device(r"ROOT\MUMU 0", "MuMuPlayer Virtual Display Adapter", Some((0, 2))),
-            device(r"SWD\STAR 0", "StarDesk Virtual Display Adapter", Some((0, 3))),
+            device(r"ROOT\MUMU\0000", "MuMuPlayer Virtual Display Adapter", Some((0, 2))),
+            device(r"SWD\STAR\0000", "StarDesk Virtual Display Adapter", Some((0, 3))),
         ], &memory);
         assert_eq!(physical.len(), 1);
         assert_eq!(physical[0].dedicated_mb, Some(12_000.0));
@@ -296,7 +296,7 @@ mod tests {
 
     #[test]
     fn monitor_paths_not_list_positions_match_names_and_fractional_refresh_is_preserved() {
-        assert_eq!(monitor_instance(r"\?\DISPLAY#MSI1234#5&123&0&UID1#{guid}"), Some(r"DISPLAY\MSI1234&123&0&UID1".into()));
+        assert_eq!(monitor_instance(r"\\?\DISPLAY#MSI1234#5&123&0&UID1#{guid}"), Some(r"DISPLAY\MSI1234\5&123&0&UID1".into()));
         assert_eq!(monitor_instance("not a device interface"), None);
         assert_eq!(refresh_hz(60000, 1001), Some(59.94));
         assert_eq!(refresh_hz(0, 1), None);

@@ -85,13 +85,13 @@ fn displays() -> Vec<Display> {
         for i in 0..64 {
             let mut device = DISPLAY_DEVICEW { cb: std::mem::size_of::<DISPLAY_DEVICEW>() as u32, ..Default::default() };
             if !EnumDisplayDevicesW(PCWSTR::null(), i, &mut device, 0).as_bool() { break; }
-            if device.StateFlags & 1 == 0 { continue; }
+            if device.StateFlags.0 & 1 == 0 { continue; }
             let mut mode = DEVMODEW { dmSize: std::mem::size_of::<DEVMODEW>() as u16, ..Default::default() };
             let available = EnumDisplaySettingsW(PCWSTR(device.DeviceName.as_ptr()), ENUM_CURRENT_SETTINGS, &mut mode).as_bool();
             for j in 0..64 {
                 let mut monitor = DISPLAY_DEVICEW { cb: std::mem::size_of::<DISPLAY_DEVICEW>() as u32, ..Default::default() };
                 if !EnumDisplayDevicesW(PCWSTR(device.DeviceName.as_ptr()), j, &mut monitor, 0).as_bool() { break; }
-                if monitor.StateFlags & 1 == 0 || !seen.insert((text(&device.DeviceName), text(&monitor.DeviceID), text(&monitor.DeviceName))) { continue; }
+                if monitor.StateFlags.0 & 1 == 0 || !seen.insert((text(&device.DeviceName), text(&monitor.DeviceID), text(&monitor.DeviceName))) { continue; }
                 let name = text(&monitor.DeviceString);
                 out.push(Display {
                     name: (!name.is_empty()).then_some(name),

@@ -540,7 +540,8 @@ impl Tracker {
             };
             if released { free.push(e.inst.id.clone()); }
             if e.inst.cpu_mode != mode {
-                log::info!("instance {} PID {}: CPU mode {:?} -> {:?}; selected ceiling {}%, grace {}s", e.inst.id, e.inst.pid, e.inst.cpu_mode, mode, v.ultra_cpu.cap, v.ultra_cpu.warmup_s);
+                let cap = own.and_then(|p| p.limits.cpu_cap).unwrap_or(v.ultra_cpu.cap);
+                log::info!("instance {} PID {}: CPU mode {:?} -> {:?}; selected ceiling {}%, strict {}", e.inst.id, e.inst.pid, e.inst.cpu_mode, mode, cap, strict);
             }
             changed |= e.inst.cpu_mode != mode || e.inst.cpu_warmup_remaining_s != remaining;
             e.inst.cpu_mode = mode;

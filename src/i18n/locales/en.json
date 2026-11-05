@@ -1249,7 +1249,7 @@
   "ui.accountsSide": "Move accounts to the side",
   "performance.preset.ultra": "ULTRA",
   "performance.tagUltra": "Experimental — background clients first.",
-  "performance.ultraWarning": "Strict ULTRA: 1% CPU by default, selectable 1% or 2%, and 5 FPS on the next launch. No warm-up or focus/loading/teleport exemptions. Maximum-performance graphics; window size and resolution are unchanged. Low CPU ceilings may interrupt gameplay. No fixed RAM or client-count guarantee. Export custom settings before replacing a preset.",
+  "performance.ultraWarning": "ULTRA: load without a CPU ceiling or Eco, then apply 1% by default (selectable 1% or 2%) after 90 seconds of confirmed game entry. Teleports, disconnects and rejoins start a new cycle; focus alone does not release mature ULTRA limits. FPS 5 and maximum-performance graphics are set at launch. Window size and resolution are unchanged. No fixed RAM or client-count guarantee. Export custom settings before replacing a preset.",
   "Grid columns must be between 1 and 20.": "Grid columns must be between 1 and 20.",
   "dashboard.gridTitle": "Monitor grid",
   "dashboard.gridColumns": "Columns",

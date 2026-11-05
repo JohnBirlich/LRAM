@@ -2672,7 +2672,8 @@ mod tests {
             assert!(!t.cpu_policy(&v, None, &[], start + 91_000).0.contains(&id));
             append(&log, &["[FLog::SingleSurfaceApp] UgcExperienceController: doTeleport".into()]);
             t.poll(Some(&dir), &procs, &user_of, start + 92_000);
-            assert!(t.cpu_policy(&v, Some(100), &[], start + 999_000).0.contains(&id), "loading never expires into a CPU cap");
+            t.poll(Some(&dir), &procs, &user_of, start + 999_000);
+            assert!(t.cpu_policy(&v, Some(100), &[], start + 999_000).0.contains(&id), "loading never expires into a CPU cap or an unconfirmed game entry");
             assert_eq!(t.get(&id).unwrap().cpu_mode, CpuMode::Loading);
             append(&log, &join_lines(USER));
             append(&log, &["[FLog::Network] Replicator created".into()]);

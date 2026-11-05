@@ -257,14 +257,16 @@ pub fn parse_line(line: &str, facts: &mut LogFacts) {
         }
     } else if line.contains("[FLog::Network] Replicator created") || line.contains("[FLog::Network] serverId:") {
         facts.in_game = true;
+        facts.teleporting = false;
         facts.disconnected = false;
         facts.connection_lost = false;
         facts.left = false;
         facts.reason = None;
     } else if facts.in_game && line.contains(TELEPORT) {
         facts.join_generation = facts.join_generation.saturating_add(1);
+        facts.in_game = false;
         facts.teleporting = true;
-    } else if let Some(m) = DISCONNECTS.iter().copied().find(|m| line.contains(*m)).or_else(|| transport_loss(line, tag).then_some("[FLog::")) {
+    } else if let Some(m) = DISCONNECTS.iter().copied().find(|m| line.contains(*m)).or_else(|| transport_loss(line, tag).then(|| line.split_once(']').map_or(line, |(_, message)| message).trim())) {
         if !facts.disconnected { facts.join_generation = facts.join_generation.saturating_add(1); }
         facts.disconnected = true;
         facts.connection_lost |= transport_loss(line, tag);
@@ -381,6 +383,7 @@ mod tests {
             let mut f = LogFacts { in_game: true, teleporting: true, ..Default::default() };
             parse_line(&line(&format!("[FLog::Network] {event}")), &mut f);
             assert!(f.disconnected && f.connection_lost && !f.teleporting && !f.left, "{event}");
+            assert!(f.reason.is_some(), "retain the native failure reason");
             parse_line(&line("[FLog::Network] Sending disconnect with reason: 285 (DisconnectClientInitiated)"), &mut f);
             assert!(!f.left, "cleanup after known connection loss is not a healthy-game manual leave");
             parse_line(&line("[FLog::Network] Replicator created"), &mut f);

@@ -617,22 +617,22 @@ impl Tracker {
             } else if let Some(cause) = e.cause().filter(|cause| e.rejoin_seen != Some(*cause)) {
                 e.rejoin_seen = Some(cause);
                 if cause == CrashKind::Hang && e.stuck() && e.inst.rejoins >= STUCK_TRIES {
-                        log::warn!("instance {}: still not in a game after {} restarts: giving up", e.inst.id, e.inst.rejoins);
-                        e.inst.note = Some(never_loaded());
-                        e.gave_up = Some(never_loaded());
-                    } else {
-                        if e.stuck() {
-                            log::warn!("instance {}: alive but out of a game for {} min: restarting it", e.inst.id, STUCK_MS / 60_000);
-                        }
-                        let i = &e.inst;
-                        out.push(Rejoin {
-                            from: i.id.clone(),
-                            account_id: i.account_id,
-                            target: i.target.clone(),
-                            rejoins: i.rejoins + 1,
-                            cause,
-                        });
+                    log::warn!("instance {}: still not in a game after {} restarts: giving up", e.inst.id, e.inst.rejoins);
+                    e.inst.note = Some(never_loaded());
+                    e.gave_up = Some(never_loaded());
+                } else {
+                    if e.stuck() {
+                        log::warn!("instance {}: alive but out of a game for {} min: restarting it", e.inst.id, STUCK_MS / 60_000);
                     }
+                    let i = &e.inst;
+                    out.push(Rejoin {
+                        from: i.id.clone(),
+                        account_id: i.account_id,
+                        target: i.target.clone(),
+                        rejoins: i.rejoins + 1,
+                        cause,
+                    });
+                }
             }
         }
         out
@@ -1473,6 +1473,32 @@ mod tests {
 
     fn target() -> LaunchTarget {
         LaunchTarget::Place { place_id: 1818, launch_data: None }
+    }
+
+    #[test]
+    fn verified_native_connection_loss_releases_cpu_and_queues_one_rejoin_even_if_hung() {
+        let dir = temp_dir();
+        let start = now_ms();
+        let (t, id, procs, log) = in_game_client(&dir, start);
+        let v = Settings { ultra_cpu: crate::model::UltraCpu { enabled: true, cap: 1, warmup_s: 90 }, ..Settings::default() };
+        assert!(t.cpu_policy(&v, None, &[], start + 91_000).0.is_empty());
+        t.entries().iter_mut().find(|e| e.inst.id == id).unwrap().hung_polls = HANG_POLLS;
+        procs.set_hung(&[100]);
+        append(&log, &["[FLog::Network] ID_CONNECTION_LOST".into(), "[FLog::Network] Sending disconnect with reason: 285 (DisconnectClientInitiated)".into()]);
+        t.poll(Some(&dir), &procs, &user_of, start + 92_000);
+        assert_eq!(t.get(&id).unwrap().state, Disconnected);
+        assert!(t.cpu_policy(&v, None, &[], start + 92_000).0.contains(&id));
+        let jobs = t.take_rejoins();
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].cause, CrashKind::Disconnect);
+        assert!(t.take_rejoins().is_empty());
+        assert!(t.begin_relaunch(&id, start + 93_000));
+        t.entries().iter_mut().find(|e| e.inst.id == id).unwrap().inst.checking_process = true;
+        t.end_relaunch(&id);
+        assert!(t.take_rejoins().is_empty(), "never relaunch while identity is uncertain");
+        t.entries().iter_mut().find(|e| e.inst.id == id).unwrap().inst.checking_process = false;
+        assert_eq!(t.take_rejoins().len(), 1, "verification must not permanently consume a pending disconnect");
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

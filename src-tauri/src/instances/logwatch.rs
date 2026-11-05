@@ -47,6 +47,7 @@ fn disconnect_code(line: &str) -> Option<u32> {
     for marker in ["error code", "reason"] {
         if let Some((_, rest)) = lower.split_once(marker) {
             let rest = rest.trim_start_matches(|c: char| c.is_whitespace() || ":=([".contains(c));
+            let rest = rest.strip_prefix("player").map_or(rest, |r| r.trim_start_matches(|c: char| c.is_whitespace() || ":=".contains(c)));
             let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
             if let Ok(code) = digits.parse() { return Some(code); }
         }

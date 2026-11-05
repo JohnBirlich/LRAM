@@ -95,10 +95,13 @@ export function SystemPanel({ running }: { running: Instance[] }) {
         {privacy ? <p>Hidden</p> : <dl className="hardware-facts">
           <dt>{t("monitor.board")}</dt><dd>{h?.board ?? unknown}</dd>
           <dt>{t("monitor.processor")}</dt><dd>{h?.cpu ?? unknown}{h?.logicalProcessors ? ` · ${h.logicalProcessors} ${t("monitor.logicalCpus")}` : ""}</dd>
-          <dt>{t("monitor.graphics")}</dt><dd>{h?.gpus.length ? h.gpus.map((g, i) => <div key={i}>{g.name} · {mb(g.dedicatedMb)} {t("monitor.dedicatedVram")}</div>) : unknown}</dd>
+          <dt>{t("monitor.graphics")}</dt><dd>{h?.gpus.length ? h.gpus.map((g, i) => <div key={i}>{g.name} · {g.dedicatedMb === null ? unknown : mb(g.dedicatedMb)} {t("monitor.dedicatedVram")}</div>) : unknown}</dd>
           <dt>{t("monitor.physicalRam")}</dt><dd>{system.data ? mb(system.data.memTotalMb) : unknown}</dd>
           <dt>{t("monitor.memoryRate")}</dt><dd>{h?.memoryRates.length ? `${h.memoryRates.join(" / ")} MT/s` : unknown}</dd>
         </dl>}
+        <h3 className="section-title mt-5">Virtual / software display adapters</h3>
+        {privacy ? <p>Hidden</p> : h?.virtualAdapters?.length ? h.virtualAdapters.map((name, i) => <p key={i}>{name}</p>) : <p>{h ? "None reported by Windows" : unknown}</p>}
+        {!!h?.otherAdapters?.length && <><h3 className="section-title mt-5">Other display adapters</h3>{privacy ? <p>Hidden</p> : h.otherAdapters.map((name, i) => <p key={i}>{name}</p>)}</>}
         <h3 className="section-title mt-5">Peripherals</h3>
         <h4 className="label mt-2">Displays</h4>
         {privacy ? <p>Hidden</p> : h?.displays?.length ? h.displays.map((d, i) => <p key={i}>{d.name ?? unknown} · {d.width && d.height ? `${d.width} × ${d.height}` : unknown} · {d.refreshHz ? `${d.refreshHz} Hz` : unknown}</p>) : <p>{unknown}</p>}

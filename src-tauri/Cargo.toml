@@ -1,6 +1,6 @@
 [package]
 name = "lram"
-version = "0.14.0"
+version = "0.14.1"
 description = "Local-only Roblox account manager"
 authors = ["JohnBirlich"]
 edition = "2024"
@@ -37,6 +37,8 @@ ts-rs = "12"
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62", features = [
   "Win32_Foundation",
+  "Win32_Devices_DeviceAndDriverInstallation",
+  "Win32_Devices_Display",
   "Win32_Globalization",
   "Win32_Graphics_Direct3D",
   "Win32_Graphics_Direct3D11",

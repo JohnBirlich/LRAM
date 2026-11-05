@@ -959,7 +959,7 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       return shown.length;
     }
     case "hardware_info":
-      return { board: "Demo motherboard (browser preview)", cpu: "Demo CPU — not your hardware", logicalProcessors: 8, memoryRates: [3200], gpus: [{ name: "Demo GPU", dedicatedMb: 8192 }], displays: [{ name: "Demo display", width: 1920, height: 1080, refreshHz: 60 }] };
+      return { board: "Demo motherboard (browser preview)", cpu: "Demo CPU — not your hardware", logicalProcessors: 8, memoryRates: [3200], gpus: [{ name: "Demo GPU", dedicatedMb: 8192 }], virtualAdapters: ["Demo virtual adapter"], otherAdapters: [], displays: [{ name: "Demo display", width: 1920, height: 1080, refreshHz: 60 }] };
     case "public_location":
       throw new Error("Public IP lookup is disabled in the browser demo.");
     case "instances_metrics":

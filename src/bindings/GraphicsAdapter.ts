@@ -1,1 +1,1 @@
-export type GraphicsAdapter = { name: string, dedicatedMb: number };
+export type GraphicsAdapter = { name: string, dedicatedMb: number | null };

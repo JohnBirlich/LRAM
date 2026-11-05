@@ -1,4 +1,4 @@
-import { usePrivacy } from "../privacy";
+import { usePrivacy, isPrivate } from "../privacy";
 import { useSyncExternalStore } from "react";
 import { asError, type ErrorPayload } from "../api";
 import { Icon } from "./Icon";
@@ -52,6 +52,7 @@ const FRIENDLY: Record<string, Key> = {
 };
 
 export function friendly(e: ErrorPayload): string {
+  if (isPrivate()) return "Hidden";
   const k = FRIENDLY[e.kind];
   return k ? t(k) : e.message || t("ui.error.generic");
 }

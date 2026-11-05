@@ -1,3 +1,5 @@
+import type { ClientPerformance } from "./bindings/ClientPerformance";
+export type { ClientPerformance } from "./bindings/ClientPerformance";
 import type { HardwareInfo } from "./bindings/HardwareInfo";
 import type { PublicLocation } from "./bindings/PublicLocation";
 import { invoke as rawInvoke, type InvokeArgs } from "@tauri-apps/api/core";
@@ -167,6 +169,9 @@ export const api = {
   instanceSetLimits: (id: string, limits: Limits) => invoke<void>("instance_set_limits", { id, limits }),
 
   instanceTrim: (id: string) => invoke<[number, number]>("instance_trim", { id }),
+
+  instancePerformance: (id: string, performance: ClientPerformance, allRunning: boolean) => invoke<void>("instance_performance", { id, performance, allRunning }),
+  instanceRestartPerformance: (id: string) => invoke<void>("instance_restart_performance", { id }),
 
   instanceSetAntiAfk: (id: string, enabled: boolean) => invoke<void>("instance_set_anti_afk", { id, enabled }),
 

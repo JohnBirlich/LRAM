@@ -580,6 +580,8 @@ mod tests {
             checking_process: false,
             cpu_mode: Default::default(),
             cpu_warmup_remaining_s: 0,
+            performance: None,
+            performance_pending: false,
         }
     }
 

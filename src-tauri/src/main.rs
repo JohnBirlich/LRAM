@@ -571,6 +571,8 @@ fn main() {
             commands::instances_close_all,
             commands::instances_clear_ended,
             commands::instance_set_limits,
+            commands::instance_performance,
+            commands::instance_restart_performance,
             commands::instance_trim,
             commands::instance_set_anti_afk,
             commands::instance_set_muted,

@@ -240,7 +240,7 @@ mod tests {
         let original = Settings { ultra_cpu: UltraCpu { enabled: true, cap: 2, warmup_s: 75 }, ..Settings::default() };
         let profile = parse(&of(&original, None, 0), &Settings::default()).unwrap();
         assert_eq!(profile.ultra_cpu, Some(original.ultra_cpu));
-        for (cap, warmup_s) in [(0, 90), (4, 90), (3, 59), (3, 91)] {
+        for (cap, warmup_s) in [(0, 90), (3, 90), (4, 90)] {
             let patch = SettingsPatch { ultra_cpu: Some(UltraCpu { enabled: true, cap, warmup_s }), ..SettingsPatch::default() };
             assert!(crate::commands::apply_performance(&mut Settings::default(), &patch).is_err());
         }

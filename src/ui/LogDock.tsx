@@ -1,3 +1,4 @@
+import { usePrivacy } from "../privacy";
 import { useEffect, useRef, useState } from "react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { api, events } from "../api";
@@ -22,7 +23,7 @@ function levelOf(text: string, prev: Level): Level {
 let nextId = 0;
 
 // -- Main func
-export function LogDock() {
+function LogDockContent() {
   const [open, setOpen] = useState(false);
   const [lines, setLines] = useState<Line[]>([]);
   const box = useRef<HTMLDivElement>(null);
@@ -111,3 +112,5 @@ export function LogDock() {
     </div>
   );
 }
+
+export function LogDock() { const privacy = usePrivacy(); return privacy ? <div className="p-3 text-dim">Hidden</div> : <LogDockContent />; }

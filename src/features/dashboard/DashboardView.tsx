@@ -1,3 +1,4 @@
+import { isPrivate, privateText, usePrivacy } from "../../privacy";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type AccountSummary, type ClientMetrics, type GameInfo, type Group, type Instance, type Limits, type WindowShow } from "../../api";
@@ -32,11 +33,13 @@ const STATUSES = ["live", "minimized", "noWindow", "pending", "unsupported"] as 
 let cardsInView = 0;
 
 function useThumbnail(id: string, canvas: React.RefObject<HTMLCanvasElement | null>, fps: PreviewFps) {
+  const privacy = usePrivacy();
   const [status, setStatus] = useState<(typeof STATUSES)[number] | null>(null);
   const [painted, setPainted] = useState(false);
   const [ghost, setGhost] = useState(false);
   const [ageS, setAgeS] = useState<number | null>(null);
   useEffect(() => {
+    if (privacy) return;
     let stop = false;
     let timer: number | undefined;
     let known = 0;
@@ -89,7 +92,7 @@ function useThumbnail(id: string, canvas: React.RefObject<HTMLCanvasElement | nu
       seen.disconnect();
       if (inView) cardsInView--;
     };
-  }, [id, canvas, fps]);
+  }, [id, canvas, fps, privacy]);
   return { status, painted, ghost, ageS };
 }
 
@@ -101,7 +104,7 @@ const playAgain = (a: AccountSummary, i: Instance) => api.launch(a.id, i.target,
 
 function GameName({ placeId }: { placeId: number | null }) {
   const g = useQuery({ queryKey: qk.game(placeId), queryFn: () => api.gameInfo(placeId!), enabled: placeId !== null }).data;
-  return <span className="truncate">{placeId === null ? t("dashboard.noGameYet") : g?.name ?? t("dashboard.place", { id: placeId })}</span>;
+  return <span className="truncate">{isPrivate() ? "Hidden" : placeId === null ? t("dashboard.noGameYet") : g?.name ?? t("dashboard.place", { id: placeId })}</span>;
 }
 
 const cardFlex = (width: number | undefined, detailed: boolean) => {
@@ -186,9 +189,9 @@ function ClientCard({ inst: i, account: a, groups, metrics: m, now, afkOn, defau
   const { status, painted, ghost, ageS } = useThumbnail(i.id, canvas, fps);
   const noWindow = status === "noWindow" || (status === null && i.state === "starting");
   const hidden = status === "minimized" || ghost;
-  const name = a ? accountName(a) : t("dashboard.account", { id: i.accountId });
+  const name = a ? accountName(a) : String(privateText(t("dashboard.account", { id: i.accountId })));
   const rejoining = i.relaunching && i.state === "disconnected";
-  const [label, color] = closing ? [t("launch.running.closing"), "var(--dim)"] : rejoining ? [t("launch.state.rejoining"), "var(--orange)"] : instanceState(i);
+  const [label, color] = isPrivate() ? ["Hidden", "var(--dim)"] : closing ? [t("launch.running.closing"), "var(--dim)"] : rejoining ? [t("launch.state.rejoining"), "var(--orange)"] : instanceState(i);
   const moving = i.state === "starting" || i.state === "joining" || rejoining || closing;
   const focus = () => api.instanceShow(i.id, "focus").catch(toastError);
   const throttled = t("dashboard.throttled");
@@ -221,7 +224,7 @@ function ClientCard({ inst: i, account: a, groups, metrics: m, now, afkOn, defau
       data-group={i.accountId}
       className={`tile panel relative flex flex-col outline-offset-2 ${detailed ? "gap-3 p-3.5" : "gap-2 p-2.5"}`}
       style={cardFlex(width, detailed)}
-      title={`PID ${i.pid}`}
+      title={String(privateText(`PID ${i.pid}`))}
       onDoubleClick={(e) => {
         if (!(e.target as Element).closest("button")) void focus();
       }}
@@ -241,12 +244,12 @@ function ClientCard({ inst: i, account: a, groups, metrics: m, now, afkOn, defau
     >
       <div className="bezel">
         <div className="relative aspect-video overflow-hidden rounded-[9px]">
-          <canvas ref={canvas} aria-hidden="true" className={`w-full h-full object-contain ${painted ? "" : "invisible"} ${pictureNote || ageS !== null ? "opacity-50" : ""}`} />
-          {!painted && <span className="absolute inset-0 grid place-items-center text-xs text-dim">{pictureNote}</span>}
+          <canvas hidden={isPrivate()} ref={canvas} aria-hidden="true" className={`w-full h-full object-contain ${painted ? "" : "invisible"} ${pictureNote || ageS !== null ? "opacity-50" : ""}`} />
+          {isPrivate() ? <span className="absolute inset-0 grid place-items-center">Hidden</span> : !painted && <span className="absolute inset-0 grid place-items-center text-xs text-dim">{pictureNote}</span>}
         </div>
-        {painted && pictureNote ? <span className="badge" title={status === "minimized" ? t("dashboard.lastPictureHint") : undefined}>{pictureNote}</span>
-          : ageS !== null ? <span className="badge" title={t("dashboard.pictureAgeHint")}>{t("dashboard.pictureAge", { s: ageS })}</span>
-          : ghost && <span className="badge" title={t("dashboard.hiddenHint")}>{t("dashboard.hidden")}</span>}
+        {!isPrivate() && painted && pictureNote ? <span className="badge" title={status === "minimized" ? t("dashboard.lastPictureHint") : undefined}>{pictureNote}</span>
+          : !isPrivate() && ageS !== null ? <span className="badge" title={t("dashboard.pictureAgeHint")}>{t("dashboard.pictureAge", { s: ageS })}</span>
+          : !isPrivate() && ghost && <span className="badge" title={t("dashboard.hiddenHint")}>{t("dashboard.hidden")}</span>}
         <button type="button" className="grip" aria-label={t("accounts.reorder", { name })} {...grip(name)}>
           <Icon name="grip" size={14} />
         </button>
@@ -272,12 +275,12 @@ function ClientCard({ inst: i, account: a, groups, metrics: m, now, afkOn, defau
               {groups.map((g) => (
                 <span key={g.id} className="tag">
                   <span aria-hidden="true" className="w-1.5 h-1.5 rounded-full" style={{ background: groupColor(g) }} />
-                  {g.name}
+                  {privateText(g.name)}
                 </span>
               ))}
             </div>
           )}
-          {i.note && !rejoining && <span className="text-[13px] text-orange">{i.note}</span>}
+          {i.note && !rejoining && <span className="text-[13px] text-orange">{privateText(i.note)}</span>}
           <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-dim min-w-0">
             <span className="flex flex-wrap gap-1 min-w-0">
               {badges.map(([b, tip]) => (
@@ -322,14 +325,14 @@ function ClientCard({ inst: i, account: a, groups, metrics: m, now, afkOn, defau
             {(closing || i.state !== "inGame") && <span aria-hidden="true" title={label} className={`led ${moving ? "pulse" : ""}`} style={{ color }} />}
             <span className="font-medium truncate">{a?.username ?? name}</span>
             {groups.length > 0 && (
-              <span className="flex flex-none gap-1" title={groups.map((g) => g.name).join(", ")}>
+              <span className="flex flex-none gap-1" title={String(privateText(groups.map((g) => g.name).join(", ")))}>
                 {groups.slice(0, 3).map((g) => (
                   <span key={g.id} aria-hidden="true" className="w-1.5 h-1.5 rounded-full" style={{ background: groupColor(g) }} />
                 ))}
               </span>
             )}
           </div>
-          {i.note && !rejoining && <span className="px-1 text-[13px] text-orange">{i.note}</span>}
+          {i.note && !rejoining && <span className="px-1 text-[13px] text-orange">{privateText(i.note)}</span>}
         </>
       )}
       <div className="mono text-xs text-dim flex flex-col gap-1" title={t("dashboard.usageHint")}>
@@ -410,6 +413,7 @@ function ClientMenu({ at, account, onClose, afkOn, closing, onLimits, onCloseCli
         { label: t("dashboard.efficiencyMode"), checked: i.limits.eco, run: () => limits({ eco: !i.limits.eco }) },
         { label: afkOn ? t("dashboard.antiAfk") : t("dashboard.antiAfkOff"), checked: i.antiAfk, run: () => api.instanceSetAntiAfk(i.id, !i.antiAfk).catch(toastError) },
         { label: i.muted ? t("dashboard.unmute") : t("dashboard.mute"), checked: i.muted, run: () => api.instanceSetMuted(i.id, !i.muted).catch(toastError) },
+        { icon: "sliders", label: "Profile, FPS and graphics", run: () => onLimits(i.id) },
         { icon: "sliders", label: t("home.limits"), run: () => onLimits(i.id) },
         null,
         { icon: "x", label: t("common.close"), run: () => onCloseClient(i, false), disabled: closing.has(closeKey(i)) },
@@ -623,6 +627,7 @@ export function DashboardView({ accounts, groups, home, onLaunch, onAdd, onImpor
   const settings = useSettings().data;
   const afkOn = settings?.antiAfk.enabled ?? false;
   const now = useNow(30_000);
+  usePrivacy();
   const [menu, setMenu] = useState<MenuAt | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
   const openMenu = (at: MenuAt) => setMenu((m) => (at.beside !== undefined && m?.from === at.from ? null : at));
@@ -692,7 +697,7 @@ export function DashboardView({ accounts, groups, home, onLaunch, onAdd, onImpor
                 <div className="min-w-0">
                   <h1 className="page-title">{inGame ? t("home.playing", { count: inGame }) : coming ? t("home.gettingIn") : t("home.noneInGame")}</h1>
                   <p className="page-sub">
-                    {games.length > 0 && <>{t("home.in", { games: fmtList(games) })} </>}
+                    {games.length > 0 && <>{t("home.in", { games: String(privateText(fmtList(games))) })} </>}
                     {settings?.autoRejoin ? t("home.autoRejoinOn") : t("home.autoRejoinOff")}
                     {settings && !settings.autoRejoin && (
                       <button className="btn btn-ghost btn-sm ms-1" onClick={() => setSettings.mutate({ autoRejoin: true })}>{t("launch.multi.turnOn")}</button>

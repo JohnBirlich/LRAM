@@ -1,3 +1,4 @@
+import { usePrivacy } from "../../privacy";
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
@@ -39,6 +40,7 @@ export function DetailPanel({ account: a, groups, vaultMode, clipboardSeconds, c
   onRemove: () => void;
   onLaunch: () => void;
 }) {
+  const privacy = usePrivacy();
   const qc = useQueryClient();
   const update = useUpdateAccount();
   const settings = useSettings().data;
@@ -104,6 +106,7 @@ export function DetailPanel({ account: a, groups, vaultMode, clipboardSeconds, c
   const copyId = () => clip(String(a.userId), t("accounts.menu.userIdCopied"));
   const copyName = () => clip(username, t("accounts.menu.usernameCopied"));
 
+  if (privacy) return <aside className="panel p-5"><p>Hidden</p><p className="text-dim">Disable Privacy mode to view or edit account details.</p></aside>;
   return (
     <div className="enter flex flex-col">
       <div className="flex gap-4 items-start p-5">

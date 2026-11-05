@@ -122,11 +122,18 @@ pub async fn launch(s: &App, account_id: i64, target: &LaunchTarget, fps_cap: Op
     let ticket = s.api.authentication_ticket(account_id, &account_cookie(s, account_id)?, assertion.as_ref()).await?;
     let (browser_tracker_id, started_at) = (uri::new_browser_tracker_id(), crate::commands::now_ms());
     let place = uri::PlaceLaunch { join: &join, browser_tracker_id, join_attempt_id: Uuid::new_v4() };
-    let settings = s.db.settings()?;
+    let mut settings = s.db.settings()?;
+    let own_performance = s.db.client_performance(account_id)?;
+    if let Some(p) = &own_performance {
+        settings.fps_cap = p.fps_cap;
+        settings.low_graphics = p.low_graphics;
+        settings.lighter_rendering = p.lighter_rendering;
+        settings.render_flags = p.render_flags;
+    }
     let account = s.db.account(account_id)?;
-    let fps = fps_cap.or(account.fps_cap).unwrap_or(settings.fps_cap);
-    let undo = client_settings::apply(&s.db, fps, settings.low_graphics && !account.full_quality);
-    let flags = match (settings.lighter_rendering && !account.full_quality, exe.bootstrapper) {
+    let fps = own_performance.as_ref().map(|p| p.fps_cap).or(fps_cap).or(account.fps_cap).unwrap_or(settings.fps_cap);
+    let undo = client_settings::apply(&s.db, fps, settings.low_graphics && (own_performance.is_some() || !account.full_quality));
+    let flags = match (settings.lighter_rendering && (own_performance.is_some() || !account.full_quality), exe.bootstrapper) {
         (false, _) => None,
         (true, true) => {
             log::info!("lighter rendering skipped for account {account_id}: a bootstrapper manages Roblox's flags");
@@ -186,7 +193,7 @@ pub async fn launch(s: &App, account_id: i64, target: &LaunchTarget, fps_cap: Op
         started_at,
         via_bootstrapper: exe.bootstrapper,
         warning,
-        fps_cap,
+        fps_cap: Some(fps),
         pid_start: Some(pid_start),
     })
 }

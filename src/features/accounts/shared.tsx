@@ -1,3 +1,4 @@
+import { isPrivate, usePrivacy } from "../../privacy";
 import { useState, type CSSProperties } from "react";
 import type { AccountStatus, AccountSummary, Presence, PresenceKind } from "../../api";
 import { useHeadshot } from "../../data";
@@ -5,7 +6,7 @@ import { fmtDate, t, type Key } from "../../i18n";
 
 export const SWATCHES = ["#C6F432", "#7AB0FF", "#5FE0C8", "#FFA05C", "#B49CFF", "#FF8FC7", "#ECEEF1", "#5E6672"];
 
-export const accountName = (a: AccountSummary) => a.alias || a.displayName || a.username;
+export const accountName = (a: AccountSummary) => isPrivate() ? "Hidden" : a.alias || a.displayName || a.username;
 
 export function initials(a: AccountSummary) {
   return accountName(a).replace(/[^\p{L}\p{N}]/gu, "").slice(0, 2).toUpperCase() || "?";
@@ -21,10 +22,12 @@ function inkOn(hex: string) {
 
 // -- Main func
 export function Avatar({ account, size, url }: { account: AccountSummary; size: number; url?: string | null }) {
-  const src = useHeadshot(account.id) ?? url ?? null;
+  const privacy = usePrivacy();
+  const fetched = useHeadshot(account.id);
+  const src = privacy ? null : fetched ?? url ?? null;
   const [loaded, setLoaded] = useState<string | null>(null);
   const [broken, setBroken] = useState<string | null>(null);
-  const bg = avatarColor(account);
+  const bg = privacy ? "#808080" : avatarColor(account);
   const show = src !== null && src !== broken;
   const done = show && loaded === src;
   return (
@@ -33,7 +36,7 @@ export function Avatar({ account, size, url }: { account: AccountSummary; size: 
       className="relative flex-none grid place-content-center font-bold overflow-hidden rounded-full"
       style={{ width: size, height: size, background: done ? "transparent" : bg, color: inkOn(bg), fontSize: Math.round(size * 0.36) }}
     >
-      <span className={done ? "opacity-0" : undefined}>{initials(account)}</span>
+      <span className={done ? "opacity-0" : undefined}>{privacy ? "" : initials(account)}</span>
       {show && (
         <img
           key={src}
@@ -83,6 +86,8 @@ function Mark({ look, label, detail }: { look: Look; label: string; detail?: str
 }
 
 export function PresenceStatus({ presence: p }: { presence: Presence }) {
+  const privacy = usePrivacy();
+  if (privacy) return <span>Hidden</span>;
   const label = p.kind === "inGame" && p.lastLocation ? t("accounts.presence.inGameAt", { place: p.lastLocation }) : t(PRESENCE[p.kind].label);
   return <Mark look={PRESENCE[p.kind]} label={label} />;
 }
@@ -93,6 +98,8 @@ export function Status({ status, presence, checking, detail }: {
   checking?: boolean;
   detail?: string;
 }) {
+  const privacy = usePrivacy();
+  if (privacy) return <span>Hidden</span>;
   if (checking) {
     return (
       <span className="inline-flex items-center gap-2 min-w-0 max-w-full text-dim">

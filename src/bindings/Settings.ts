@@ -48,7 +48,7 @@ trimEveryMin: number,
 
 autoSpread: boolean,
 
-fairCap: boolean, adaptive: Adaptive, ultraCpu: UltraCpu,
+fairCap: boolean, adaptive: Adaptive, ultraCpu: UltraCpu, privacyMode: boolean,
 
 bandwidthKbps: number, antiAfk: AntiAfk,
 

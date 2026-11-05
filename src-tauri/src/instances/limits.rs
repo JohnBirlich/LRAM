@@ -323,7 +323,14 @@ pub fn plan_now(s: &crate::App, v: &Settings, clients: &[(String, u32, u64, Limi
     let (ultra_free, _) = s.tracker.cpu_policy(v, front, &full_quality, now);
     free.extend(ultra_free);
     s.limiter.note_free(&free, front);
-    plan(clients, v, front, crate::commands::cores(), throttled, &free, &s.limiter.uncapped())
+    let mut result = plan(clients, v, front, crate::commands::cores(), throttled, &free, &s.limiter.uncapped());
+    for (id, _, _, limits) in &mut result {
+        if let Some(own) = s.tracker.get(id).and_then(|i| i.performance) {
+            *limits = own.limits;
+            if own.strict_cpu { limits.cpu_cap = Some(limits.cpu_cap.unwrap_or(1).clamp(1, 2)); }
+        }
+    }
+    result
 }
 
 // -- Main func
@@ -358,6 +365,10 @@ pub fn plan(
             let mut l = effective(*manual, foreground == Some(*pid) || free.contains(id), v, share, fair);
             if v.mem_throttle.mb > 0 && throttled.contains(id) {
                 l.cpu_cap = Some(throttle_cap(l.cpu_cap, v.mem_throttle.cpu_cap));
+            }
+            if v.ultra_cpu.enabled {
+                l.cpu_cap = Some(l.cpu_cap.unwrap_or(v.ultra_cpu.cap).min(v.ultra_cpu.cap.clamp(1, 2)));
+                l.eco = true;
             }
             (id.clone(), *pid, *t0, l)
         })
@@ -862,15 +873,15 @@ mod tests {
     #[test]
     fn ultra_selected_ceiling_is_not_divided_by_client_count_and_manual_limits_survive() {
         use crate::model::UltraCpu;
-        for cap in 1..=3 {
+        for cap in 1..=2 {
             let v = Settings { fair_cap: true, ultra_cpu: UltraCpu { enabled: true, cap, warmup_s: 90 }, ..Settings::default() };
             let clients: Vec<_> = (1..=20).map(|pid| (pid.to_string(), pid, 1, Limits::default())).collect();
             let limits = plan(&clients, &v, None, 12, &[], &[], &[]);
             assert!(limits.iter().all(|p| p.3.cpu_cap == Some(cap)));
-            assert_eq!(plan(&clients, &v, Some(1), 12, &[], &[], &[])[0].3.cpu_cap, None);
-            assert_eq!(plan(&clients, &v, None, 12, &[], &["1".into()], &[])[0].3.cpu_cap, None);
+            assert_eq!(plan(&clients, &v, Some(1), 12, &[], &[], &[])[0].3.cpu_cap, Some(cap));
+            assert_eq!(plan(&clients, &v, None, 12, &[], &["1".into()], &[])[0].3.cpu_cap, Some(cap));
             let manual = [("1".into(), 1, 1, Limits { cpu_cap: Some(8), ..Limits::default() })];
-            assert_eq!(plan(&manual, &v, Some(1), 12, &[], &["1".into()], &[])[0].3.cpu_cap, Some(8));
+            assert_eq!(plan(&manual, &v, Some(1), 12, &[], &["1".into()], &[])[0].3.cpu_cap, Some(cap));
         }
     }
 

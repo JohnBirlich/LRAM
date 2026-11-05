@@ -1,3 +1,5 @@
+import { ClientPerformancePanel } from "./ClientPerformancePanel";
+import { isPrivate } from "../../privacy";
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { api, type AccountSummary, type Crash, type CrashKind, type Instance, type InstanceState, type Limits, type MultiInstanceStatus } from "../../api";
@@ -19,10 +21,11 @@ export const STATES: Record<InstanceState, [label: string, color: string]> = {
   get exited(): [string, string] { return [t("launch.state.ended"), "var(--dim)"]; },
 };
 
-export const instanceState = (i: Instance): [string, string] => i.checkingProcess
+export const instanceState = (i: Instance): [string, string] => isPrivate() ? ["Hidden", "var(--dim)"] : i.checkingProcess
   ? [t("launch.state.checking"), "var(--orange)"] : STATES[i.state];
 
 export function cpuStatus(i: Instance): string | null {
+  if (isPrivate()) return null;
   switch (i.cpuMode) {
     case "checking": return t("launch.state.checking");
     case "loading": return t("cpu.loading");
@@ -98,6 +101,7 @@ function LimitsBody({ inst }: { inst: Instance }) {
   };
   return (
     <div className="flex flex-col gap-4 px-5 pb-5">
+      {s && <ClientPerformancePanel key={inst.id} inst={inst} settings={s} />}
       {inst.throttled && <p role="status" className="alert">{t("launch.running.throttled")}</p>}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span>{t("launch.limits.cpu")}</span>

@@ -1,3 +1,4 @@
+import { usePrivacy } from "../../privacy";
 import { useState, type FormEvent } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, type AccountSummary, type Group } from "../../api";
@@ -15,6 +16,7 @@ export function GroupChips({ groups, accounts, active, onPick }: {
   active: number | null;
   onPick: (id: number | null) => void;
 }) {
+  const privacy = usePrivacy();
   const qc = useQueryClient();
   const [editing, setEditing] = useState<number | "new" | null>(null);
   const [deleting, setDeleting] = useState<Group | null>(null);
@@ -43,7 +45,7 @@ export function GroupChips({ groups, accounts, active, onPick }: {
             className="group relative"
             onContextMenu={(e) => {
               e.preventDefault();
-              setEditing(g.id);
+              if (!privacy) setEditing(g.id);
             }}
           >
             <button className="chip pe-9" aria-pressed={active === g.id} onClick={() => onPick(active === g.id ? null : g.id)}>
@@ -57,18 +59,18 @@ export function GroupChips({ groups, accounts, active, onPick }: {
               className="wc w-8 h-8 absolute end-1 top-1.5 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
               aria-label={t("accounts.groups.edit", { name: g.name })}
               title={t("accounts.groups.editHint")}
-              onClick={() => setEditing(g.id)}
+              disabled={privacy} onClick={() => setEditing(g.id)}
             >
               <Icon name="pencil" size={12} />
             </button>
           </div>
         ))}
-        <button className="chip" aria-label={t("accounts.groups.new")} title={groups.length ? t("accounts.groups.new") : t("accounts.groups.empty")} onClick={() => setEditing("new")}>
+        <button className="chip" aria-label={t("accounts.groups.new")} title={groups.length ? t("accounts.groups.new") : t("accounts.groups.empty")} disabled={privacy} onClick={() => setEditing("new")}>
           <Icon name="plus" size={14} />
           {groups.length === 0 && t("accounts.groups.new")}
         </button>
       </div>
-      {editing !== null && (
+      {!privacy && editing !== null && (
         <div className="basis-full">
           {editing === "new" ? (
             <GroupEditor key="new" groups={groups} onDone={() => setEditing(null)} />

@@ -56,7 +56,8 @@ let settings: Settings = {
   multiInstance: true, protectSharedLogin: true, launchDelayMs: 6000, autoRejoin: false, autoRestartOnCrash: false,
   breakerMax: 3, breakerWindowMin: 10, closeGraceS: 5, launchArgs: "", closeToTray: false,
   memRestartMb: 0, memThrottle: { mb: 0, cpuCap: 10 }, trimEveryMin: 0, autoSpread: false, fairCap: false,
-  ultraCpu: { enabled: false, cap: 3, warmupS: 90 },
+  privacyMode: false,
+  ultraCpu: { enabled: false, cap: 1, warmupS: 90 },
   adaptive: { enabled: false, background: { cpuCap: 25, eco: true, trimEveryMin: null, affinity: null } }, bandwidthKbps: 0,
   antiAfk: { enabled: false, intervalMin: 15, mode: "focus", press: "space" }, muteClients: false,
   discord: { crash: true, hang: true, memRestart: true, disconnect: true, restart: true, breaker: true, batchDone: true, launch: false, statusEveryMin: 0 },
@@ -215,7 +216,7 @@ function track(accountId: number, pid: number, target: LaunchTarget, placeId: nu
   const i: Instance = {
     id: crypto.randomUUID(), accountId, pid, state: "starting", target, placeId, jobId: null,
     startedAt: Date.now(), endedAt: null, viaBootstrapper, note: null, rejoins, limits: { cpuCap: null, eco: false, trimEveryMin: null, affinity: null },
-    checkingProcess: false, cpuMode: "standard", cpuWarmupRemainingS: 0,
+    checkingProcess: false, cpuMode: "standard", cpuWarmupRemainingS: 0, performance: null, performancePending: false,
     antiAfk: true, muted: false, afkAt: null, throttled: false, micro: false, fpsCap, relaunching: false, relaunchProblem: null, signInProblem: false, appliedLimits: { cpuCap: 25, eco: true, affinity: null, trimEveryMin: 15 },
   };
   instances.push(i);
@@ -895,6 +896,17 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       instancesChanged();
       return null;
     }
+    case "instance_performance":
+      for (const i of instances.filter(i => i.state !== "exited" && (args.allRunning || i.id === args.id))) {
+        i.performance = structuredClone(args.performance); i.performancePending = true;
+        i.limits = structuredClone(args.performance.limits); i.appliedLimits = structuredClone(i.limits);
+      }
+      instancesChanged(); return null;
+    case "instance_restart_performance": {
+      const i = instances.find(i => i.id === args.id);
+      if (i) { i.fpsCap = i.performance?.fpsCap ?? i.fpsCap; i.performancePending = false; }
+      instancesChanged(); return null;
+    }
     case "instance_set_anti_afk": {
       const i = instances.find((x) => x.id === args.id && x.state !== "exited");
       if (!i) return fail("notFound", "Not found.");
@@ -947,7 +959,7 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       return shown.length;
     }
     case "hardware_info":
-      return { board: "Demo motherboard (browser preview)", cpu: "Demo CPU — not your hardware", logicalProcessors: 8, memoryRates: [3200], gpus: [{ name: "Demo GPU", dedicatedMb: 8192 }] };
+      return { board: "Demo motherboard (browser preview)", cpu: "Demo CPU — not your hardware", logicalProcessors: 8, memoryRates: [3200], gpus: [{ name: "Demo GPU", dedicatedMb: 8192 }], displays: [{ name: "Demo display", width: 1920, height: 1080, refreshHz: 60 }] };
     case "public_location":
       throw new Error("Public IP lookup is disabled in the browser demo.");
     case "instances_metrics":

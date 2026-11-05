@@ -211,6 +211,7 @@ pub struct Settings {
     pub fair_cap: bool,
     pub adaptive: Adaptive,
     pub ultra_cpu: UltraCpu,
+    pub privacy_mode: bool,
     pub bandwidth_kbps: u32,
     pub anti_afk: AntiAfk,
     pub mute_clients: bool,
@@ -393,7 +394,7 @@ pub struct UltraCpu {
     pub warmup_s: u32,
 }
 impl Default for UltraCpu {
-    fn default() -> Self { Self { enabled: false, cap: 3, warmup_s: 90 } }
+    fn default() -> Self { Self { enabled: false, cap: 1, warmup_s: 90 } }
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -446,6 +447,7 @@ impl Default for Settings {
             fair_cap: false,
             adaptive: Adaptive::default(),
             ultra_cpu: UltraCpu::default(),
+            privacy_mode: false,
             bandwidth_kbps: 0,
             anti_afk: AntiAfk::default(),
             mute_clients: false,
@@ -533,6 +535,8 @@ pub struct SettingsPatch {
     pub adaptive: Option<Adaptive>,
     #[ts(optional)]
     pub ultra_cpu: Option<UltraCpu>,
+    #[ts(optional)]
+    pub privacy_mode: Option<bool>,
     #[ts(optional)]
     pub anti_afk: Option<AntiAfk>,
     #[ts(optional)]
@@ -822,6 +826,23 @@ pub struct Instance {
     pub cpu_mode: CpuMode,
     #[serde(default, skip_deserializing)]
     pub cpu_warmup_remaining_s: u32,
+    #[serde(default)]
+    pub performance: Option<ClientPerformance>,
+    #[serde(default)]
+    pub performance_pending: bool,
+}
+
+/// Account-scoped launch settings plus immediately applied Windows limits.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ClientPerformance {
+    pub fps_cap: u32,
+    pub low_graphics: bool,
+    pub lighter_rendering: bool,
+    pub render_flags: RenderFlags,
+    pub limits: Limits,
+    pub strict_cpu: bool,
 }
 
 #[derive(Serialize, Deserialize, TS, Clone, Copy, Debug, Default, PartialEq, Eq)]

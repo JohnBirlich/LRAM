@@ -147,6 +147,9 @@ export function SettingsView({ vault, settings, onPerformance, onRecoveryCode }:
         <div className="grid items-start gap-8 mt-5" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(440px, 100%), 1fr))" }}>
         <div className="flex flex-col gap-8 min-w-0">
         <Section id="general" title={t("settings.section.general")}>
+        <Row title="Privacy mode" hint="Hide account identities, statuses, groups, notes, game details, previews, hardware and IP/location. Saved across restarts. This masks the interface, not network traffic or exported files.">
+          <Switch label="Privacy mode" checked={settings.privacyMode} onChange={(privacyMode) => set.mutate({ privacyMode })} />
+        </Row>
         <Row title={t("settings.theme")} hint={t("settings.themeHint")}>
           <Segmented
             label={t("settings.theme")}

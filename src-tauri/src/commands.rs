@@ -783,7 +783,11 @@ pub(crate) async fn launch_tracked(
             return Err(e);
         }
     };
-    let instance = s.tracker.register(&info, target);
+    let mut instance = s.tracker.register(&info, target);
+    if let Some(p) = s.db.client_performance(account_id)? {
+        s.tracker.set_performance(&instance.id, p, false);
+        instance = s.tracker.get(&instance.id).ok_or(AppError::NotFound)?;
+    }
     if v.mute_clients {
         s.tracker.set_muted(&instance.id, true);
         crate::instances::audio::wake();
@@ -1318,6 +1322,60 @@ pub async fn instance_set_limits(app: AppHandle, s: State<'_, App>, id: String, 
         return Err(e);
     }
     Ok(())
+}
+
+#[tauri::command]
+pub async fn instance_performance(app: AppHandle, s: State<'_, App>, id: String, performance: crate::model::ClientPerformance, all_running: bool) -> Result<()> {
+    unlocked(&s)?;
+    launch_fps(Some(performance.fps_cap))?;
+    check_limits(&performance.limits)?;
+    if performance.strict_cpu && !performance.limits.cpu_cap.is_some_and(|c| (1..=2).contains(&c)) {
+        return Err(AppError::Invalid("Strict ULTRA requires a 1% or 2% CPU ceiling.".into()));
+    }
+    let selected = s.tracker.get(&id).ok_or(AppError::NotFound)?;
+    if selected.state == InstanceState::Exited || selected.checking_process {
+        return Err(AppError::Wait("Wait for process verification before applying a profile.".into()));
+    }
+    let targets = if all_running { s.tracker.list().into_iter().filter(|i| i.state != InstanceState::Exited && !i.checking_process).collect() } else { vec![selected] };
+    for i in targets {
+        // Resolve snapshot IDs again: never apply to a replacement/newly launched instance.
+        if s.tracker.get(&i.id).is_none_or(|live| live.state == InstanceState::Exited || live.pid != i.pid) { continue; }
+        s.db.save_client_performance(i.account_id, &performance)?;
+        s.tracker.set_performance(&i.id, performance.clone(), true);
+    }
+    let v = s.db.settings()?;
+    let held = s.tracker.throttle(v.mem_throttle.mb).0;
+    for (id, pid, t0, limits) in crate::instances::limits::plan_now(&s, &v, &s.tracker.clients(), &held) {
+        s.limiter.apply(&id, pid, t0, limits)?;
+    }
+    s.tracker.set_in_force(&s.limiter.in_force());
+    instances_changed(&app);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn instance_restart_performance(app: AppHandle, s: State<'_, App>, id: String) -> Result<()> {
+    unlocked(&s)?;
+    let i = s.tracker.get(&id).ok_or(AppError::NotFound)?;
+    if i.checking_process || i.state == InstanceState::Exited {
+        return Err(AppError::Wait("This client cannot be restarted while its process is being checked or has ended.".into()));
+    }
+    let kills = s.bulk.kills();
+    let Some(target) = s.tracker.mark_closing(&id) else { return Err(AppError::NotFound) };
+    s.tracker.end_relaunch(&id);
+    if let Err(error) = close_all(vec![target], false, grace(&s)).await?.pop().unwrap_or(Ok(())) {
+        s.tracker.clear_closing(&id);
+        return Err(error);
+    }
+    for _ in 0..40 {
+        if s.bulk.kills() != kills { return Err(AppError::Wait("Restart cancelled by Stop all.".into())); }
+        if s.tracker.get(&id).is_none_or(|i| i.state == InstanceState::Exited) {
+            launch_tracked(&app, &s, i.account_id, i.target, None, None, None, true).await?;
+            return Ok(());
+        }
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+    Err(AppError::Wait("The old client has not finished closing; no duplicate was launched.".into()))
 }
 
 #[tauri::command]
@@ -2159,8 +2217,8 @@ pub(crate) fn apply_performance(v: &mut Settings, patch: &SettingsPatch) -> Resu
     if let Some(a) = patch.auto_spread { v.auto_spread = a }
     if let Some(f) = patch.fair_cap { v.fair_cap = f }
     if let Some(u) = patch.ultra_cpu {
-        if !(1..=3).contains(&u.cap) || !(60..=90).contains(&u.warmup_s) {
-            return Err(AppError::Invalid(tr!("ULTRA CPU must be 1 to 3%, with a 60 to 90 second warm-up.")));
+        if !(1..=2).contains(&u.cap) {
+            return Err(AppError::Invalid(tr!("ULTRA CPU must be 1% or 2%.")));
         }
         v.ultra_cpu = u;
     }
@@ -2178,6 +2236,7 @@ pub fn settings_set(app: AppHandle, s: State<'_, App>, patch: SettingsPatch) -> 
         unlocked(&s)?;
     }
     let mut v = s.db.settings()?;
+    if let Some(private) = patch.privacy_mode { v.privacy_mode = private; }
     apply_performance(&mut v, &patch)?;
     if let Some(t) = patch.theme { v.theme = t }
     if let Some(a) = patch.accent {

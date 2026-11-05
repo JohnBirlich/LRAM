@@ -1,3 +1,4 @@
+import type { ClientPerformance } from "./ClientPerformance";
 import type { CpuMode } from "./CpuMode";
 import type { InstanceState } from "./InstanceState";
 import type { LaunchTarget } from "./LaunchTarget";
@@ -29,4 +30,4 @@ relaunchProblem: string | null,
 
 signInProblem: boolean,
 
-appliedLimits: Limits, checkingProcess: boolean, cpuMode: CpuMode, cpuWarmupRemainingS: number, };
+appliedLimits: Limits, checkingProcess: boolean, cpuMode: CpuMode, cpuWarmupRemainingS: number, performance: ClientPerformance | null, performancePending: boolean, };

@@ -1,3 +1,4 @@
+import { usePrivacy } from "../privacy";
 import { useSyncExternalStore } from "react";
 import { asError, type ErrorPayload } from "../api";
 import { Icon } from "./Icon";
@@ -61,6 +62,7 @@ export function toastError(e: unknown) {
 }
 
 export function Toaster() {
+  const privacy = usePrivacy();
   const list = useSyncExternalStore(subscribe, () => items);
   return (
     <div className="fixed end-4 bottom-4 z-50 flex flex-col items-end gap-2 pointer-events-none" aria-live="polite">
@@ -74,7 +76,7 @@ export function Toaster() {
           onFocus={() => hold(item.id)}
           onBlur={() => resume(item.id)}
         >
-          <span className="flex-1 min-w-0 pt-0.5 break-words">{item.text}</span>
+          <span className="flex-1 min-w-0 pt-0.5 break-words">{privacy ? "Hidden" : item.text}</span>
           <button className="wc w-6 h-6" aria-label={t("common.dismiss")} onClick={() => dismiss(item.id)}>
             <Icon name="x" size={12} />
           </button>

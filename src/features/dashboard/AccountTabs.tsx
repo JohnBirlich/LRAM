@@ -1,3 +1,4 @@
+import { privateText } from "../../privacy";
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { api, asError, type AccountSummary, type BulkProgress, type Instance } from "../../api";
@@ -102,15 +103,15 @@ function TabBody({ tab, account: a, accounts, instances, block, onDraft, onLaunc
                 {look ? (
                   <>
                     <span className="font-semibold flex-none">{look.kind}</span>
-                    <span className={`mono text-[13px] truncate ${look.tone === "bad" ? "text-orange" : "text-dim"}`} title={look.detail}>
-                      {look.detail}
+                    <span className={`mono text-[13px] truncate ${look.tone === "bad" ? "text-orange" : "text-dim"}`} title={privateText(look.detail)}>
+                      {privateText(look.detail)}
                     </span>
                   </>
                 ) : (
                   <span className="text-dim">{t("launch.reading")}</span>
                 )}
               </span>
-              {draft.note && <span className="tag flex-none max-w-[30%] truncate">{draft.note}</span>}
+              {draft.note && <span className="tag flex-none max-w-[30%] truncate">{privateText(draft.note)}</span>}
             </div>
           )}
           {unsaved && <p className="text-[13px] text-dim">{t("dashboard.tabs.notSaved")}</p>}

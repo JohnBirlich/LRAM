@@ -21,6 +21,7 @@ pub struct HardwareInfo {
     pub logical_processors: Option<u32>,
     pub memory_rates: Vec<u32>,
     pub gpus: Vec<GraphicsAdapter>,
+    pub displays: Vec<Display>,
 }
 
 pub fn read() -> HardwareInfo {
@@ -33,11 +34,13 @@ pub fn read() -> HardwareInfo {
         logical_processors: std::thread::available_parallelism().ok().map(|n| n.get() as u32),
         memory_rates: firmware().map(|b| memory_rates(&b)).unwrap_or_default(),
         gpus: adapters(),
+        displays: displays(),
     }
 }
 
 fn adapters() -> Vec<GraphicsAdapter> {
     let mut out = Vec::new();
+    let mut seen = std::collections::HashSet::new();
     // SAFETY: DXGI creates owned COM interfaces; descriptors are copied before releasing them.
     unsafe {
         let Ok(factory) = CreateDXGIFactory1::<IDXGIFactory1>() else { return out };
@@ -45,11 +48,54 @@ fn adapters() -> Vec<GraphicsAdapter> {
             let Ok(adapter) = factory.EnumAdapters1(i) else { break };
             let Ok(desc) = adapter.GetDesc1() else { continue };
             if desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE.0 as u32 != 0 { continue; }
+            if !seen.insert((desc.AdapterLuid.HighPart, desc.AdapterLuid.LowPart)) { continue; }
             let end = desc.Description.iter().position(|&c| c == 0).unwrap_or(desc.Description.len());
             out.push(GraphicsAdapter {
                 name: String::from_utf16_lossy(&desc.Description[..end]),
                 dedicated_mb: desc.DedicatedVideoMemory as f64 / (1024.0 * 1024.0),
             });
+        }
+    }
+    out
+}
+
+#[derive(Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct Display {
+    pub name: Option<String>,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    pub refresh_hz: Option<u32>,
+}
+
+fn displays() -> Vec<Display> {
+    use windows::core::PCWSTR;
+    use windows::Win32::Graphics::Gdi::{EnumDisplayDevicesW, EnumDisplaySettingsW, DISPLAY_DEVICEW, DEVMODEW, ENUM_CURRENT_SETTINGS};
+    let text = |buf: &[u16]| String::from_utf16_lossy(&buf[..buf.iter().position(|c| *c == 0).unwrap_or(buf.len())]);
+    let mut out = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    // SAFETY: each Windows struct has its required size and remains alive throughout each call.
+    // Display/adapter device paths are used only as local dedup keys, never serialized or logged.
+    unsafe {
+        for i in 0..64 {
+            let mut device = DISPLAY_DEVICEW { cb: std::mem::size_of::<DISPLAY_DEVICEW>() as u32, ..Default::default() };
+            if !EnumDisplayDevicesW(PCWSTR::null(), i, &mut device, 0).as_bool() { break; }
+            if device.StateFlags & 1 == 0 { continue; }
+            let mut mode = DEVMODEW { dmSize: std::mem::size_of::<DEVMODEW>() as u16, ..Default::default() };
+            let available = EnumDisplaySettingsW(PCWSTR(device.DeviceName.as_ptr()), ENUM_CURRENT_SETTINGS, &mut mode).as_bool();
+            for j in 0..64 {
+                let mut monitor = DISPLAY_DEVICEW { cb: std::mem::size_of::<DISPLAY_DEVICEW>() as u32, ..Default::default() };
+                if !EnumDisplayDevicesW(PCWSTR(device.DeviceName.as_ptr()), j, &mut monitor, 0).as_bool() { break; }
+                if monitor.StateFlags & 1 == 0 || !seen.insert((text(&device.DeviceName), text(&monitor.DeviceID), text(&monitor.DeviceName))) { continue; }
+                let name = text(&monitor.DeviceString);
+                out.push(Display {
+                    name: (!name.is_empty()).then_some(name),
+                    width: (available && mode.dmPelsWidth > 0).then_some(mode.dmPelsWidth),
+                    height: (available && mode.dmPelsHeight > 0).then_some(mode.dmPelsHeight),
+                    refresh_hz: (available && mode.dmDisplayFrequency > 1).then_some(mode.dmDisplayFrequency),
+                });
+            }
         }
     }
     out

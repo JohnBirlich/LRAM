@@ -249,6 +249,8 @@ impl Tracker {
             checking_process: false,
             cpu_mode: Default::default(),
             cpu_warmup_remaining_s: 0,
+            performance: None,
+            performance_pending: false,
         };
         let mut entries = self.entries();
         for e in entries.iter_mut().filter(|e| e.inst.account_id == info.account_id) {
@@ -409,6 +411,11 @@ impl Tracker {
     pub fn set_limits(&self, id: &str, limits: Limits) -> Option<(Limits, Option<(u32, u64)>)> {
         let mut entries = self.entries();
         let e = entries.iter_mut().find(|e| e.inst.id == id && e.inst.state != InstanceState::Exited)?;
+        let mut limits = limits;
+        if let Some(p) = e.inst.performance.as_mut() {
+            if p.strict_cpu { limits.cpu_cap = Some(limits.cpu_cap.unwrap_or(1).clamp(1, 2)); }
+            p.limits = limits;
+        }
         let prev = std::mem::replace(&mut e.inst.limits, limits);
         Some((prev, client_of(e)))
     }
@@ -509,29 +516,27 @@ impl Tracker {
             .collect()
     }
 
-    pub fn cpu_policy(&self, v: &Settings, foreground: Option<u32>, full_quality: &[i64], now: i64) -> (Vec<String>, bool) {
+    pub fn set_performance(&self, id: &str, p: crate::model::ClientPerformance, pending: bool) {
+        if let Some(e) = self.entries().iter_mut().find(|e| e.inst.id == id && e.inst.state != InstanceState::Exited) {
+            let changed = e.inst.performance.as_ref().is_none_or(|old| old.fps_cap != p.fps_cap || old.low_graphics != p.low_graphics || old.lighter_rendering != p.lighter_rendering || old.render_flags != p.render_flags);
+            e.inst.performance_pending = pending && (changed || e.inst.performance_pending);
+            e.inst.limits = p.limits;
+            e.inst.performance = Some(p);
+        }
+    }
+
+    pub fn cpu_policy(&self, v: &Settings, _foreground: Option<u32>, _full_quality: &[i64], _now: i64) -> (Vec<String>, bool) {
         let mut free = Vec::new();
         let mut changed = false;
         for e in self.entries().iter_mut().filter(|e| e.inst.state != InstanceState::Exited) {
-            let remaining = e.cpu_ready_at.map_or(v.ultra_cpu.warmup_s, |at| {
-                ((i64::from(v.ultra_cpu.warmup_s) * 1000 - (now - at).max(0)).max(0) + 999).div_euclid(1000) as u32
-            });
-            let (mode, remaining, released) = if !v.ultra_cpu.enabled {
-                (CpuMode::Standard, 0, false)
-            } else if e.inst.checking_process {
-                (CpuMode::Checking, 0, true)
-            } else if e.inst.limits.cpu_cap.is_some() {
-                (CpuMode::Manual, 0, false)
-            } else if full_quality.contains(&e.inst.account_id) {
-                (CpuMode::FullQuality, 0, true)
-            } else if foreground == Some(e.inst.pid) {
-                (CpuMode::Foreground, 0, true)
-            } else if e.inst.state != InstanceState::InGame || e.cpu_ready_at.is_none() {
-                (CpuMode::Loading, 0, true)
-            } else if remaining > 0 {
-                (CpuMode::Warmup, remaining, true)
-            } else {
+            let own = e.inst.performance.as_ref();
+            let strict = own.map_or(v.ultra_cpu.enabled, |p| p.strict_cpu);
+            let (mode, remaining, released) = if e.inst.checking_process {
+                (CpuMode::Checking, 0, false)
+            } else if strict {
                 (CpuMode::Background, 0, false)
+            } else {
+                (CpuMode::Standard, 0, false)
             };
             if released { free.push(e.inst.id.clone()); }
             if e.inst.cpu_mode != mode {
@@ -909,6 +914,7 @@ impl Tracker {
             e.closing = closing;
             e.inst.rejoins = old.inst.rejoins;
             (e.inst.limits, e.inst.applied_limits) = (old.inst.limits, old.inst.applied_limits);
+            (e.inst.performance, e.inst.performance_pending) = (old.inst.performance.clone(), old.inst.performance_pending);
             (e.inst.cpu_mode, e.inst.cpu_warmup_remaining_s) = (old.inst.cpu_mode, old.inst.cpu_warmup_remaining_s);
             (e.inst.anti_afk, e.inst.afk_at) = (old.inst.anti_afk, old.inst.afk_at);
             e.inst.muted = old.inst.muted;
@@ -2621,38 +2627,21 @@ mod tests {
     }
 
     #[test]
-    fn ultra_waits_for_game_then_warms_up_and_releases_on_focus_or_teleport() {
+    fn strict_ultra_has_no_loading_focus_or_teleport_exemptions() {
         use crate::model::UltraCpu;
         let dir = temp_dir();
         let start = now_ms();
         let (t, id, procs, log) = in_game_client(&dir, start);
-        let v = Settings { ultra_cpu: UltraCpu { enabled: true, cap: 3, warmup_s: 90 }, ..Settings::default() };
-        let mode = |now, front| {
-            let free = t.cpu_policy(&v, front, &[], now).0;
-            (t.get(&id).unwrap().cpu_mode, free.contains(&id))
-        };
-        assert_eq!(mode(start + 2_000, None), (CpuMode::Warmup, true));
-        assert_eq!(t.get(&id).unwrap().cpu_warmup_remaining_s, 89);
-        assert_eq!(mode(start + 90_999, None), (CpuMode::Warmup, true));
-        assert_eq!(mode(start + 91_000, None), (CpuMode::Background, false));
-        assert_eq!(mode(start + 92_000, Some(100)), (CpuMode::Foreground, true));
-        assert_eq!(mode(start + 93_000, None), (CpuMode::Background, false));
+        let v = Settings { ultra_cpu: UltraCpu { enabled: true, cap: 1, warmup_s: 90 }, ..Settings::default() };
+        for (now, foreground) in [(start + 2_000, None), (start + 3_000, Some(100)), (start + 999_000, None)] {
+            assert!(t.cpu_policy(&v, foreground, &[1], now).0.is_empty());
+            assert_eq!(t.get(&id).unwrap().cpu_mode, CpuMode::Background);
+            assert_eq!(t.get(&id).unwrap().cpu_warmup_remaining_s, 0);
+        }
         append(&log, &["[FLog::SingleSurfaceApp] UgcExperienceController: doTeleport".into()]);
-        t.poll(Some(&dir), &procs, &user_of, start + 94_000);
-        assert_eq!(mode(start + 900_000, None), (CpuMode::Loading, true), "no loading timeout cap");
-        append(&log, &join_lines(USER));
-        append(&log, &[replicator()]);
-        t.poll(Some(&dir), &procs, &user_of, start + 901_000);
-        assert_eq!(mode(start + 902_000, None), (CpuMode::Warmup, true));
-        // Teleport and confirmed re-entry can also occur within a single read_new batch.
-        append(&log, &["[FLog::SingleSurfaceApp] UgcExperienceController: doTeleport".into()]);
-        append(&log, &join_lines(USER));
-        append(&log, &[replicator()]);
-        t.poll(Some(&dir), &procs, &user_of, start + 1_001_000);
-        assert_eq!(mode(start + 1_002_000, None), (CpuMode::Warmup, true));
-        assert_eq!(t.entries()[0].in_game_at, Some(start + 1_000), "original game time is not rewritten");
-        t.set_limits(&id, Limits { cpu_cap: Some(8), ..Limits::default() });
-        assert_eq!(mode(start + 1_003_000, Some(100)), (CpuMode::Manual, false));
+        t.poll(Some(&dir), &procs, &user_of, start + 4_000);
+        assert!(t.cpu_policy(&v, Some(100), &[1], start + 4_000).0.is_empty());
+        assert_eq!(t.get(&id).unwrap().cpu_mode, CpuMode::Background);
         std::fs::remove_dir_all(dir).unwrap();
     }
 

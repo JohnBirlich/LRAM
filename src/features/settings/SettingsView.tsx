@@ -1,3 +1,4 @@
+import { usePrivacy, privateText } from "../../privacy";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { open as openFile, save as saveFile } from "@tauri-apps/plugin-dialog";
@@ -540,7 +541,7 @@ export function SettingsView({ vault, settings, onPerformance, onRecoveryCode }:
         onConfirm={() => void moveData()}
         busy={moving}
         title={t("settings.moveTitle")}
-        text={tx("settings.moveText", { path: <span className="mono text-text break-all">{movePath}</span> })}
+        text={tx("settings.moveText", { path: <span className="mono text-text break-all">{privateText(movePath)}</span> })}
         confirmLabel={moving ? t("settings.moving") : t("settings.moveRestart")}
         safe
       />
@@ -857,6 +858,8 @@ function Section({ id, title, children }: { id: string; title: string; children:
 }
 
 function PathHint({ path }: { path: string }) {
+  const privacy = usePrivacy();
+  if (privacy) return <span>Hidden</span>;
   return <span className="mono block truncate selectable" title={path}>{path}</span>;
 }
 

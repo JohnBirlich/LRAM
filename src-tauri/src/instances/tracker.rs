@@ -2664,4 +2664,23 @@ mod tests {
         std::fs::remove_dir_all(dir).unwrap();
     }
 
+    #[test]
+    fn per_client_apply_does_not_claim_fps_is_already_changed_or_touch_another_client() {
+        let t = Tracker::new();
+        let a = t.register(&LaunchInfo { fps_cap: Some(30), ..info(100, 1000, false) }, target()).id;
+        let b = t.register(&LaunchInfo { account_id: 2, ..info(200, 1000, false) }, target()).id;
+        let v = Settings::default();
+        let p = crate::model::ClientPerformance { fps_cap: 5, low_graphics: true, lighter_rendering: true, render_flags: v.render_flags, limits: Limits { cpu_cap: Some(1), ..Default::default() }, strict_cpu: true };
+        t.set_performance(&a, p.clone(), true);
+        let i = t.get(&a).unwrap();
+        assert_eq!(i.fps_cap, Some(30), "current process still has its launch FPS");
+        assert!(i.performance_pending);
+        assert_eq!(i.limits.cpu_cap, Some(1));
+        assert_eq!(t.get(&b).unwrap().performance, None);
+        t.set_limits(&a, Limits { cpu_cap: Some(80), ..Default::default() });
+        assert_eq!(t.get(&a).unwrap().limits.cpu_cap, Some(2), "manual edit cannot bypass strict ULTRA");
+        t.set_performance(&a, p, false);
+        assert!(!t.get(&a).unwrap().performance_pending, "launch path can acknowledge launch-time settings");
+    }
+
 }

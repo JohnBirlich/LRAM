@@ -1184,7 +1184,7 @@ mod tests {
     fn settings_default_and_round_trip() {
         let db = Db::open_in_memory().unwrap();
         assert_eq!(db.settings().unwrap(), Settings::default());
-        let s = Settings { auto_lock_minutes: 3, clipboard_clear_seconds: 9, ..Settings::default() };
+        let s = Settings { privacy_mode: true, auto_lock_minutes: 3, clipboard_clear_seconds: 9, ..Settings::default() };
         db.save_settings(&s).unwrap();
         db.save_settings(&s).unwrap();
         assert_eq!(db.settings().unwrap(), s);

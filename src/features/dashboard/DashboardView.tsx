@@ -758,7 +758,7 @@ export function DashboardView({ accounts, groups, home, onLaunch, onAdd, onImpor
         </AccountTabs>
       </div>
       <ClientMenu at={menu} account={menu ? byId.get(menu.inst.accountId) : undefined} onClose={closeMenu} afkOn={afkOn} closing={closingOne} onLimits={setLimitsFor} onCloseClient={closeOne} />
-      <LimitsDialog instanceId={limitsFor} name={limitedName} onClose={() => setLimitsFor(null)} />
+      <LimitsDialog instanceId={limitsFor} name={String(privateText(limitedName))} onClose={() => setLimitsFor(null)} />
       <Dialog open={gridOpen} onClose={() => !busy && setGridOpen(false)} title={t("dashboard.gridTitle")} width={480}>
         <div className="flex flex-col gap-4 px-5 pb-5">
           <p className="text-dim">{t("dashboard.gridHint")}</p>

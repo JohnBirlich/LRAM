@@ -73,7 +73,7 @@ fn pnp_devices(class: &GUID) -> Vec<PnpDevice> {
                 let mut bytes = [0u8; 8192];
                 let mut size = 0;
                 if SetupDiGetDeviceRegistryPropertyW(set, &data, prop, None, Some(&mut bytes), Some(&mut size)).is_err() { return None; }
-                let words: Vec<_> = bytes[..(size as usize).min(bytes.len())].chunks_exact(2).map(|b| u16::from_le_bytes([b[0], b[1]])).collect();
+                let words: Vec<_> = bytes[..(size as usize).min(bytes.len())].as_chunks::<2>().0.iter().map(|b| u16::from_le_bytes(*b)).collect();
                 let name = text(&words);
                 (!name.is_empty()).then_some(name)
             };

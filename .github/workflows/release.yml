@@ -147,6 +147,7 @@ jobs:
           cat > ../notes.md <<EOF
           ## LRAM $VERSION
 
+          - Home client menu now has one Profile entry for profiles, FPS, graphics and limits; the duplicate Limits entry was removed.
           - Hardware inventory correction: count/name present Windows PnP display devices instead of treating DXGI rendering adapters as physical GPU inventory. PCI graphics, ROOT/SWD virtual/software display adapters and other buses are shown separately. Identical physical GPU models remain separate by device identity.
           - Dedicated VRAM is reported only on an exact Windows adapter device-path/PnP instance match, or a driver AdapterLuid to DXGI match. Missing matches remain Unknown; no name-based or position-based memory assignment.
           - Active monitor names come from DisplayConfig target friendly names, with PnP device-path fallback. Resolution is matched by source ID/adapter identity, refresh rate by target; fractional rates are retained. No hardcoded GPU count, monitor models or driver names.

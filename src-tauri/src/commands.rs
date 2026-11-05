@@ -1343,22 +1343,23 @@ pub async fn instance_performance(app: AppHandle, s: State<'_, App>, id: String,
         return Err(AppError::Invalid("Strict ULTRA requires a 1% or 2% CPU ceiling.".into()));
     }
     let selected = s.tracker.get(&id).ok_or(AppError::NotFound)?;
-    if selected.state == InstanceState::Exited || selected.checking_process {
-        return Err(AppError::Wait("Wait for process verification before applying a profile.".into()));
+    let snapshot: std::collections::HashMap<_, _> = s.tracker.clients().into_iter().map(|(id, pid, t0, _)| (id, (pid, t0))).collect();
+    if selected.state == InstanceState::Exited || selected.checking_process || !snapshot.contains_key(&id) {
+        return Err(AppError::Wait("Wait for a verified running process before applying a profile.".into()));
     }
-    let targets = if all_running { s.tracker.list().into_iter().filter(|i| i.state != InstanceState::Exited && !i.checking_process).collect() } else { vec![selected] };
+    let targets = if all_running { s.tracker.list().into_iter().filter(|i| !i.checking_process && snapshot.contains_key(&i.id)).collect() } else { vec![selected] };
     let ids: std::collections::HashSet<_> = targets.iter().map(|i| i.id.clone()).collect();
     let apply = || -> Result<()> {
     for i in targets {
         // Resolve snapshot IDs again: never apply to a replacement/newly launched instance.
-        if s.tracker.get(&i.id).is_none_or(|live| live.state == InstanceState::Exited || live.pid != i.pid) { continue; }
+        if !s.tracker.clients().iter().any(|(id, pid, t0, _)| *id == i.id && snapshot.get(id) == Some(&(*pid, *t0))) { continue; }
         s.db.save_client_performance(i.account_id, &performance)?;
         s.tracker.set_performance(&i.id, performance.clone(), true);
     }
     let v = s.db.settings()?;
     let held = s.tracker.throttle(v.mem_throttle.mb).0;
     for (id, pid, t0, limits) in crate::instances::limits::plan_now(&s, &v, &s.tracker.clients(), &held) {
-        if ids.contains(&id) { s.limiter.apply(&id, pid, t0, limits)?; }
+        if ids.contains(&id) && snapshot.get(&id) == Some(&(pid, t0)) { s.limiter.apply(&id, pid, t0, limits)?; }
     }
     Ok(())
     };

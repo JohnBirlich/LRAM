@@ -147,12 +147,10 @@ jobs:
           cat > ../notes.md <<EOF
           ## LRAM $VERSION
 
-          - Home client menu now has one Profile entry for profiles, FPS, graphics and limits; the duplicate Limits entry was removed.
-          - Hardware inventory correction: count/name present Windows PnP display devices instead of treating DXGI rendering adapters as physical GPU inventory. PCI graphics, ROOT/SWD virtual/software display adapters and other buses are shown separately. Identical physical GPU models remain separate by device identity.
-          - Dedicated VRAM is reported only on an exact Windows adapter device-path/PnP instance match, or a driver AdapterLuid to DXGI match. Missing matches remain Unknown; no name-based or position-based memory assignment.
-          - Active monitor names come from DisplayConfig target friendly names, with PnP device-path fallback. Resolution is matched by source ID/adapter identity, refresh rate by target; fractional rates are retained. No hardcoded GPU count, monitor models or driver names.
-          - Privacy mode covers all inventory sections. Existing strict ULTRA, per-client profiles, confirmed restart and identity-safe recovery behavior from 0.14.0 is retained.
-          - The reported NVIDIA / MuMuPlayer / StarDesk setup still requires real-PC verification. CI cannot certify a particular display driver topology.
+          - Universal CPU/Eco warm-up for every profile and manual CPU settings: no CPU rate ceiling or Eco during loading, then a fixed 90 seconds after verified game entry before limits apply. Disconnects, teleports and rejoins start a new cycle. FPS/graphics remain launch-time settings; no automatic restart or window-size change.
+          - Auto-rejoin recognizes additional native transport-loss / structured 277 and 279 network markers, without trusting game output. Cleanup after known transport loss does not masquerade as an intentional healthy-game leave.
+          - Disconnected takes precedence over Hang for recovery; a changed recovery cause can re-enter the queue. Temporary old-client close failures retry with backoff; no replacement is launched while the old client has not finished closing. Identity checks, Stop all cancellation and breaker rules remain enforced.
+          - Physical/virtual adapter inventory, monitor model matching, Privacy mode and the single Home Profile menu entry from 0.14.1 are retained. The user's exact connection error still needs real-PC validation; no blanket auto-rejoin guarantee is made.
 
           **Security notice:** Defender detections were reported for 0.12.4. Their cause has not been established and this release has not been cleared by Microsoft. Do not disable antivirus or add exclusions to run LRAM. SHA-256 verifies file identity, not safety.
 

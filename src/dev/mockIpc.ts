@@ -898,6 +898,7 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       return { added: 2, updated: args.onConflict === "replace" ? 7 : 0, skipped: args.onConflict === "skip" ? 7 : 0, failed: 0 };
 
     case "instances_list":
+      instances.filter(i => i.state !== "exited").forEach(syncMockCpu);
       return structuredClone(instances);
     case "instance_close":
       await sleep(600);

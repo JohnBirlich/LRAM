@@ -616,8 +616,7 @@ impl Tracker {
                 e.inst.relaunch_problem = None;
             } else if let Some(cause) = e.cause().filter(|cause| e.rejoin_seen != Some(*cause)) {
                 e.rejoin_seen = Some(cause);
-                {
-                    if cause == CrashKind::Hang && e.stuck() && e.inst.rejoins >= STUCK_TRIES {
+                if cause == CrashKind::Hang && e.stuck() && e.inst.rejoins >= STUCK_TRIES {
                         log::warn!("instance {}: still not in a game after {} restarts: giving up", e.inst.id, e.inst.rejoins);
                         e.inst.note = Some(never_loaded());
                         e.gave_up = Some(never_loaded());
@@ -634,7 +633,6 @@ impl Tracker {
                             cause,
                         });
                     }
-                }
             }
         }
         out
@@ -2190,7 +2188,7 @@ mod tests {
             assert_eq!(wants_rejoin(&inst(state, None), &none, false, false), None, "{state:?}");
             assert_eq!(wants_rejoin(&inst(state, Some(HUNG)), &none, true, false), Some(Hang), "{state:?}");
         }
-        assert_eq!(wants_rejoin(&inst(Disconnected, Some(HUNG)), &kicked, true, false), Some(Hang));
+        assert_eq!(wants_rejoin(&inst(Disconnected, Some(HUNG)), &kicked, true, false), Some(Disconnect));
         for state in [Starting, Joining, InGame] {
             assert_eq!(wants_rejoin(&inst(state, None), &none, false, true), Some(Hang), "stuck, {state:?}");
         }

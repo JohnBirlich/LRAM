@@ -521,7 +521,7 @@ function PcPanel({ metrics }: { metrics: ClientMetrics[] }) {
         )}
       </div>
       <Dial value={total((m) => m.cpuPct)} label={t("home.cpu")} hint={t("home.allClients")} />
-      <Dial value={memUsed !== null && memTotal ? (memUsed / memTotal) * 100 : null} label={t("home.memory")} hint={memUsed !== null && sys ? `${t("home.memOf", { used: mb(memUsed), total: mb(sys.memTotalMb) })} · ${t("home.commitAll", { commit: mb(commit ?? 0) })}` : t("home.allClients")} />
+      <Dial value={memUsed !== null && memTotal ? (memUsed / memTotal) * 100 : null} label={t("home.memory")} hint={memUsed !== null && sys ? `${t("home.memOf", { used: mb(memUsed), total: privateText(mb(sys.memTotalMb)) })} · ${t("home.commitAll", { commit: mb(commit ?? 0) })}` : t("home.allClients")} />
       <Dial value={gpu} label={t("home.gpu")} hint={t("home.allClients")} />
     </section>
   );

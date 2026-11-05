@@ -741,8 +741,18 @@ pub(crate) async fn launch_tracked(
     fps_cap: Option<u32>,
     hold: bool,
 ) -> Result<(LaunchInfo, Instance)> {
+    launch_tracked_guarded(app, s, account_id, target, favourite_id, delay_ms, fps_cap, hold, None).await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn launch_tracked_guarded(
+    app: &AppHandle, s: &App, account_id: i64, target: LaunchTarget,
+    favourite_id: Option<i64>, delay_ms: Option<u32>, fps_cap: Option<u32>, hold: bool,
+    expected_kills: Option<u64>,
+) -> Result<(LaunchInfo, Instance)> {
     let kills = s.bulk.kills();
     let killed = || AppError::Invalid(tr!("Launch cancelled by Stop all."));
+    if expected_kills.is_some_and(|expected| expected != kills) { return Err(killed()); }
     let Some(_claim) = s.tracker.claim(account_id) else {
         let name = s.db.account(account_id).map(|a| crate::launcher::bulk::name_of(&a)).ok().filter(|n| !n.is_empty());
         let name = name.unwrap_or_else(|| tr!("This account"));
@@ -1337,6 +1347,8 @@ pub async fn instance_performance(app: AppHandle, s: State<'_, App>, id: String,
         return Err(AppError::Wait("Wait for process verification before applying a profile.".into()));
     }
     let targets = if all_running { s.tracker.list().into_iter().filter(|i| i.state != InstanceState::Exited && !i.checking_process).collect() } else { vec![selected] };
+    let ids: std::collections::HashSet<_> = targets.iter().map(|i| i.id.clone()).collect();
+    let apply = || -> Result<()> {
     for i in targets {
         // Resolve snapshot IDs again: never apply to a replacement/newly launched instance.
         if s.tracker.get(&i.id).is_none_or(|live| live.state == InstanceState::Exited || live.pid != i.pid) { continue; }
@@ -1346,11 +1358,15 @@ pub async fn instance_performance(app: AppHandle, s: State<'_, App>, id: String,
     let v = s.db.settings()?;
     let held = s.tracker.throttle(v.mem_throttle.mb).0;
     for (id, pid, t0, limits) in crate::instances::limits::plan_now(&s, &v, &s.tracker.clients(), &held) {
-        s.limiter.apply(&id, pid, t0, limits)?;
+        if ids.contains(&id) { s.limiter.apply(&id, pid, t0, limits)?; }
     }
+    Ok(())
+    };
+    let result = apply();
+    // Always expose truthful applied/pending state, including partial OS/DB failures.
     s.tracker.set_in_force(&s.limiter.in_force());
     instances_changed(&app);
-    Ok(())
+    result.map_err(|e| AppError::Invalid(format!("Some profile changes may already be saved/applied. Check each client's applied limits before retrying. {e}")))
 }
 
 #[tauri::command]
@@ -1363,14 +1379,18 @@ pub async fn instance_restart_performance(app: AppHandle, s: State<'_, App>, id:
     let kills = s.bulk.kills();
     let Some(target) = s.tracker.mark_closing(&id) else { return Err(AppError::NotFound) };
     s.tracker.end_relaunch(&id);
-    if let Err(error) = close_all(vec![target], false, grace(&s)).await?.pop().unwrap_or(Ok(())) {
+    let closed = match close_all(vec![target], false, grace(&s)).await {
+        Ok(mut results) => results.pop().unwrap_or_else(|| Err(AppError::Internal("Close returned no result.".into()))),
+        Err(error) => Err(error),
+    };
+    if let Err(error) = closed {
         s.tracker.clear_closing(&id);
         return Err(error);
     }
     for _ in 0..40 {
         if s.bulk.kills() != kills { return Err(AppError::Wait("Restart cancelled by Stop all.".into())); }
         if s.tracker.get(&id).is_none_or(|i| i.state == InstanceState::Exited) {
-            launch_tracked(&app, &s, i.account_id, i.target, None, None, None, true).await?;
+            launch_tracked_guarded(&app, &s, i.account_id, i.target, None, None, None, true, Some(kills)).await?;
             return Ok(());
         }
         tokio::time::sleep(Duration::from_millis(250)).await;

@@ -99,8 +99,19 @@ fn remember_adapter(seen: &mut HashSet<AdapterId>, high: i32, low: u32) -> bool 
 
 // DXGI supplies memory only, never physical device count/name. Virtual/indirect
 // drivers can expose the same rendering GPU under several adapter LUIDs.
-fn dxgi_memory() -> HashMap<AdapterId, f64> {
-    let mut out = HashMap::new();
+#[derive(Default)]
+struct GraphicsMemory { by_luid: HashMap<AdapterId, f64>, by_device: HashMap<String, Vec<f64>> }
+impl GraphicsMemory {
+    fn for_device(&self, d: &PnpDevice) -> Option<f64> {
+        match self.by_device.get(&d.id) {
+            Some(values) => values.first().copied().filter(|v| values.iter().all(|other| other == v)),
+            None => d.luid.and_then(|id| self.by_luid.get(&id).copied()),
+        }
+    }
+}
+fn dxgi_memory() -> GraphicsMemory {
+    use windows::Win32::Devices::Display::{DisplayConfigGetDeviceInfo, DISPLAYCONFIG_ADAPTER_NAME, DISPLAYCONFIG_DEVICE_INFO_HEADER, DISPLAYCONFIG_DEVICE_INFO_GET_ADAPTER_NAME};
+    let mut out = GraphicsMemory::default();
     let mut seen = HashSet::new();
     // SAFETY: factory/adapter COM references are owned; GetDesc1 copies the descriptor.
     unsafe {
@@ -109,7 +120,14 @@ fn dxgi_memory() -> HashMap<AdapterId, f64> {
             let Ok(adapter) = factory.EnumAdapters1(i) else { break };
             let Ok(d) = adapter.GetDesc1() else { continue };
             if d.Flags & DXGI_ADAPTER_FLAG_SOFTWARE.0 as u32 != 0 || !remember_adapter(&mut seen, d.AdapterLuid.HighPart, d.AdapterLuid.LowPart) { continue; }
-            if d.DedicatedVideoMemory > 0 { out.insert((d.AdapterLuid.HighPart, d.AdapterLuid.LowPart), d.DedicatedVideoMemory as f64 / (1024.0 * 1024.0)); }
+            if d.DedicatedVideoMemory > 0 {
+                let mb = d.DedicatedVideoMemory as f64 / (1024.0 * 1024.0);
+                out.by_luid.insert((d.AdapterLuid.HighPart, d.AdapterLuid.LowPart), mb);
+                let mut name = DISPLAYCONFIG_ADAPTER_NAME { header: DISPLAYCONFIG_DEVICE_INFO_HEADER { r#type: DISPLAYCONFIG_DEVICE_INFO_GET_ADAPTER_NAME, size: std::mem::size_of::<DISPLAYCONFIG_ADAPTER_NAME>() as u32, adapterId: d.AdapterLuid, id: 0 }, ..Default::default() };
+                if DisplayConfigGetDeviceInfo(&mut name.header) == 0 && let Some(id) = device_instance(&text(&name.adapterDevicePath)) {
+                    out.by_device.entry(id).or_default().push(mb);
+                }
+            }
         }
     }
     out
@@ -122,13 +140,13 @@ fn adapter_kind(id: &str) -> AdapterKind {
     else if id.starts_with("ROOT\\") || id.starts_with("SWD\\") { AdapterKind::Virtual }
     else { AdapterKind::Other }
 }
-fn adapter_inventory(devices: Vec<PnpDevice>, memory: &HashMap<AdapterId, f64>) -> (Vec<GraphicsAdapter>, Vec<String>, Vec<String>) {
+fn adapter_inventory(devices: Vec<PnpDevice>, memory: &GraphicsMemory) -> (Vec<GraphicsAdapter>, Vec<String>, Vec<String>) {
     let (mut physical, mut virtuals, mut other) = (Vec::new(), Vec::new(), Vec::new());
     let mut seen = HashSet::new();
     for d in devices {
         if !seen.insert(d.id.clone()) { continue; }
         match adapter_kind(&d.id) {
-            AdapterKind::Physical => physical.push(GraphicsAdapter { name: d.name, dedicated_mb: d.luid.and_then(|id| memory.get(&id).copied()) }),
+            AdapterKind::Physical => { let dedicated_mb = memory.for_device(&d); physical.push(GraphicsAdapter { name: d.name, dedicated_mb }); },
             AdapterKind::Virtual => virtuals.push(d.name),
             AdapterKind::Other => other.push(d.name),
         }
@@ -147,10 +165,11 @@ pub struct Display {
     pub refresh_hz: Option<f64>,
 }
 
-fn monitor_instance(path: &str) -> Option<String> {
+fn device_instance(path: &str) -> Option<String> {
     let parts: Vec<_> = path.strip_prefix(r"\\?\")?.split('#').collect();
-    (parts.len() >= 3 && parts[0].eq_ignore_ascii_case("DISPLAY")).then(|| parts[..3].join("\\").to_ascii_uppercase())
+    (parts.len() >= 4 && parts[..3].iter().all(|p| !p.is_empty())).then(|| parts[..3].join("\\").to_ascii_uppercase())
 }
+fn monitor_instance(path: &str) -> Option<String> { device_instance(path).filter(|id| id.starts_with("DISPLAY\\")) }
 fn refresh_hz(numerator: u32, denominator: u32) -> Option<f64> {
     (numerator > 0 && denominator > 0).then(|| (numerator as f64 / denominator as f64 * 100.0).round() / 100.0)
 }
@@ -275,9 +294,20 @@ pub async fn public_location() -> crate::error::Result<PublicLocation> {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn adapter_device_paths_correlate_vram_without_registry_and_conflicts_stay_unknown() {
+        let id = device_instance(r"\\?\PCI#VEN_10DE#CARD_A#{guid}").unwrap();
+        let d = PnpDevice { id: id.clone(), name: "GPU".into(), luid: None };
+        let mut memory = GraphicsMemory::default();
+        memory.by_device.insert(id.clone(), vec![12_000.0, 12_000.0]);
+        assert_eq!(memory.for_device(&d), Some(12_000.0));
+        memory.by_device.get_mut(&id).unwrap().push(8_000.0);
+        assert_eq!(memory.for_device(&d), None, "ambiguous driver data must not be guessed");
+    }
+
+    #[test]
     fn pnp_devices_not_dxgi_render_aliases_define_physical_gpu_count() {
         let device = |id: &str, name: &str, luid| PnpDevice { id: id.into(), name: name.into(), luid };
-        let memory = HashMap::from([((0, 1), 12_000.0), ((0, 2), 12_000.0), ((0, 3), 12_000.0)]);
+        let memory = GraphicsMemory { by_luid: HashMap::from([((0, 1), 12_000.0), ((0, 2), 12_000.0), ((0, 3), 12_000.0)]), ..Default::default() };
         let (physical, virtuals, other) = adapter_inventory(vec![
             device(r"PCI\VEN_10DE\CARD_A", "NVIDIA", Some((0, 1))),
             device(r"PCI\VEN_10DE\CARD_A", "NVIDIA duplicate", Some((0, 1))),

@@ -259,15 +259,14 @@ async fn attempt(app: &AppHandle, s: &App, r: &Rejoin, user_id: Option<i64>, kil
             } else {
                 tr!("{name} couldn't be restarted: its old client didn't close.", name = name)
             };
-            notice(app, true, text);
-            return None;
+            return Some(text);
         }
         let deadline = Instant::now() + Duration::from_secs(5);
         while s.tracker.get(&r.from).is_some_and(|i| i.state != InstanceState::Exited) && Instant::now() < deadline {
             tokio::time::sleep(Duration::from_millis(250)).await;
         }
         if s.tracker.get(&r.from).is_some_and(|i| i.state != InstanceState::Exited) {
-            log::debug!("auto-{again}: instance {} still not exited after 5 s; launching anyway", r.from);
+            return Some("Waiting for the old client to finish closing; no duplicate has been launched.".into());
         }
     }
     if over(*closed) {
@@ -275,7 +274,7 @@ async fn attempt(app: &AppHandle, s: &App, r: &Rejoin, user_id: Option<i64>, kil
         return None;
     }
     let fps_cap = s.tracker.get(&r.from).and_then(|i| i.fps_cap);
-    match commands::launch_tracked(app, s, r.account_id, r.target.clone(), None, None, fps_cap, !*closed).await {
+    match commands::launch_tracked_guarded(app, s, r.account_id, r.target.clone(), None, None, fps_cap, !*closed, Some(kills)).await {
         Ok((_, inst)) if !s.tracker.is_relaunching(&r.from) => {
             log::debug!("auto-{again} of instance {} dropped during the launch: closing {}", r.from, inst.id);
             if let Some((pid, started)) = s.tracker.mark_closing(&inst.id) {

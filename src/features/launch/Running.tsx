@@ -31,7 +31,7 @@ export function cpuStatus(i: Instance): string | null {
     case "loading": return t("cpu.loading");
     case "warmup": return t("cpu.warmup", { seconds: i.cpuWarmupRemainingS });
     case "foreground": return t("cpu.foreground");
-    case "background": return i.appliedLimits.cpuCap === null ? t("cpu.pending") : t("cpu.background", { cap: i.appliedLimits.cpuCap });
+    case "background": return i.appliedLimits.cpuCap !== null ? t("cpu.background", { cap: i.appliedLimits.cpuCap }) : i.appliedLimits.eco ? "Eco applied" : i.performance && i.performance.limits.cpuCap === null && !i.performance.limits.eco ? "CPU / Eco defaults — no limits requested" : t("cpu.pending");
     case "manual": return t("cpu.manual", { cap: i.limits.cpuCap ?? 0 });
     case "fullQuality": return t("cpu.fullQuality");
     default: return null;

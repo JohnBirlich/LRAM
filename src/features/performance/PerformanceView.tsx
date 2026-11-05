@@ -177,6 +177,7 @@ export function PerformanceView({ settings }: { settings: Settings }) {
             <h2 id="perf-cpu" className="section-title">{t("performance.section.cpuMemory")}</h2>
             {using}
           </div>
+          <p className="text-xs text-dim mb-3">Every profile starts without a CPU ceiling or Eco. A fixed 90-second warm-up begins only after confirmed game entry and resets on disconnect, teleport or rejoin. FPS and graphics are set at launch.</p>
           <TuneRow title={t("performance.ultraCpu")} hint={t("performance.ultraCpuHint")}>
             <Switch label={t("performance.ultraCpu")} checked={settings.ultraCpu.enabled} onChange={(enabled) => set.mutate({ ultraCpu: { ...settings.ultraCpu, enabled } })} />
           </TuneRow>
@@ -487,7 +488,7 @@ function shown(k: Field, v: Profile[Field] | Settings[Field]): string {
     return [v.msaa === "default" ? null : `MSAA ${v.msaa}`, v.texture === "default" ? null : `${t("performance.texture")}: ${t(`performance.tex${capitalize(v.texture)}` as Key)}`, v.mode === "default" ? null : MODE_NAMES[v.mode], ...on.map(([b, k]) => (b ? t(k) : null))].filter(Boolean).join(" · ") || t("performance.robloxDefault");
   }
   if ("mb" in v) return `${v.mb ? `${fmtNum(v.mb)} MB` : t("common.off")} · ${pct(v.cpuCap)}`;
-  if ("warmupS" in v) return `${v.enabled ? t("common.on") : t("common.off")} · ${v.cap}% · strict`;
+  if ("warmupS" in v) return `${v.enabled ? t("common.on") : t("common.off")} · ${v.cap}% · after 90s warm-up`;
   const b = v.background;
   const trim = b.trimEveryMin === null ? t("common.default") : b.trimEveryMin ? t("settings.minutesShort", { n: b.trimEveryMin }) : t("common.off");
   return `${v.enabled ? t("common.on") : t("common.off")} · ${pct(b.cpuCap)} · ${t("settings.efficiency")} ${b.eco ? t("common.on") : t("common.off")} · ${trim}`;

@@ -211,6 +211,23 @@ function perfParse(text: string): Record<string, unknown> | string {
   return out;
 }
 
+const cpuReadyAt = new Map<string, number>();
+function syncMockCpu(i: Instance) {
+  const requested = i.performance?.limits ?? {
+    ...i.limits,
+    cpuCap: settings.ultraCpu.enabled ? settings.ultraCpu.cap : i.limits.cpuCap ?? (settings.adaptive.enabled ? settings.adaptive.background.cpuCap : null),
+    eco: settings.ultraCpu.enabled || i.limits.eco || (settings.adaptive.enabled && settings.adaptive.background.eco),
+  };
+  if (i.state !== "inGame" || i.checkingProcess) {
+    cpuReadyAt.delete(i.id); i.cpuMode = i.checkingProcess ? "checking" : "loading"; i.cpuWarmupRemainingS = 0;
+  } else {
+    const at = cpuReadyAt.get(i.id) ?? Date.now(); cpuReadyAt.set(i.id, at);
+    i.cpuWarmupRemainingS = Math.max(0, Math.ceil((90_000 - (Date.now() - at)) / 1000));
+    i.cpuMode = i.cpuWarmupRemainingS > 0 ? "warmup" : "background";
+  }
+  i.appliedLimits = { ...requested, ...(i.cpuMode !== "background" ? { cpuCap: null, eco: false } : {}) };
+}
+
 function track(accountId: number, pid: number, target: LaunchTarget, placeId: number | null, viaBootstrapper: boolean, rejoins = 0, fpsCap: number | null = null) {
   if (!lockHeld) for (const old of instances) endInstance(old.id, "Replaced by another Roblox client");
   const i: Instance = {
@@ -219,10 +236,11 @@ function track(accountId: number, pid: number, target: LaunchTarget, placeId: nu
     checkingProcess: false, cpuMode: "standard", cpuWarmupRemainingS: 0, performance: null, performancePending: false,
     antiAfk: true, muted: false, afkAt: null, throttled: false, micro: false, fpsCap, relaunching: false, relaunchProblem: null, signInProblem: false, appliedLimits: { cpuCap: 25, eco: true, affinity: null, trimEveryMin: 15 },
   };
+  syncMockCpu(i);
   instances.push(i);
   if (!lockHeld) eventHolder = i.id;
   instancesChanged();
-  const step = (ms: number, f: () => void) => setTimeout(() => { if (i.state !== "exited") { f(); instancesChanged(); } }, ms);
+  const step = (ms: number, f: () => void) => setTimeout(() => { if (i.state !== "exited") { f(); syncMockCpu(i); instancesChanged(); } }, ms);
   step(1500, () => { i.state = "joining"; });
   step(4000, () => { i.state = "inGame"; i.jobId = target.kind === "server" ? target.jobId : crypto.randomUUID(); i.placeId ??= 1818; });
   if (accountId === 3 && rejoins === 0) setTimeout(() => kick(i), 24_000);
@@ -232,6 +250,7 @@ function track(accountId: number, pid: number, target: LaunchTarget, placeId: nu
 function kick(i: Instance) {
   if (i.state === "exited") return;
   i.state = "disconnected";
+  syncMockCpu(i);
   crashes.unshift({
     id: crashes.length + 1, instanceId: i.id, accountId: i.accountId, kind: "disconnect", at: Date.now(), uptimeMs: Date.now() - i.startedAt,
     reason: "Sending disconnect with reason: 267", placeId: i.placeId, hasLog: true,
@@ -893,18 +912,23 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       if (!i) return fail("notFound", "Not found.");
       if (args.limits.affinity === 0) return fail("invalid", "Pick at least one CPU core.");
       i.limits = args.limits;
+      syncMockCpu(i);
       instancesChanged();
       return null;
     }
     case "instance_performance":
       for (const i of instances.filter(i => i.state !== "exited" && (args.allRunning || i.id === args.id))) {
         i.performance = structuredClone(args.performance); i.performancePending = true;
-        i.limits = structuredClone(args.performance.limits); i.appliedLimits = structuredClone(i.limits);
+        i.limits = structuredClone(args.performance.limits); syncMockCpu(i);
       }
       instancesChanged(); return null;
     case "instance_restart_performance": {
       const i = instances.find(i => i.id === args.id);
-      if (i) { i.fpsCap = i.performance?.fpsCap ?? i.fpsCap; i.performancePending = false; }
+      if (i) {
+        i.fpsCap = i.performance?.fpsCap ?? i.fpsCap; i.performancePending = false;
+        i.state = "joining"; syncMockCpu(i);
+        setTimeout(() => { if (i.state === "joining") { i.state = "inGame"; syncMockCpu(i); instancesChanged(); } }, 4000);
+      }
       instancesChanged(); return null;
     }
     case "instance_set_anti_afk": {

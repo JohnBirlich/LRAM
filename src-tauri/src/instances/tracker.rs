@@ -586,6 +586,7 @@ impl Tracker {
     pub fn end_relaunch(&self, id: &str) {
         if let Some(e) = self.entries().iter_mut().find(|e| e.inst.id == id) {
             e.stop_relaunch();
+            if e.inst.checking_process && !e.closing { e.rejoin_seen = None; }
         }
     }
 

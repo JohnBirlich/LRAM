@@ -41,9 +41,9 @@ export function ClientPerformancePanel({ inst, settings }: { inst: Instance; set
       const p = PRESETS[e.target.value === "maximum" ? 0 : e.target.value === "balanced" ? 2 : 3].profile;
       setDraft({ ...draft, lowGraphics: p.lowGraphics ?? false, lighterRendering: p.lighterRendering ?? false, renderFlags: p.renderFlags ?? settings.renderFlags });
     }}><option value="maximum">Maximum performance</option><option value="balanced">Balanced</option><option value="defaults">Roblox defaults</option></select></label>
-    {draft.strictCpu && <label>Strict CPU ceiling<select className="field w-full" value={draft.limits.cpuCap ?? 1} onChange={e => { setApplied(false); setDraft({ ...draft, limits: { ...draft.limits, cpuCap: Number(e.target.value) } }); }}><option value={1}>1%</option><option value={2}>2%</option></select></label>}
+    {draft.strictCpu && <label>CPU ceiling after warm-up<select className="field w-full" value={draft.limits.cpuCap ?? 1} onChange={e => { setApplied(false); setDraft({ ...draft, limits: { ...draft.limits, cpuCap: Number(e.target.value) } }); }}><option value={1}>1%</option><option value={2}>2%</option></select></label>}
     <label className="flex gap-2"><input type="checkbox" checked={all} onChange={e => setAll(e.target.checked)} />Apply to all running accounts</label>
-    <p className="text-xs text-dim">Apply changes CPU/Eco limits immediately and saves FPS/graphics for the next launch. Window size and resolution are unchanged. Very low CPU limits can slow loading and disconnect clients.</p>
+    <p className="text-xs text-dim">All profiles load without a CPU ceiling or Eco, then wait 90 seconds after confirmed game entry before applying CPU/Eco limits. Apply updates live limits only after that warm-up and saves FPS/graphics for the next launch. Disconnects, teleports and rejoins start a new cycle. Window size and resolution are unchanged.</p>
     {(inst.performancePending || applied) && <p role="status">Requires restart — FPS and graphics have not been applied to the current client.</p>}
     <div className="flex flex-wrap gap-2">
       <button className="btn btn-primary" disabled={busy || inst.checkingProcess} onClick={() => void apply()}>Apply</button>

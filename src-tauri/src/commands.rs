@@ -745,7 +745,7 @@ pub(crate) async fn launch_tracked(
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn launch_tracked_guarded(
+pub(crate) async fn launch_tracked_guarded(
     app: &AppHandle, s: &App, account_id: i64, target: LaunchTarget,
     favourite_id: Option<i64>, delay_ms: Option<u32>, fps_cap: Option<u32>, hold: bool,
     expected_kills: Option<u64>,

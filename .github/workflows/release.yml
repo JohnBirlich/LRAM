@@ -147,11 +147,11 @@ jobs:
           cat > ../notes.md <<EOF
           ## LRAM $VERSION
 
-          - Persistent Privacy mode: Hidden identities/statuses/groups/notes/game details, blank avatars and hidden previews, hardware, displays and IP/location. UI masking only, not network anonymity or export/log sanitization.
-          - Monitor separates Graphics adapters from Peripherals / Displays. GPU deduplication uses Windows adapter LUIDs, never model names or monitor count; display names, current resolution and refresh rate are read from Windows.
-          - Strict ULTRA replaces adaptive CPU behavior: 1% by default, selectable 1% or 2%, including focus/loading/teleports. 5 FPS and maximum-performance graphics on the next launch; no window-size/resolution changes. Extremely low ceilings can slow loading and disconnect clients; instantaneous Windows readings are not a hard real-time guarantee.
-          - Home client menu / Limits: four presets, individual FPS/graphics, Apply for selected client and Apply to all running accounts. CPU/Eco limits apply immediately; Requires restart marks pending FPS/graphics. Restart to apply asks for confirmation and restarts only the selected client. Account overrides persist for future launches; unrelated saved accounts are not changed.
-          - Existing identity-safe process verification/recovery and measured capacity features are retained. No fixed CPU/RAM/client-count guarantees.
+          - Hardware inventory correction: count/name present Windows PnP display devices instead of treating DXGI rendering adapters as physical GPU inventory. PCI graphics, ROOT/SWD virtual/software display adapters and other buses are shown separately. Identical physical GPU models remain separate by device identity.
+          - Dedicated VRAM is reported only on an exact PnP driver AdapterLuid to DXGI match. Missing matches remain Unknown; no name-based or position-based memory assignment.
+          - Active monitor names come from DisplayConfig target friendly names, with PnP device-path fallback. Resolution is matched by source ID/adapter identity, refresh rate by target; fractional rates are retained. No hardcoded GPU count, monitor models or driver names.
+          - Privacy mode covers all inventory sections. Existing strict ULTRA, per-client profiles, confirmed restart and identity-safe recovery behavior from 0.14.0 is retained.
+          - The reported NVIDIA / MuMuPlayer / StarDesk setup still requires real-PC verification. CI cannot certify a particular display driver topology.
 
           **Security notice:** Defender detections were reported for 0.12.4. Their cause has not been established and this release has not been cleared by Microsoft. Do not disable antivirus or add exclusions to run LRAM. SHA-256 verifies file identity, not safety.
 

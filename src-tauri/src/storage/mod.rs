@@ -1381,4 +1381,15 @@ mod tests {
         assert!(matches!(db.set_meta(404, &meta), Err(AppError::NotFound)));
         assert!(matches!(db.set_account_groups(404, &[g]), Err(AppError::NotFound)));
     }
+    #[test]
+    fn client_performance_is_account_scoped_and_does_not_mutate_global_settings() {
+        let db = Db::open_in_memory().unwrap();
+        let global = db.settings().unwrap();
+        let p = crate::model::ClientPerformance { fps_cap: 5, low_graphics: true, lighter_rendering: true, render_flags: global.render_flags, limits: crate::model::Limits { cpu_cap: Some(1), ..Default::default() }, strict_cpu: true };
+        db.save_client_performance(7, &p).unwrap();
+        assert_eq!(db.client_performance(7).unwrap(), Some(p));
+        assert_eq!(db.client_performance(8).unwrap(), None);
+        assert_eq!(db.settings().unwrap(), global);
+    }
+
 }

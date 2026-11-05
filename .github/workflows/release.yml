@@ -48,6 +48,8 @@ jobs:
           npm run build
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run test:capacity
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run test:privacy
       - name: Rust tests
         run: cargo test --locked
         working-directory: src-tauri
@@ -145,17 +147,11 @@ jobs:
           cat > ../notes.md <<EOF
           ## LRAM $VERSION
 
-          - Process verification before declaring an unexpected exit; duplicate launches/rejoins paused while checking.
-          - Identity-safe recovery of recently lost Roblox clients without restarting: exact PID/start time or unique owner of the tracker-matched log; never nearest-window guessing.
-          - ULTRA adaptive background CPU ceiling: selectable 1/2/3%, default 3%, never divided by client count. No background cap during loading/teleport or focus; 60–90s warm-up after confirmed game entry, default 90s. Explicit manual CPU limits survive.
-          - Client cards and Monitor explain loading, warm-up countdown, focus, checking and applied background/manual caps. Other ULTRA FPS/graphics/window/preview/memory settings are unchanged.
-          - Regression tests cover temporary process loss, recovery identity, duplicate suppression, warm-up, teleport and focus. Real tenth-client reproduction still requires testing on the affected PC; its exact original cause is not established.
-          - Adaptive layouts across Play, Performance, Monitor, Discord Alerts and Settings.
-          - Monitor: local CPU/motherboard/GPU/RAM inventory, SMBIOS memory data rates and explicit IP/country lookup via ipwho.is (display only).
-          - 60-second measured CPU/RAM capacity projection with reserve; per-client CPU/RAM/GPU/VRAM ranges. GPU capacity is not guaranteed or used as a bound. No fixed client count is promised.
-          - Experimental ULTRA performance preset: low FPS/graphics, tiny windows and background CPU/Eco limits. No fixed RAM, CPU or client-count guarantee.
-          - Configurable monitor grid and clearer per-client resource usage/applied limits.
-          - Based on 0.12.3 application code, with updated LRAM documentation and repository links.
+          - Persistent Privacy mode: Hidden identities/statuses/groups/notes/game details, blank avatars and hidden previews, hardware, displays and IP/location. UI masking only, not network anonymity or export/log sanitization.
+          - Monitor separates Graphics adapters from Peripherals / Displays. GPU deduplication uses Windows adapter LUIDs, never model names or monitor count; display names, current resolution and refresh rate are read from Windows.
+          - Strict ULTRA replaces adaptive CPU behavior: 1% by default, selectable 1% or 2%, including focus/loading/teleports. 5 FPS and maximum-performance graphics on the next launch; no window-size/resolution changes. Extremely low ceilings can slow loading and disconnect clients; instantaneous Windows readings are not a hard real-time guarantee.
+          - Home client menu / Limits: four presets, individual FPS/graphics, Apply for selected client and Apply to all running accounts. CPU/Eco limits apply immediately; Requires restart marks pending FPS/graphics. Restart to apply asks for confirmation and restarts only the selected client. Account overrides persist for future launches; unrelated saved accounts are not changed.
+          - Existing identity-safe process verification/recovery and measured capacity features are retained. No fixed CPU/RAM/client-count guarantees.
 
           **Security notice:** Defender detections were reported for 0.12.4. Their cause has not been established and this release has not been cleared by Microsoft. Do not disable antivirus or add exclusions to run LRAM. SHA-256 verifies file identity, not safety.
 

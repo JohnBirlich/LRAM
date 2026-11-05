@@ -38,6 +38,10 @@ pub fn read() -> HardwareInfo {
     }
 }
 
+fn remember_adapter(seen: &mut std::collections::HashSet<(i32, u32)>, high: i32, low: u32) -> bool {
+    seen.insert((high, low))
+}
+
 fn adapters() -> Vec<GraphicsAdapter> {
     let mut out = Vec::new();
     let mut seen = std::collections::HashSet::new();
@@ -48,7 +52,7 @@ fn adapters() -> Vec<GraphicsAdapter> {
             let Ok(adapter) = factory.EnumAdapters1(i) else { break };
             let Ok(desc) = adapter.GetDesc1() else { continue };
             if desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE.0 as u32 != 0 { continue; }
-            if !seen.insert((desc.AdapterLuid.HighPart, desc.AdapterLuid.LowPart)) { continue; }
+            if !remember_adapter(&mut seen, desc.AdapterLuid.HighPart, desc.AdapterLuid.LowPart) { continue; }
             let end = desc.Description.iter().position(|&c| c == 0).unwrap_or(desc.Description.len());
             out.push(GraphicsAdapter {
                 name: String::from_utf16_lossy(&desc.Description[..end]),
@@ -147,29 +151,6 @@ fn memory_rates(raw: &[u8]) -> Vec<u32> {
     out
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn malformed_firmware_is_safe() {
-        for n in 0..80 { assert!(memory_rates(&vec![0; n]).is_empty()); }
-        assert!(memory_rates(&[0xff; 80]).is_empty());
-    }
-    #[test]
-    fn configured_memory_rate_and_empty_slots() {
-        let mut record = vec![0u8; 34];
-        record[0] = 17; record[1] = 34;
-        record[12..14].copy_from_slice(&8192u16.to_le_bytes());
-        record[21..23].copy_from_slice(&3200u16.to_le_bytes());
-        record[32..34].copy_from_slice(&2666u16.to_le_bytes());
-        record.extend([0, 0]);
-        let mut raw = vec![0, 3, 0, 0];
-        raw.extend((record.len() as u32).to_le_bytes()); raw.extend(&record);
-        assert_eq!(memory_rates(&raw), [2666]);
-        raw[20..22].fill(0);
-        assert!(memory_rates(&raw).is_empty());
-    }
-}
 
 #[derive(Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -203,4 +184,36 @@ pub async fn public_location() -> crate::error::Result<PublicLocation> {
         return Err(unavailable());
     }
     Ok(PublicLocation { ip: reply.ip, country: reply.country })
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn duplicate_adapter_id_is_not_three_cards_but_identical_models_can_be_distinct() {
+        let mut seen = std::collections::HashSet::new();
+        assert!(remember_adapter(&mut seen, 0, 41));
+        assert!(!remember_adapter(&mut seen, 0, 41));
+        assert!(!remember_adapter(&mut seen, 0, 41));
+        assert!(remember_adapter(&mut seen, 0, 42), "do not collapse two equal GPU model names with distinct identities");
+    }
+    use super::*;
+    #[test]
+    fn malformed_firmware_is_safe() {
+        for n in 0..80 { assert!(memory_rates(&vec![0; n]).is_empty()); }
+        assert!(memory_rates(&[0xff; 80]).is_empty());
+    }
+    #[test]
+    fn configured_memory_rate_and_empty_slots() {
+        let mut record = vec![0u8; 34];
+        record[0] = 17; record[1] = 34;
+        record[12..14].copy_from_slice(&8192u16.to_le_bytes());
+        record[21..23].copy_from_slice(&3200u16.to_le_bytes());
+        record[32..34].copy_from_slice(&2666u16.to_le_bytes());
+        record.extend([0, 0]);
+        let mut raw = vec![0, 3, 0, 0];
+        raw.extend((record.len() as u32).to_le_bytes()); raw.extend(&record);
+        assert_eq!(memory_rates(&raw), [2666]);
+        raw[20..22].fill(0);
+        assert!(memory_rates(&raw).is_empty());
+    }
 }

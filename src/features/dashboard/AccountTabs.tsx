@@ -1,4 +1,4 @@
-import { privateText } from "../../privacy";
+import { privateText, usePrivacy } from "../../privacy";
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { api, asError, type AccountSummary, type BulkProgress, type Instance } from "../../api";
@@ -41,6 +41,7 @@ function TabBody({ tab, account: a, accounts, instances, block, onDraft, onLaunc
   onDraft: (f: Draft | ((d: Draft) => Draft)) => void;
   onLaunch: () => void;
 }) {
+  const privacy = usePrivacy();
   const update = useUpdateAccount();
   const settings = useSettings().data;
   const { draft } = tab;
@@ -89,8 +90,8 @@ function TabBody({ tab, account: a, accounts, instances, block, onDraft, onLaunc
             placeholder={t("launch.targetPlaceholder")}
             spellCheck={false}
             autoComplete="off"
-            disabled={busy}
-            value={draft.text}
+            disabled={busy || privacy}
+            value={privacy ? "Hidden" : draft.text}
             onChange={(e) => {
               const v = e.target.value;
               onDraft((d) => ({ ...d, text: v, favId: null, note: null }));
@@ -123,8 +124,8 @@ function TabBody({ tab, account: a, accounts, instances, block, onDraft, onLaunc
                 inputMode="numeric"
                 spellCheck={false}
                 placeholder={t("launch.placeIdPlaceholder")}
-                value={draft.place}
-                disabled={busy}
+                value={privacy ? "Hidden" : draft.place}
+                disabled={busy || privacy}
                 aria-invalid={draft.place.trim() !== "" && place === null}
                 onChange={(e) => {
                   const v = e.target.value;

@@ -211,21 +211,15 @@ function perfParse(text: string): Record<string, unknown> | string {
   return out;
 }
 
-const cpuReadyAt = new Map<string, number>();
 function syncMockCpu(i: Instance) {
   const requested = i.performance?.limits ?? {
     ...i.limits,
     cpuCap: settings.ultraCpu.enabled ? settings.ultraCpu.cap : i.limits.cpuCap ?? (settings.adaptive.enabled ? settings.adaptive.background.cpuCap : null),
     eco: settings.ultraCpu.enabled || i.limits.eco || (settings.adaptive.enabled && settings.adaptive.background.eco),
   };
-  if (i.state !== "inGame" || i.checkingProcess) {
-    cpuReadyAt.delete(i.id); i.cpuMode = i.checkingProcess ? "checking" : "loading"; i.cpuWarmupRemainingS = 0;
-  } else {
-    const at = cpuReadyAt.get(i.id) ?? Date.now(); cpuReadyAt.set(i.id, at);
-    i.cpuWarmupRemainingS = Math.max(0, Math.ceil((90_000 - (Date.now() - at)) / 1000));
-    i.cpuMode = i.cpuWarmupRemainingS > 0 ? "warmup" : "background";
-  }
-  i.appliedLimits = { ...requested, ...(i.cpuMode !== "background" ? { cpuCap: null, eco: false } : {}) };
+  i.cpuWarmupRemainingS = 0;
+  i.cpuMode = "background";
+  i.appliedLimits = { ...requested };
 }
 
 function track(accountId: number, pid: number, target: LaunchTarget, placeId: number | null, viaBootstrapper: boolean, rejoins = 0, fpsCap: number | null = null) {

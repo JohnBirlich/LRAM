@@ -1219,7 +1219,13 @@ pub fn instances_list(s: State<'_, App>) -> Vec<Instance> {
 
 #[tauri::command]
 pub async fn instance_close(s: State<'_, App>, id: String, force: bool) -> Result<()> {
-    s.tracker.get(&id).ok_or(AppError::NotFound)?;
+    let instance = s.tracker.get(&id).ok_or(AppError::NotFound)?;
+    if instance.state != InstanceState::Exited && crate::instances::process::start_time(instance.pid).is_none()
+        && !crate::instances::process::unreadable_client(instance.pid)
+    {
+        log::warn!("instance {id}: close requested but tracked PID {} is gone; waiting for identity-safe recovery", instance.pid);
+        return Err(AppError::Internal("The tracked Roblox process has changed or exited. LRAM is checking the replacement process; no unrelated client was closed.".into()));
+    }
     s.tracker.end_relaunch(&id);
     let Some(target) = s.tracker.mark_closing(&id) else { return Ok(()) };
     let r = close_all(vec![target], force, grace(&s)).await?.pop().unwrap_or(Ok(()));

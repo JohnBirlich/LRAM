@@ -184,9 +184,9 @@ impl Entry {
             && self.loading_since.is_some_and(|t| crate::commands::now_ms() - t >= STUCK_MS)
     }
 
-    fn runs_free(&self, now: i64) -> bool {
-        let may_take = if self.in_game_at.is_none() { REBIND_MS } else { TELEPORT_MS };
-        self.hung_polls >= HANG_FREE_POLLS || self.loading_since.is_some_and(|t| now - t < may_take)
+    fn runs_free(&self, _now: i64) -> bool {
+        // No loading/warm-up exception. Retain only the hung-client safety release.
+        self.hung_polls >= HANG_FREE_POLLS
     }
 
     fn mem_high(&self) -> bool {
@@ -525,20 +525,12 @@ impl Tracker {
         }
     }
 
-    pub fn cpu_policy(&self, v: &Settings, _foreground: Option<u32>, _full_quality: &[i64], now: i64) -> (Vec<String>, bool) {
+    pub fn cpu_policy(&self, v: &Settings, _foreground: Option<u32>, _full_quality: &[i64], _now: i64) -> (Vec<String>, bool) {
         let mut free = Vec::new();
         let mut changed = false;
         for e in self.entries().iter_mut().filter(|e| e.inst.state != InstanceState::Exited) {
-            // Universal grace is independent of profile/manual/strict settings.
-            // Readiness is set only by verified game entry and reset on each join generation.
-            let remaining_ms = e.cpu_ready_at.map(|at| (90_000 - now.saturating_sub(at).max(0)).max(0));
-            let (mode, remaining, released) = if e.inst.checking_process {
-                (CpuMode::Checking, 0, true)
-            } else if e.inst.state != InstanceState::InGame || !e.alive || e.facts.teleporting || e.facts.disconnected || remaining_ms.is_none() {
-                (CpuMode::Loading, 0, true)
-            } else if let Some(ms) = remaining_ms.filter(|ms| *ms > 0) {
-                (CpuMode::Warmup, ((ms + 999) / 1000) as u32, true)
-            } else if e.inst.performance.is_some() || v.ultra_cpu.enabled || e.inst.limits.cpu_cap.is_some() {
+            // CPU/Eco apply immediately, including launch, loading and teleports.
+            let (mode, remaining, released) = if e.inst.performance.is_some() || v.ultra_cpu.enabled || e.inst.limits.cpu_cap.is_some() {
                 (CpuMode::Background, 0, false)
             } else {
                 (CpuMode::Standard, 0, false)
@@ -1092,11 +1084,13 @@ trait Procs {
     fn has_window(&self, pid: u32) -> bool;
     fn installer_running(&self) -> bool;
     fn log_owners(&self, _path: &Path) -> Vec<ProcInfo> { Vec::new() }
+    fn launch_matches(&self, _p: &ProcInfo, _btid: i64) -> bool { false }
 }
 
 struct Live;
 
 impl Procs for Live {
+    fn launch_matches(&self, p: &ProcInfo, btid: i64) -> bool { process::launch_matches(p, btid) }
     fn log_owners(&self, path: &Path) -> Vec<ProcInfo> { process::log_owners(path) }
     fn start_time(&self, pid: u32) -> Option<u64> {
         process::start_time(pid)
@@ -1203,7 +1197,7 @@ fn observe(
         && e.expected_user.zip(e.facts.user_id).is_none_or(|(expected, got)| expected == got)
         && let Some(p) = owned_client(e, procs, roblox, taken, now)
     {
-        log::info!("instance {}: recovered PID {} as {} using tracker-matched log ownership", e.inst.id, e.inst.pid, p.pid);
+        log::info!("instance {}: recovered PID {} as {} using verified launch/log identity", e.inst.id, e.inst.pid, p.pid);
         adopt(e, p, taken);
     }
 
@@ -1218,7 +1212,7 @@ fn owned_client(e: &mut Entry, procs: &dyn Procs, roblox: &mut Option<Vec<ProcIn
     let candidates: Vec<_> = roblox.get_or_insert_with(|| procs.roblox()).iter()
         .filter(|p| ((p.pid == e.inst.pid && e.inst.state != InstanceState::Exited) || !taken.contains(&p.pid))
             && p.start_time.saturating_add(1) >= (e.inst.started_at.max(0) / 1000) as u64
-            && owners.iter().any(|o| o == *p)).cloned().collect();
+            && (owners.iter().any(|o| o == *p) || procs.launch_matches(p, e.btid))).cloned().collect();
     if candidates.len() == 1 { candidates.into_iter().next() } else { None }
 }
 
@@ -1400,11 +1394,11 @@ mod tests {
     const BTID: i64 = 5_550_001;
     const USER: i64 = 261;
 
-    struct Fake(Mutex<Vec<ProcInfo>>, Mutex<Vec<u32>>, Mutex<Vec<u32>>, Mutex<Vec<u32>>, Mutex<bool>, Mutex<Vec<(PathBuf, Vec<ProcInfo>)>>);
+    struct Fake(Mutex<Vec<ProcInfo>>, Mutex<Vec<u32>>, Mutex<Vec<u32>>, Mutex<Vec<u32>>, Mutex<bool>, Mutex<Vec<(PathBuf, Vec<ProcInfo>)>>, Mutex<Vec<(ProcInfo, i64)>>);
 
     impl Fake {
         fn new(procs: &[(u32, u64)]) -> Fake {
-            let f = Fake(Mutex::new(Vec::new()), Mutex::new(Vec::new()), Mutex::new(Vec::new()), Mutex::new(Vec::new()), Mutex::new(false), Mutex::new(Vec::new()));
+            let f = Fake(Mutex::new(Vec::new()), Mutex::new(Vec::new()), Mutex::new(Vec::new()), Mutex::new(Vec::new()), Mutex::new(false), Mutex::new(Vec::new()), Mutex::new(Vec::new()));
             f.set(procs);
             f
         }
@@ -1435,6 +1429,9 @@ mod tests {
     }
 
     impl Procs for Fake {
+        fn launch_matches(&self, p: &ProcInfo, btid: i64) -> bool {
+            self.6.lock().unwrap().iter().any(|(owner, token)| owner == p && *token == btid)
+        }
         fn log_owners(&self, path: &Path) -> Vec<ProcInfo> {
             self.5.lock().unwrap().iter().rev().find(|(p, _)| p == path).map(|(_, ps)| ps.clone()).unwrap_or_default()
         }
@@ -1476,7 +1473,7 @@ mod tests {
     }
 
     #[test]
-    fn verified_native_connection_loss_releases_cpu_and_queues_one_rejoin_even_if_hung() {
+    fn verified_native_connection_loss_queues_one_rejoin_even_if_hung() {
         let dir = temp_dir();
         let start = now_ms();
         let (t, id, procs, log) = in_game_client(&dir, start);
@@ -1487,7 +1484,7 @@ mod tests {
         append(&log, &["[FLog::Network] ID_CONNECTION_LOST".into(), "[FLog::Network] Sending disconnect with reason: 285 (DisconnectClientInitiated)".into()]);
         t.poll(Some(&dir), &procs, &user_of, start + 92_000);
         assert_eq!(t.get(&id).unwrap().state, Disconnected);
-        assert!(t.cpu_policy(&v, None, &[], start + 92_000).0.contains(&id));
+        assert!(t.cpu_policy(&v, None, &[], start + 92_000).0.is_empty());
         let jobs = t.take_rejoins();
         assert_eq!(jobs.len(), 1);
         assert_eq!(jobs[0].cause, CrashKind::Disconnect);
@@ -1526,7 +1523,7 @@ mod tests {
         let later = start + 100_000;
         adopt(e, ProcInfo { pid: 901, start_time: 60 }, &mut Vec::new());
         settle(e, later);
-        assert!(e.runs_free(later + REBIND_MS - 1), "its whole load is free");
+        assert!(!e.runs_free(later + REBIND_MS - 1), "loading has no warm-up exception");
         assert!(!e.runs_free(later + REBIND_MS));
     }
 
@@ -1541,7 +1538,7 @@ mod tests {
         assert!(free(start).is_empty(), "not seen by a poll yet");
 
         settled(start);
-        assert_eq!(free(start + REBIND_MS - 1), std::slice::from_ref(&a));
+        assert!(free(start + REBIND_MS - 1).is_empty());
         assert!(free(start + REBIND_MS).is_empty(), "stuck loading: limited again");
 
         set(&|e| e.facts.in_game = true);
@@ -1553,7 +1550,7 @@ mod tests {
         set(&|e| e.facts.teleporting = true);
         settled(tp);
         assert_eq!(t.get(&a).unwrap().state, Joining);
-        assert_eq!(free(tp + TELEPORT_MS - 1), std::slice::from_ref(&a));
+        assert!(free(tp + TELEPORT_MS - 1).is_empty());
         assert!(free(tp + TELEPORT_MS).is_empty());
         settled(tp + TELEPORT_MS);
         assert_eq!(t.get(&a).unwrap().state, InGame, "the teleport gave up");
@@ -2657,29 +2654,38 @@ mod tests {
     }
 
     #[test]
-    fn every_profile_waits_for_confirmed_entry_then_ninety_seconds_and_resets_on_teleport() {
+    fn official_client_handoff_recovers_by_launch_identity_without_log_owners() {
+        let dir = temp_dir();
+        let start = now_ms();
+        let (t, id, procs, _) = in_game_client(&dir, start);
+        assert_eq!(t.first_in_game(&|_| true), [100]);
+        let p = ProcInfo { pid: 101, start_time: (start / 1000) as u64 + 2 };
+        procs.set(&[(p.pid, p.start_time)]);
+        procs.6.lock().unwrap().push((p.clone(), BTID));
+        t.poll(Some(&dir), &procs, &user_of, start + 3_000);
+        let i = t.get(&id).unwrap();
+        assert_eq!((i.pid, i.state, i.checking_process), (101, InGame, false));
+        assert_eq!(t.clients()[0].1, 101, "limits and metrics use the recovered PID");
+        assert_eq!(t.first_in_game(&|pid| pid == 101), [101], "resize/minimize run again for the actual window");
+        assert_eq!(t.mark_closing(&id).unwrap(), (101, Some(p.start_time)), "close targets the new identity");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn every_profile_applies_cpu_immediately_without_loading_or_teleport_grace() {
         for ultra in [false, true] {
             let dir = temp_dir();
             let start = now_ms();
             let (t, id, procs, log) = in_game_client(&dir, start);
-            let v = Settings { ultra_cpu: crate::model::UltraCpu { enabled: ultra, cap: 1, warmup_s: 60 }, ..Settings::default() };
-            // Legacy 60s field cannot shorten the new universal fixed 90s grace.
-            for (at, seconds) in [(start + 1_000, 90), (start + 60_000, 31), (start + 90_999, 1)] {
-                assert!(t.cpu_policy(&v, Some(100), &[1], at).0.contains(&id));
-                assert_eq!(t.get(&id).unwrap().cpu_mode, CpuMode::Warmup);
-                assert_eq!(t.get(&id).unwrap().cpu_warmup_remaining_s, seconds);
+            let v = Settings { ultra_cpu: crate::model::UltraCpu { enabled: ultra, cap: 1, warmup_s: 90 }, ..Settings::default() };
+            for at in [start + 1_000, start + 60_000, start + 91_000] {
+                assert!(t.cpu_policy(&v, None, &[], at).0.is_empty());
+                assert_eq!(t.get(&id).unwrap().cpu_warmup_remaining_s, 0);
             }
-            assert!(!t.cpu_policy(&v, None, &[], start + 91_000).0.contains(&id));
             append(&log, &["[FLog::SingleSurfaceApp] UgcExperienceController: doTeleport".into()]);
             t.poll(Some(&dir), &procs, &user_of, start + 92_000);
-            t.poll(Some(&dir), &procs, &user_of, start + 999_000);
-            assert!(t.cpu_policy(&v, Some(100), &[], start + 999_000).0.contains(&id), "loading never expires into a CPU cap or an unconfirmed game entry");
-            assert_eq!(t.get(&id).unwrap().cpu_mode, CpuMode::Loading);
-            append(&log, &join_lines(USER));
-            append(&log, &["[FLog::Network] Replicator created".into()]);
-            t.poll(Some(&dir), &procs, &user_of, start + 1_000_000);
-            assert!(t.cpu_policy(&v, None, &[], start + 1_000_000).0.contains(&id));
-            assert_eq!(t.get(&id).unwrap().cpu_warmup_remaining_s, 90);
+            assert!(t.cpu_policy(&v, None, &[], start + 92_000).0.is_empty());
+            assert!(t.free(&[], start + 92_000).is_empty());
             std::fs::remove_dir_all(dir).unwrap();
         }
     }

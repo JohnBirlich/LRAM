@@ -321,7 +321,7 @@ pub fn plan_now(s: &crate::App, v: &Settings, clients: &[(String, u32, u64, Limi
     let mut free = s.tracker.free(&full_quality, now);
     let front = super::process::foreground_pid();
     let (ultra_free, _) = s.tracker.cpu_policy(v, front, &full_quality, now);
-    free.extend(ultra_free);
+    free.extend(ultra_free.iter().cloned());
     s.limiter.note_free(&free, front);
     let mut result = plan(clients, v, front, crate::commands::cores(), throttled, &free, &s.limiter.uncapped());
     for (id, _, _, limits) in &mut result {
@@ -329,8 +329,15 @@ pub fn plan_now(s: &crate::App, v: &Settings, clients: &[(String, u32, u64, Limi
             *limits = own.limits;
             if own.strict_cpu { limits.cpu_cap = Some(limits.cpu_cap.unwrap_or(1).clamp(1, 2)); }
         }
+        release_startup_cpu(limits, ultra_free.contains(id));
     }
     result
+}
+
+// Last policy layer: no profile, manual cap, fair cap or memory throttle may
+// reintroduce a CPU rate limit/Eco while loading or during the universal grace.
+fn release_startup_cpu(limits: &mut Limits, released: bool) {
+    if released { limits.cpu_cap = None; limits.eco = false; }
 }
 
 // -- Main func
@@ -540,6 +547,18 @@ mod tests {
             .unwrap();
         let (pid, t0) = (child.id(), start_time(child.id()).unwrap());
         (child, pid, t0)
+    }
+
+    #[test]
+    fn universal_grace_wins_over_manual_profile_fair_and_memory_caps() {
+        for cap in [1, 2, 25, 100] {
+            let mut limits = Limits { cpu_cap: Some(cap), eco: true, affinity: Some(3), trim_every_min: Some(5) };
+            release_startup_cpu(&mut limits, true);
+            assert_eq!((limits.cpu_cap, limits.eco), (None, false));
+            assert_eq!((limits.affinity, limits.trim_every_min), (Some(3), Some(5)));
+            release_startup_cpu(&mut limits, false);
+            assert_eq!(limits.cpu_cap, None);
+        }
     }
 
     #[test]

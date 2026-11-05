@@ -117,7 +117,7 @@ struct Entry {
     writer_at: Option<i64>,
     unreadable_said: bool,
     dead_polls: u32,
-    rejoin_seen: bool,
+    rejoin_seen: Option<CrashKind>,
     teleport_at: Option<i64>,
     loading_since: Option<i64>,
     server_seen: Option<String>,
@@ -156,7 +156,7 @@ impl Entry {
             writer_at: None,
             unreadable_said: false,
             dead_polls: 0,
-            rejoin_seen: false,
+            rejoin_seen: None,
             teleport_at: None,
             loading_since: None,
             server_seen: None,
@@ -525,23 +525,27 @@ impl Tracker {
         }
     }
 
-    pub fn cpu_policy(&self, v: &Settings, _foreground: Option<u32>, _full_quality: &[i64], _now: i64) -> (Vec<String>, bool) {
+    pub fn cpu_policy(&self, v: &Settings, _foreground: Option<u32>, _full_quality: &[i64], now: i64) -> (Vec<String>, bool) {
         let mut free = Vec::new();
         let mut changed = false;
         for e in self.entries().iter_mut().filter(|e| e.inst.state != InstanceState::Exited) {
-            let own = e.inst.performance.as_ref();
-            let strict = own.map_or(v.ultra_cpu.enabled, |p| p.strict_cpu);
+            // Universal grace is independent of profile/manual/strict settings.
+            // Readiness is set only by verified game entry and reset on each join generation.
+            let remaining_ms = e.cpu_ready_at.map(|at| (90_000 - now.saturating_sub(at).max(0)).max(0));
             let (mode, remaining, released) = if e.inst.checking_process {
-                (CpuMode::Checking, 0, false)
-            } else if strict {
+                (CpuMode::Checking, 0, true)
+            } else if e.inst.state != InstanceState::InGame || !e.alive || e.facts.teleporting || e.facts.disconnected || remaining_ms.is_none() {
+                (CpuMode::Loading, 0, true)
+            } else if let Some(ms) = remaining_ms.filter(|ms| *ms > 0) {
+                (CpuMode::Warmup, ((ms + 999) / 1000) as u32, true)
+            } else if e.inst.performance.is_some() || v.ultra_cpu.enabled || e.inst.limits.cpu_cap.is_some() {
                 (CpuMode::Background, 0, false)
             } else {
                 (CpuMode::Standard, 0, false)
             };
             if released { free.push(e.inst.id.clone()); }
             if e.inst.cpu_mode != mode {
-                let cap = own.and_then(|p| p.limits.cpu_cap).unwrap_or(v.ultra_cpu.cap);
-                log::info!("instance {} PID {}: CPU mode {:?} -> {:?}; selected ceiling {}%, strict {}", e.inst.id, e.inst.pid, e.inst.cpu_mode, mode, cap, strict);
+                log::info!("instance {} PID {}: CPU mode {:?} -> {:?}; startup CPU/Eco release {}, warm-up remaining {}s", e.inst.id, e.inst.pid, e.inst.cpu_mode, mode, released, remaining);
             }
             changed |= e.inst.cpu_mode != mode || e.inst.cpu_warmup_remaining_s != remaining;
             e.inst.cpu_mode = mode;
@@ -606,13 +610,13 @@ impl Tracker {
             if e.inst.checking_process { continue; }
             let trouble = e.hung() || e.stuck() || e.mem_high() || matches!(e.inst.state, InstanceState::Disconnected | InstanceState::Exited);
             if !trouble {
-                e.rejoin_seen = false;
+                e.rejoin_seen = None;
                 e.gave_up = None;
                 e.inst.relaunch_problem = None;
-            } else if !e.rejoin_seen {
-                e.rejoin_seen = true;
-                if let Some(cause) = e.cause() {
-                    if e.stuck() && e.inst.rejoins >= STUCK_TRIES {
+            } else if let Some(cause) = e.cause().filter(|cause| e.rejoin_seen != Some(*cause)) {
+                e.rejoin_seen = Some(cause);
+                {
+                    if cause == CrashKind::Hang && e.stuck() && e.inst.rejoins >= STUCK_TRIES {
                         log::warn!("instance {}: still not in a game after {} restarts: giving up", e.inst.id, e.inst.rejoins);
                         e.inst.note = Some(never_loaded());
                         e.gave_up = Some(never_loaded());
@@ -1016,11 +1020,11 @@ pub fn wants_rejoin(inst: &Instance, facts: &LogFacts, hung: bool, stuck: bool) 
             Some(if facts.disconnected { CrashKind::Disconnect } else { CrashKind::Crash })
         }
         InstanceState::Exited => None,
+        InstanceState::Disconnected if inst.note.as_deref().is_none_or(|n| n == self::hung() || n == self::stuck()) => Some(CrashKind::Disconnect),
         _ if hung || stuck => {
             let ours = inst.note.as_deref().is_none_or(|n| n == self::hung() || n == self::stuck());
             ours.then_some(CrashKind::Hang)
         }
-        InstanceState::Disconnected if inst.note.is_none() => Some(CrashKind::Disconnect),
         _ => None,
     }
 }
@@ -2628,22 +2632,51 @@ mod tests {
     }
 
     #[test]
-    fn strict_ultra_has_no_loading_focus_or_teleport_exemptions() {
-        use crate::model::UltraCpu;
-        let dir = temp_dir();
-        let start = now_ms();
-        let (t, id, procs, log) = in_game_client(&dir, start);
-        let v = Settings { ultra_cpu: UltraCpu { enabled: true, cap: 1, warmup_s: 90 }, ..Settings::default() };
-        for (now, foreground) in [(start + 2_000, None), (start + 3_000, Some(100)), (start + 999_000, None)] {
-            assert!(t.cpu_policy(&v, foreground, &[1], now).0.is_empty());
-            assert_eq!(t.get(&id).unwrap().cpu_mode, CpuMode::Background);
-            assert_eq!(t.get(&id).unwrap().cpu_warmup_remaining_s, 0);
+    fn every_profile_waits_for_confirmed_entry_then_ninety_seconds_and_resets_on_teleport() {
+        for ultra in [false, true] {
+            let dir = temp_dir();
+            let start = now_ms();
+            let (t, id, procs, log) = in_game_client(&dir, start);
+            let v = Settings { ultra_cpu: crate::model::UltraCpu { enabled: ultra, cap: 1, warmup_s: 60 }, ..Settings::default() };
+            // Legacy 60s field cannot shorten the new universal fixed 90s grace.
+            for (at, seconds) in [(start + 1_000, 90), (start + 60_000, 31), (start + 90_999, 1)] {
+                assert!(t.cpu_policy(&v, Some(100), &[1], at).0.contains(&id));
+                assert_eq!(t.get(&id).unwrap().cpu_mode, CpuMode::Warmup);
+                assert_eq!(t.get(&id).unwrap().cpu_warmup_remaining_s, seconds);
+            }
+            assert!(!t.cpu_policy(&v, None, &[], start + 91_000).0.contains(&id));
+            append(&log, &["[FLog::SingleSurfaceApp] UgcExperienceController: doTeleport".into()]);
+            t.poll(Some(&dir), &procs, &user_of, start + 92_000);
+            assert!(t.cpu_policy(&v, Some(100), &[], start + 999_000).0.contains(&id), "loading never expires into a CPU cap");
+            assert_eq!(t.get(&id).unwrap().cpu_mode, CpuMode::Loading);
+            append(&log, &join_lines(USER));
+            append(&log, &["[FLog::Network] Replicator created".into()]);
+            t.poll(Some(&dir), &procs, &user_of, start + 1_000_000);
+            assert!(t.cpu_policy(&v, None, &[], start + 1_000_000).0.contains(&id));
+            assert_eq!(t.get(&id).unwrap().cpu_warmup_remaining_s, 90);
+            std::fs::remove_dir_all(dir).unwrap();
         }
-        append(&log, &["[FLog::SingleSurfaceApp] UgcExperienceController: doTeleport".into()]);
-        t.poll(Some(&dir), &procs, &user_of, start + 4_000);
-        assert!(t.cpu_policy(&v, Some(100), &[1], start + 4_000).0.is_empty());
-        assert_eq!(t.get(&id).unwrap().cpu_mode, CpuMode::Background);
-        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_late_disconnect_is_not_lost_after_an_ineligible_or_hung_state() {
+        let t = Tracker::new();
+        let id = t.register(&info(100, now_ms(), false), target()).id;
+        {
+            let mut entries = t.entries();
+            let e = entries.iter_mut().find(|e| e.inst.id == id).unwrap();
+            e.inst.state = Disconnected;
+            e.inst.note = Some(hung());
+            e.hung_polls = HANG_POLLS;
+        }
+        assert_eq!(t.take_rejoins()[0].cause, CrashKind::Disconnect, "Auto-rejoin must not depend on Auto-restart for a disconnected hung window");
+        assert!(t.take_rejoins().is_empty(), "one queue item per cause");
+        {
+            let mut entries = t.entries();
+            let e = entries.iter_mut().find(|e| e.inst.id == id).unwrap();
+            e.rejoin_seen = Some(CrashKind::Hang);
+        }
+        assert_eq!(t.take_rejoins()[0].cause, CrashKind::Disconnect, "a previous disabled Hang cause cannot swallow Disconnect");
     }
 
     #[test]

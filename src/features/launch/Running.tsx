@@ -238,7 +238,7 @@ export function EndedPanel({ accounts }: { accounts: AccountSummary[] }) {
       <ul className="flex flex-col">
         {ended.map((i) => {
           const a = byId.get(i.accountId);
-          const name = a ? accountName(a) : t("launch.accountN", { id: i.accountId });
+          const name = isPrivate() ? "Hidden" : a ? accountName(a) : t("launch.accountN", { id: i.accountId });
           const crash = crashes.get(i.id);
           return (
             <li key={i.id} className="flex flex-col gap-2 py-2.5 border-t border-line first:border-t-0">

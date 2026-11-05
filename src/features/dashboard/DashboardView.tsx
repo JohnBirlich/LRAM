@@ -554,7 +554,7 @@ function AfkPanel() {
 }
 
 function Trouble({ inst: i, account: a }: { inst: Instance; account: AccountSummary | undefined }) {
-  const name = a ? accountName(a) : t("dashboard.account", { id: i.accountId });
+  const name = a ? accountName(a) : privateText(t("dashboard.account", { id: i.accountId }));
   return (
     <section role="status" className="enter panel flex flex-wrap items-center gap-x-5 gap-y-3 px-5 py-4">
       <span aria-hidden="true" className="led pulse" style={{ color: "var(--orange)" }} />

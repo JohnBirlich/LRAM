@@ -341,6 +341,16 @@ mod tests {
 
     const AAD: &[u8] = b"roalt.cookie:1";
 
+    // These independent scenarios intentionally submit wrong passwords, but the
+    // production retry limiter is process-wide. Do not let parallel test cases
+    // count each other's failures. The runtime limiter remains unchanged.
+    static PASSWORD_SCENARIOS: Mutex<()> = Mutex::new(());
+    fn serialized_attempts() -> MutexGuard<'static, ()> {
+        let guard = PASSWORD_SCENARIOS.lock().unwrap_or_else(|e| e.into_inner());
+        attempts().passed();
+        guard
+    }
+
     #[test]
     fn create_encrypt_decrypt_and_reopen() {
         let (v, rec) = Vault::create().unwrap();
@@ -355,6 +365,7 @@ mod tests {
 
     #[test]
     fn master_mode_round_trip() {
+        let _serial = serialized_attempts();
         let (v, rec) = Vault::create().unwrap();
         let blob = v.encrypt(AAD, b"cookie").unwrap();
 
@@ -401,6 +412,7 @@ mod tests {
 
     #[test]
     fn recover_round_trip() {
+        let _serial = serialized_attempts();
         let (rec, blob, code, recovery) = locked_with_code();
 
         let wrong = if code.expose() == "222-222-222" { "333-333-333" } else { "222-222-222" };
@@ -423,6 +435,7 @@ mod tests {
 
     #[test]
     fn password_change_keeps_the_code_working() {
+        let _serial = serialized_attempts();
         let (rec, blob, code, recovery) = locked_with_code();
         let v = Vault::open(&rec).unwrap();
         v.unlock(&rec, "forgotten one").unwrap();
@@ -434,6 +447,7 @@ mod tests {
 
     #[test]
     fn replacing_revokes_the_old_code() {
+        let _serial = serialized_attempts();
         let (rec, blob, old_code, _) = locked_with_code();
         let v = Vault::open(&rec).unwrap();
         v.unlock(&rec, "forgotten one").unwrap();

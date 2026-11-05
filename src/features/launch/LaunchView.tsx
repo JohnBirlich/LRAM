@@ -1,3 +1,4 @@
+import { usePrivacy, privateText } from "../../privacy";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type Dispatch, type SetStateAction } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -81,6 +82,7 @@ export function LaunchView({ accounts, picked, setPicked, sameServer, setSameSer
   onAccounts: () => void;
   onSettings: () => void;
 }) {
+  const privacy = usePrivacy();
   const qc = useQueryClient();
   const favourites = useFavourites();
   const multi = useMultiStatus().data;
@@ -263,7 +265,7 @@ export function LaunchView({ accounts, picked, setPicked, sameServer, setSameSer
           <div className="flex flex-wrap items-center gap-3">
             <span aria-hidden="true" className="num">2</span>
             <h2 id="play-where" className="section-title flex-[1_1_160px]">{t("play.where")}</h2>
-            <button className="btn btn-ghost" disabled={!account} title={account ? t("launch.joinHint") : t("launch.pickAccountFirst")} onClick={() => setJoinOpen(true)}>
+            <button className="btn btn-ghost" disabled={privacy || !account} title={account ? t("launch.joinHint") : t("launch.pickAccountFirst")} onClick={() => setJoinOpen(true)}>
               <Icon name="accounts" size={14} />
               {t("launch.joinSomeone")}
             </button>
@@ -281,7 +283,8 @@ export function LaunchView({ accounts, picked, setPicked, sameServer, setSameSer
               placeholder={t("launch.targetPlaceholder")}
               spellCheck={false}
               autoComplete="off"
-              value={text}
+              value={privacy ? "Hidden" : text}
+              disabled={privacy}
               onPaste={() => {
                 pasted.current = true;
               }}
@@ -300,18 +303,18 @@ export function LaunchView({ accounts, picked, setPicked, sameServer, setSameSer
                   {look ? (
                     <>
                       <span className="font-semibold flex-none">{look.kind}</span>
-                      <span className={`mono text-[13px] truncate ${look.tone === "bad" ? "text-orange" : "text-dim"}`} title={look.detail}>
-                        {look.detail}
+                      <span className={`mono text-[13px] truncate ${look.tone === "bad" ? "text-orange" : "text-dim"}`} title={privateText(look.detail)}>
+                        {privateText(look.detail)}
                       </span>
                     </>
                   ) : (
                     <span className="text-dim">{t("launch.reading")}</span>
                   )}
                 </span>
-                {draft.note && <span className="tag flex-none max-w-[30%] truncate">{draft.note}</span>}
+                {draft.note && <span className="tag flex-none max-w-[30%] truncate">{privateText(draft.note)}</span>}
                 <button
                   className="btn btn-sm flex-none"
-                  disabled={!usableTarget}
+                  disabled={privacy || !usableTarget}
                   style={fav ? { color: "var(--accent-text)" } : undefined}
                   onClick={() => setSaveOpen(true)}
                 >
@@ -334,7 +337,8 @@ export function LaunchView({ accounts, picked, setPicked, sameServer, setSameSer
                   inputMode="numeric"
                   spellCheck={false}
                   placeholder={t("launch.placeIdPlaceholder")}
-                  value={draft.place}
+                  value={privacy ? "Hidden" : draft.place}
+                  disabled={privacy}
                   aria-invalid={draft.place.trim() !== "" && place === null}
                   onChange={(e) => {
                     const v = e.target.value;
@@ -392,7 +396,7 @@ export function LaunchView({ accounts, picked, setPicked, sameServer, setSameSer
               </span>
             ) : canLaunch && look ? (
               <span>
-                {t("play.into", { target: look.kind })} {look.detail}
+                {t("play.into", { target: look.kind })} {privateText(look.detail)}
                 {bulk && <> · {t("play.apart", { s: fmtNum(delayMs / 1000) })}</>}
                 {fps > 0 && <> · {t("dashboard.fps", { fps })}</>}
                 {bulk && sameServer !== "off" && <> · {t("launch.sameServer")}</>}
@@ -457,14 +461,14 @@ export function LaunchView({ accounts, picked, setPicked, sameServer, setSameSer
         </section>
       </div>
 
-      <JoinDialog open={joinOpen} onClose={() => setJoinOpen(false)} account={account} accounts={accounts} onPick={join} />
+      <JoinDialog open={joinOpen && !privacy} onClose={() => setJoinOpen(false)} account={account} accounts={accounts} onPick={join} />
       <FavouriteDialog
-        open={saveOpen}
+        open={saveOpen && !privacy}
         onClose={() => setSaveOpen(false)}
         accounts={accounts}
         initial={
           fav ?? {
-            name: look ? `${look.kind} · ${look.detail}`.replace(/ · [^·]*••••/, "").slice(0, 60) : "",
+            name: look ? `${look.kind} · ${privateText(look.detail)}`.replace(/ · [^·]*••••/, "").slice(0, 60) : "",
             accountIds: accounts.filter((a) => a.status === "valid" && picked.includes(a.id)).map((a) => a.id),
             inTray: false,
           }

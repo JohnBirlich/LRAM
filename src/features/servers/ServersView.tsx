@@ -1,3 +1,4 @@
+import { usePrivacy, privateText } from "../../privacy";
 import { useEffect, useRef, useState, type Dispatch, type FormEvent, type ReactNode, type SetStateAction } from "react";
 import { useInfiniteQuery, useQuery, useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { api, asError, type AccountSummary, type GameInfo, type LaunchTarget, type ServerOrder } from "../../api";
@@ -33,6 +34,7 @@ export function ServersView({ accounts, picked, setPicked, place, setPlace, onBa
   step: string | null;
   setStep: (step: string | null) => void;
 }) {
+  const privacy = usePrivacy();
   const qc = useQueryClient();
   const multi = useMultiStatus().data;
   const batch = useBulk().data;
@@ -184,7 +186,8 @@ export function ServersView({ accounts, picked, setPicked, place, setPlace, onBa
               placeholder={t("servers.gameInput")}
               spellCheck={false}
               autoComplete="off"
-              value={text}
+              value={privacy ? "Hidden" : text}
+              disabled={privacy}
               aria-invalid={!!textError}
               aria-describedby={textError ? "servers-game-error" : undefined}
               onChange={(e) => {
@@ -194,7 +197,7 @@ export function ServersView({ accounts, picked, setPicked, place, setPlace, onBa
             />
             <button className="btn" disabled={loading}>{loading ? t("common.loading") : t("servers.load")}</button>
           </div>
-          {textError && <p id="servers-game-error" role="alert" className="alert">{textError}</p>}
+          {textError && <p id="servers-game-error" role="alert" className="alert">{privateText(textError)}</p>}
         </form>
       </div>
 
@@ -297,7 +300,7 @@ export function ServersView({ accounts, picked, setPicked, place, setPlace, onBa
           <MultiNotice wanted={n > 1} replaces={replaces} className="flex-none mx-8 mt-4" />
           <div className="well flex-none mx-8 mt-4 mb-6 px-4 py-3">
             <div className="flex flex-wrap items-center gap-2.5">
-              <span className="mono font-medium">{summary}</span>
+              <span className="mono font-medium">{privateText(summary)}</span>
               <span aria-hidden="true" className="text-dim">{t("servers.send")}</span>
               {valid.length ? (
                 <div role="group" aria-label={t("servers.accountsToSend")} className="scroll flex flex-wrap gap-1.5 flex-[1_1_240px] min-w-0 max-h-[84px] p-1 -m-1">
@@ -339,6 +342,8 @@ function Updated({ at }: { at: number }) {
 }
 
 function GameHead({ game: g }: { game: GameInfo }) {
+  const privacy = usePrivacy();
+  if (privacy) return <h1 className="page-title">Hidden</h1>;
   return (
     <div className="flex items-center gap-5 min-w-0">
       {g.iconUrl ? (

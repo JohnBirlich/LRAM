@@ -1,3 +1,4 @@
+import { privateText, usePrivacy } from "../../privacy";
 import { useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type DiscordEvents, type Settings } from "../../api";
@@ -20,6 +21,7 @@ const EVENTS: [key: Exclude<keyof DiscordEvents, "statusEveryMin">, title: Key, 
 
 // -- Main func
 export function DiscordView({ settings }: { settings: Settings }) {
+  const privacy = usePrivacy();
   const qc = useQueryClient();
   const set = useSetSettings();
   const status = useQuery({ queryKey: qk.discord, queryFn: api.discordGet }).data;
@@ -76,7 +78,7 @@ export function DiscordView({ settings }: { settings: Settings }) {
             status?.configured && !status.webhook
               ? t("discord.setLocked")
               : status?.configured
-              ? t("discord.setId", { id: status.webhook ?? t("discord.unknown") })
+              ? t("discord.setId", { id: privateText(status.webhook ?? t("discord.unknown")) })
               : t("discord.notSet")
           }
         >
@@ -93,7 +95,8 @@ export function DiscordView({ settings }: { settings: Settings }) {
             className="field mono flex-[1_1_320px] min-w-0"
             aria-label={t("discord.urlLabel")}
             placeholder="https://discord.com/api/webhooks/…"
-            value={url}
+            value={privacy ? "Hidden" : url}
+            disabled={privacy}
             autoComplete="off"
             spellCheck={false}
             onChange={(e) => setUrl(e.target.value)}
